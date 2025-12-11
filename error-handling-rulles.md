@@ -25,15 +25,23 @@ async function withRetry<T>(
 }
 ```
 
-## 2. Graceful Degradation
-When all retries fail, return empty data structure instead of crashing:
+## 2. Error Propagation
+For all API async functions, if an error happens, just throw the error. Do **not** return empty data.
+This allows the invoker to distinguish between an actual error and a valid empty result.
+The invoker handles different scenarios wisely. Treating errors as empty data leads to silent failures and missed error notifications.
+
 ```typescript
+// Do NOT catch and return empty data. Let the error propagate.
 return withRetry(async () => {
   // ... operation
-}).catch((error) => {
-  logErrorHandler(`[operation] All retries exhausted, returning empty map. Final error: ${JSON.stringify(error)}`);
-  return new Map<string, SymbolDailyMeta>(); // Graceful fallback
 });
+
+// The invoker should handle the error explicitly:
+try {
+  const data = await fetchData();
+} catch (error) {
+  notifyError(error); // Handle error (log, alert, etc.)
+}
 ```
 
 ## 3. Comprehensive Logging

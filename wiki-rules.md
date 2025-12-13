@@ -2,3 +2,4 @@
 2. **Authentication Documentation**: Create a detailed guide for the Sign-In/Sign-Up flows.
 3. **Billing & Auth Integration**: Document the Stripe subscription lifecycle and its integration with authentication.
 4. **Data Architecture**: Provide a comprehensive breakdown of the key data models and their relationships.
+5. when code changes made, you(IDE or LLM) need to update the project wiki.

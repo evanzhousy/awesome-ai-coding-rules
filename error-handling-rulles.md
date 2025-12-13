@@ -44,16 +44,56 @@ try {
 }
 ```
 
-## 3. Comprehensive Logging
-- Use both `logInfoHandler()` for success and `logErrorHandler()` for failures
-- Include operation context in log messages
-- Log full error details with `JSON.stringify(error)`
+## 3. Fault Tolerance for Non-Critical Operations
+When an underlying async function is not critical (i.e., we have fault tolerance for it), wrap it in its own `try-catch` block. This ensures that if it fails, we get notified, but the invoker process continues without interruption.
 
-## 4. Type Safety
+```typescript
+try {
+  // Non-critical operation: failure here is handled locally and doesn't stop the flow
+  try {
+    await fetchDataFunctionOne();
+  } catch(error) {
+    notifyError(error); // Log/Alert and proceed
+  }
+
+  // Critical operation: failure here propagates to the outer catch
+  const data = await fetchDataFunctionTwo();
+
+} catch (error) {
+  notifyError(error); // Handle critical errors
+}
+```
+
+## 4. Comprehensive Logging
+- Use both `logInfoHandler()` for success and `logErrorHandler()` for failures.
+- **Include Function Tags**: Always include the function name (e.g., `[FunctionName]`) in the log message to easily trace the source of the error.
+- Log full error details with `JSON.stringify(error)` to capture the complete context.
+
+```typescript
+const updateSubscriptionCache = async () => { 
+   try { 
+     const response = await apiGetUserSubscription(); 
+ 
+     if (response.status === 'SUCCESS') { 
+       // Handle success
+       setLocalStorageSubscriptionObject(response.data); 
+     } else { 
+       // Tagging the log with [updateSubscriptionCache]
+       await logErrorHandler(`[updateSubscriptionCache] Failed to fetch subscription. Response: ${JSON.stringify(response)}`);
+       return null; 
+     } 
+   } catch (err) { 
+     // Tagging the error with [updateSubscriptionCache]
+     throw new Error(`[updateSubscriptionCache] Exception: ${err.message}`); 
+   } 
+ };
+```
+
+## 5. Type Safety
 - Always specify return types: `Promise<Map<string, SymbolDailyMeta>>`
 - Use proper error typing: `error as Error`
 
-## 5. Separation of Concerns
+## 6. Separation of Concerns
 - Dedicated retry utility function separate from business logic
 - Centralized logging utilities
 - Clean error propagation through promise chain

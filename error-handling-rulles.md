@@ -97,3 +97,48 @@ const updateSubscriptionCache = async () => {
 - Dedicated retry utility function separate from business logic
 - Centralized logging utilities
 - Clean error propagation through promise chain
+
+## 7. Standardized Error Logging Format
+When throwing errors, use a consistent format that makes it easy to locate issues in the code:
+
+**Format**: `[FunctionName] meaningful error information`
+
+**DO NOT** manually include line numbers in the error message, as they are:
+- Already captured in the error stack trace automatically
+- Prone to becoming outdated when code changes
+- Redundant and add maintenance overhead
+
+The error stack will automatically include the file name, line number, and full call stack, making manual line number tracking unnecessary.
+
+```typescript
+// ✅ GOOD: Function tag + meaningful message (line number comes from stack)
+async function fetchUserData(userId: string) {
+  try {
+    const response = await api.getUser(userId);
+    if (!response.data) {
+      throw new Error(`[fetchUserData] No data returned for user ID: ${userId}`);
+    }
+    return response.data;
+  } catch (err) {
+    // Preserve original error stack while adding context
+    throw new Error(`[fetchUserData] Failed to fetch user data for ID ${userId}: ${err.message}`, { cause: err });
+  }
+}
+
+// ❌ BAD: Don't manually add line numbers
+throw new Error(`[fetchUserData] Line 42: Failed to fetch data`); // Line 42 will be wrong after edits!
+
+// ✅ GOOD: When logging the error, include the full error object
+try {
+  await fetchUserData(userId);
+} catch (error) {
+  logErrorHandler(`[handleUserRequest] ${error.message}`, error); // Pass full error for stack trace
+}
+```
+
+**Benefits**:
+- **Easy location tracking**: Function tag immediately identifies the source
+- **Meaningful context**: Describes what went wrong and with what data
+- **Automatic line numbers**: Stack trace provides accurate file and line information
+- **No maintenance burden**: No need to update line numbers when code changes
+

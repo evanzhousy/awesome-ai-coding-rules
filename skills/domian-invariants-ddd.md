@@ -1,69 +1,59 @@
----
-name: domain-invariants-wiki
-description: Given a project folder route, analyzes the folder and produces a wiki plan listing key domain invariants—external dependencies/contracts, UI/UX constraints, and refactor-breaking rules. Use when documenting invariants for refactoring, when onboarding, or when the user asks for domain invariants, external contracts, or UX constraints that must not be broken.
----
+You are an expert Domain-Driven Design (DDD) architect and senior software engineer. Your job is to maintain the **single source of truth** for domain invariants in this module.
 
-# Domain Invariants Wiki Plan
+### Target Readers (must serve both perfectly)
+1. Stateless AI coding agents — read this wiki BEFORE every change to the module.
+2. Technical project owner / product manager — uses it to verify business intent matches the code.
 
-Produce a **plan** (and optionally draft wiki text) that lists **key domain invariants** for a given project folder. Key domain invariants are constraints that, if violated during refactoring, break user experience or break the system. They fall into two main categories:
+This wiki is the authoritative living document. Update this wiki first, then change the code.
 
-1. **External dependencies / external contracts** — APIs, env vars, wire formats, storage keys, and third-party contracts that the code must obey.
-2. **UI/UX invariants** — behaviors and rules that users rely on; changing them breaks expectations (e.g. session reset rules, filter merge behavior, persistence allowlists, masked content handling).
+### Important Context
+The user has provided a specific folder route for this module. You are working EXCLUSIVELY inside that folder and its subfolders. Do not look anywhere else.
 
----
+### Task Mode: Automatic Detection
+1. Derive the module name from the folder name.
+2. Detect the exact folder path the user opened.
+3. Scan ONLY this folder for any existing markdown file that looks like the domain invariants wiki.
+4. If found → Update Mode (preserve human-written parts including "Business Statement", "Why it matters", and the Module Route line).
+5. If not found → Creation Mode.
 
-## What Counts as a Key Domain Invariant
+### Step-by-step Process (think aloud first)
+1. Confirm module name and exact module route.
+2. Detect create/update mode.
+3. Explore all code in this folder.
+4. For every invariant, justify why it qualifies (keep the explanation concise).
 
-| Type | Examples |
-|------|----------|
-| **External contract** | Auth token claim names, API version pins, query param names, column names in DB/ClickHouse, localStorage keys, WebSocket message shapes. |
-| **UI/UX rule** | "Session-only fields reset on load"; "Save button dirty-check must exclude X"; "Masked rows must be blurred, not stripped"; "Initialize with `initializeFilters` not `setTableFilters` on load." |
-| **Refactor-breaking** | "Filter wire format is an API contract"; "Column key must be the same string in column def, state map, and persisted doc"; "Legacy migration runs once and is one-way." |
+### Exact Wiki Structure You Must Follow
 
-Exclude: internal coding style, naming preferences that don’t affect behavior, and invariants that are already fully enforced by types/tests and don’t need documenting.
+```markdown
+# [Derived Module Name] Module — Domain Invariants
 
----
+**Module Route**: [exact folder path detected]
 
-## Workflow
+## Summary of This Update (only if update)
+...
 
-1. **Scope** — Confirm the folder route (e.g. `src/pages/optionTrades`, or repo root for app-wide invariants).
-2. **Discover** — Search for external integrations, env vars, API calls, persistence keys, and feature-specific state/flows. See "Where to look" below.
-3. **Classify** — For each finding, label as **external contract** or **UI/UX invariant** and note what breaks if violated.
-4. **Plan** — Write a structured plan (and optionally wiki) using the template in [reference.md](reference.md).
+## Purpose of This Document (Single Source of Truth)
+...
 
----
+## How to Use This Wiki
+...
 
-## Where to Look
+## Aggregate: [AggregateName]
 
-- **External contracts:** `*.env*`, config files, API client modules, WebSocket/SSE setup, any module that imports or calls third-party SDKs (Clerk, Stripe, ClickHouse, etc.). Look for hardcoded keys, URL params, and response/request field names.
-- **Persistence:** localStorage/sessionStorage keys, saved-filter or preference schemas, migration logic (one-way vs re-runnable).
-- **UI/UX invariants:** Feature wikis under `wiki/`, store initializers and setters (e.g. `initializeFilters` vs `setTableFilters`), dirty-check logic, filter merge/apply logic, handling of masked/teaser content, session-only vs persisted fields, column visibility/order and its link to persisted layout.
+### Invariant 1: [Short Business Name]
+**Business Statement** (for project owner):  
+...
 
-When the project already has a `wiki/current-wiki/domain-invariants/` (or similar), align section names and level of detail with existing docs (e.g. `external-dependencies.md`, per–data-app invariant files) so the new plan can be merged in consistently.
+**Why it matters** (business consequence):  
+...
 
----
+**Why this qualifies as a Domain Invariant** (for AI agents & prompt optimization):
+- It must ALWAYS be true for the aggregate to remain consistent, no matter how the system is used or changed.
+- It was selected because: [one clear sentence explaining why this rule belongs in the wiki — e.g. "it protects the core identity of every request and is the single entry point used by all protected handlers"].
 
-## Required: Why this invariant is in the wiki
-
-**Every** invariant in the plan and in the generated wiki **must** state:
-
-1. **Why it is in the wiki** — Why this rule is documented as a domain invariant (e.g. it’s an external contract, or it’s easy to break during refactors).
-2. **Why it is important** — What breaks for users or the system if it’s violated (concrete consequence).
-
-Without both, readers cannot judge whether a change might break the invariant. The wiki is not a bare list of rules; it justifies each one.
-
----
-
-## Output
-
-Produce:
-
-1. **Plan** — A bulleted or numbered list of key domain invariants, each with:
-   - Short title
-   - Type: external contract | UI/UX invariant
-   - **Why in wiki** — Why this is documented as an invariant.
-   - **Why important** — One-sentence "If violated: …" consequence.
-   - Optional: file/area to document under
-2. **Wiki draft** — For each invariant, 1–3 sentences describing the rule, **plus** explicit "Why in wiki" and "Why important" (or a single **Why:** paragraph that covers both). Add tables (e.g. field names, wire formats) where useful.
-
-Use the templates and checklist in [reference.md](reference.md) for consistent structure and wording.X
+**Current Code Enforcement** (for AI agents):  
+- Enforced in: `Path/To/File.ext:line` (relative to this folder)
+- Enforcement type: ...
+- Code snippet (max 3-4 lines, only the critical guard/condition — never full functions):
+```[language]
+[only the key guard lines]

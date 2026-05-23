@@ -1,5 +1,5 @@
 ---
-name: greenfiled-design-skill
+name: greenfield-design-skill
 description: Use when planning or implementing non-trivial features, refactors, or fixes where a local patch, one-off helper, or repeated pattern may hide a structural problem.
 ---
 
@@ -15,7 +15,7 @@ Use this when the problem likely reflects a wrong model, not just a missing line
 
 3. **No glue, no one-offs.** Every new unit must earn its place as a reusable component or a real boundary with clear inputs and outputs. If code exists only to prop up one feature or wire mismatched abstractions together, rethink the design.
 
-4. **Simplify implementation, not contract.** Reduce concepts, flags, and special cases aggressively. It is acceptable to trim incidental complexity, but do not silently remove product behavior or domain invariants to make the code cleaner.
+4. **Simplify implementation, not contract.** Reduce concepts, flags, and special cases aggressively. You may simplify business logic and drop handling for rare or marginal edge cases when that tradeoff does not hurt major functionality, documented invariants, persisted behavior, or public contracts. Do not silently remove product behavior or domain invariants to make the code cleaner.
 
 5. **Duplication is a decision.** When the same shape appears in multiple modules, ask: _one shared invariant, or cousins that will diverge?_
    - **One invariant** → extract a named, typed, stable abstraction.
@@ -30,3 +30,4 @@ Use this when the problem likely reflects a wrong model, not just a missing line
 - [ ] Design matches domain truth and does not silently shrink product contract.
 - [ ] No glue-only or single-use module was added.
 - [ ] Repeated patterns got an explicit extract-or-keep-local decision.
+- [ ] Edge-case handling was intentionally kept or trimmed; any simplification tradeoff is explicit and does not harm major functionality, invariants, persisted behavior, or public contracts.

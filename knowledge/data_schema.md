@@ -289,8 +289,8 @@ Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (
 | `date`             | Date                   | Snapshot date                                                                                                |
 | `symbol`           | LowCardinality(String) | Underlying ticker (e.g. AAPL, SPY)                                                                           |
 | `iv30`             | Float32                | ATM implied vol at ~30 DTE (avg of call + put IV at best ATM strike/expiry pair)                             |
-| `iv_rank_1y`       | Float32                | 0–1; position of today's iv30 in its 252-trading-day high/low range. NULL if < 2 data points or flat history |
-| `iv_percentile_1y` | Float32                | 0–1; % of trading days in past year with iv30 lower than today's. NULL if insufficient history               |
+| `iv_rank_1y`       | Float32                | 0–1; position of today's iv30 in the adaptive high/low window. NULL if fewer than **30** prior+current samples, or flat min=max history |
+| `iv_percentile_1y` | Float32                | 0–1; fraction of **prior** days with `iv30` strictly lower than today's. NULL under the same **30**-sample minimum as rank |
 | `snapshot_spot`    | Float32                | Underlying price at snapshot time (from SymbolMetaData)                                                      |
 | `underlying_type`  | LowCardinality(String) | `ETF` / `STOCK` / `INDEX`                                                                                    |
 

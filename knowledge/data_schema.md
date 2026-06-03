@@ -1,7 +1,7 @@
 # Data Schema
 
 > **Concepts Reference**: [OptionData Product Concepts](./basic_concepts.md)
-> **Last Updated**: 2026-04-06
+> **Last Updated**: 2026-05-27
 
 This document describes all persistent data stores: the ClickHouse analytics tables used for options flow and chain data, and the DynamoDB table used for user persistence.
 
@@ -183,37 +183,65 @@ Per-symbol, per-day metadata: price, volume, fundamentals, and classification. U
 
 ## mv_symbol_day_flow
 
-Materialized view pre-aggregating `AggregatedOptionTrades` per (date, underlying `symbol`). Powers the Market Rank screener — reads ~2K rows instead of scanning ~1M raw trades. Automatically populated on each INSERT to `AggregatedOptionTrades`.
+Canonical **symbol-day daily mart** at `(date, symbol)` grain. It combines live flow aggregates from `AggregatedOptionTrades` with structure, metadata, volatility, and GEX fields populated by batch/backfill writes.
 
-| Column            | Type                             | Description                                            |
-| ----------------- | -------------------------------- | ------------------------------------------------------ |
-| `date`            | Date                             | Trade date (group key)                                 |
-| `symbol`          | String                           | Underlying symbol (group key)                          |
-| `underlying_type` | AggregateFunction(any, String)   | Asset type (coalesced; defaults to `'INDEX'` if empty) |
-| `total_premium`   | AggregateFunction(sum, Int32)    | Total premium                                          |
-| `call_premium`    | AggregateFunction(sumIf, Int32)  | Call-side premium                                      |
-| `put_premium`     | AggregateFunction(sumIf, Int32)  | Put-side premium                                       |
-| `net_dex`         | AggregateFunction(sum, Int64)    | Net signed delta exposure (bullish +, bearish −)       |
-| `net_dei`         | AggregateFunction(sum, Float64)  | Net signed delta impact                                |
-| `last_trade_time` | AggregateFunction(max, DateTime) | Latest trade time in the day                           |
-| `earning_date`    | AggregateFunction(any, Date)     | Next earnings date                                     |
+**Write paths**:
+- **Flow (live)**: materialized view on `AggregatedOptionTrades` INSERT. Flow columns and `trade_count` are populated immediately; structure columns receive no-op `argMaxState` values until batch structure rows win on merge.
+- **Structure (batch/backfill)**: separate SQL writes populate structure fields from `OptionChainTable`, `SymbolMetaData`, and `SymbolVolDaily`.
 
-**Engine**: `AggregatingMergeTree()`  
-**Partition**: `PARTITION BY date`  
-**Order**: `ORDER BY (date, symbol)`  
-**Source**: `AggregatedOptionTrades`
+**Presence checks are query-time derived, not stored**: flow-present when `sumMerge(trade_count) > 0 OR sumMerge(total_premium) > 0`; structure-present when `argMaxMerge(chain_contract_count) > 0`.
+
+| Column | Type | Source | Description |
+| ------ | ---- | ------ | ----------- |
+| `date` | Date | key | Symbol-day key |
+| `symbol` | String | key | Underlying symbol |
+| `underlying_type` | AggregateFunction(any, String) | flow | Asset type (coalesced; defaults to `'INDEX'` if empty) |
+| `total_premium` | AggregateFunction(sum, Int32) | flow | Total premium |
+| `call_premium` | AggregateFunction(sumIf, Int32, UInt8) | flow | Call-side premium |
+| `put_premium` | AggregateFunction(sumIf, Int32, UInt8) | flow | Put-side premium |
+| `net_dex` | AggregateFunction(sum, Int64) | flow | Net signed delta exposure (bullish +, bearish -) |
+| `net_dei` | AggregateFunction(sum, Float64) | flow | Net signed delta impact |
+| `last_trade_time` | AggregateFunction(max, DateTime) | flow | Latest trade time in the day |
+| `earning_date` | AggregateFunction(any, Date) | flow | Next earnings date |
+| `trade_count` | AggregateFunction(sum, Int64) | flow | Raw trade count |
+| `snapshot_spot` | AggregateFunction(argMax, Nullable(Float32), UInt64) | structure | Underlying spot at snapshot (`SymbolMetaData.last`) |
+| `market_cap` | AggregateFunction(argMax, Nullable(UInt64), UInt64) | structure | Market capitalization |
+| `sector` | AggregateFunction(argMax, String, UInt64) | structure | Sector classification |
+| `iv30` | AggregateFunction(argMax, Nullable(Float32), UInt64) | structure | ATM IV around 30 DTE (`SymbolVolDaily`) |
+| `iv_rank_1y` | AggregateFunction(argMax, Nullable(Float32), UInt64) | structure | IV rank, 0-1 |
+| `iv_percentile_1y` | AggregateFunction(argMax, Nullable(Float32), UInt64) | structure | IV percentile, 0-1 |
+| `vol_date` | AggregateFunction(argMax, Nullable(Date), UInt64) | structure | As-of date for volatility metrics |
+| `chain_contract_count` | AggregateFunction(argMax, UInt32, UInt64) | structure | Contracts in chain snapshot |
+| `call_gex` | AggregateFunction(argMax, Float64, UInt64) | structure | Sum of call-side GEX (`gamma * oi * 100`) |
+| `put_gex_signed` | AggregateFunction(argMax, Float64, UInt64) | structure | Sum of put-side signed GEX |
+| `zero_gamma_level` | AggregateFunction(argMax, Nullable(Float64), UInt64) | structure | Interpolated zero-gamma strike |
+| `neg_gex_centroid` | AggregateFunction(argMax, Nullable(Float64), UInt64) | structure | Gamma-weighted centroid of negative net-GEX strikes |
+| `neg_gex_concentration` | AggregateFunction(argMax, Nullable(Float64), UInt64) | structure | Top-3 negative GEX concentration, 0-1 |
+| `max_pain_strike` | AggregateFunction(argMax, Nullable(Float64), UInt64) | structure | Minimum total OI pain strike |
+
+**Compute at query time, do not store**: `net_put_premium`, `call_pct`, `sentiment`, `gross_gex`, `net_gex`, `gamma_regime`, `gex_ratio`, `flip_distance`, `above_flip`, `squeeze_score`, `max_pain_distance`.
+
+- **Engine**: `SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`
+- **Partition**: `PARTITION BY date`
+- **Order**: `ORDER BY (date, symbol)`
+- **Source**: `AggregatedOptionTrades` for live flow; batch/backfill SQL for structure fields
 
 **Query pattern**: Use `-Merge` suffix functions to finalize aggregate state:
 
 ```sql
 SELECT
   symbol,
-  anyMerge(underlying_type)  AS underlying_type,
-  sumMerge(total_premium)    AS total_premium,
-  sumMerge(call_premium)     AS total_call_premium,
-  sumMerge(put_premium)      AS total_put_premium,
-  sumMerge(net_dex)          AS sum_net_dex,
-  maxMerge(last_trade_time)  AS last_trade_time
+  anyMerge(underlying_type)         AS underlying_type,
+  sumMerge(total_premium)           AS total_premium,
+  sumMerge(call_premium)            AS total_call_premium,
+  sumMerge(put_premium)             AS total_put_premium,
+  sumMerge(trade_count)             AS trade_count,
+  sumMerge(net_dex)                 AS sum_net_dex,
+  maxMerge(last_trade_time)         AS last_trade_time,
+  argMaxMerge(snapshot_spot)        AS snapshot_spot,
+  argMaxMerge(call_gex)             AS call_gex,
+  argMaxMerge(put_gex_signed)       AS put_gex_signed,
+  argMaxMerge(chain_contract_count) AS chain_contract_count
 FROM mv_symbol_day_flow
 WHERE date = {rank_date:Date}
 GROUP BY date, symbol
@@ -223,36 +251,53 @@ GROUP BY date, symbol
 
 ## mv_contract_day_flow
 
-Materialized view pre-aggregating `AggregatedOptionTrades` per (date, `option_symbol` contract). Powers the Contract Flow Rank screener (full_day mode) — reads ~50K pre-aggregated rows instead of scanning ~1M raw trades. Automatically populated on each INSERT to `AggregatedOptionTrades`. Time-windowed queries (1h/2h/4h) still read from the raw table.
+Canonical **contract-day daily mart** at `(date, option_symbol)` grain. It combines live flow aggregates from `AggregatedOptionTrades` with chain snapshot fields populated by batch/backfill writes.
 
-| Column              | Type                                                 | Description                                   |
-| ------------------- | ---------------------------------------------------- | --------------------------------------------- |
-| `date`              | Date                                                 | Trade date (group key)                        |
-| `option_symbol`     | String                                               | Full OCC contract symbol (group key)          |
-| `symbol`            | AggregateFunction(any, String)                       | Underlying ticker                             |
-| `put_call`          | AggregateFunction(any, String)                       | `CALL` or `PUT`                               |
-| `strike`            | AggregateFunction(any, Float64)                      | Strike price                                  |
-| `expiration_date`   | AggregateFunction(any, String)                       | Expiration date (stored as string)            |
-| `underlying_type`   | AggregateFunction(any, String)                       | Asset type (coalesced; defaults to `'INDEX'`) |
-| `moneyness`         | AggregateFunction(argMax, String, DateTime)          | Latest moneyness (`ITM`/`ATM`/`OTM`)          |
-| `expiry_days`       | AggregateFunction(argMax, Nullable(Int32), DateTime) | Latest DTE                                    |
-| `premium`           | AggregateFunction(sum, Int32)                        | Total premium                                 |
-| `size`              | AggregateFunction(sum, Int64)                        | Total contracts                               |
-| `trade_count`       | AggregateFunction(sum, Int64)                        | Total raw trades aggregated                   |
-| `oi`                | AggregateFunction(argMax, Int64, DateTime)           | Latest open interest                          |
-| `daily_volume`      | AggregateFunction(argMax, Int64, DateTime)           | Latest daily volume                           |
-| `net_dex`           | AggregateFunction(sum, Int64)                        | Net signed DEX                                |
-| `bullish_dex`       | AggregateFunction(sumIf, Int64)                      | DEX from bullish-sentiment trades             |
-| `bearish_dex`       | AggregateFunction(sumIf, Int64)                      | DEX from bearish-sentiment trades             |
-| `iv`                | AggregateFunction(argMax, Float32, DateTime)         | Latest implied volatility                     |
-| `delta`             | AggregateFunction(argMax, Float32, DateTime)         | Latest delta                                  |
-| `underlying_price`  | AggregateFunction(argMax, Float32, DateTime)         | Latest underlying price                       |
-| `latest_trade_time` | AggregateFunction(max, DateTime)                     | Latest trade time                             |
+**Write paths**:
+- **Flow (live)**: materialized view on `AggregatedOptionTrades` INSERT. Flow columns and trade-sourced bid/ask/Greeks are populated immediately; `prev_oi` and `close` receive no-op values until batch structure rows win on merge.
+- **Structure (batch/backfill)**: separate SQL writes seed all chain contracts, including non-traded contracts, with structure fields from `OptionChainTable`.
 
-**Engine**: `AggregatingMergeTree()`  
-**Partition**: `PARTITION BY date`  
-**Order**: `ORDER BY (date, option_symbol)`  
-**Source**: `AggregatedOptionTrades`
+**Rank filter**: contract flow ranks should filter on `sumMerge(trade_count) > 0` so structure-only baseline rows do not appear in flow rank lists.
+
+| Column | Type | Source | Description |
+| ------ | ---- | ------ | ----------- |
+| `date` | Date | key | Contract-day key |
+| `option_symbol` | String | key | Full OCC contract symbol |
+| `symbol` | AggregateFunction(any, String) | both | Underlying ticker |
+| `put_call` | AggregateFunction(any, String) | both | `CALL` or `PUT` |
+| `strike` | AggregateFunction(any, Float64) | both | Strike price |
+| `expiration_date` | AggregateFunction(any, String) | both | Expiration date, stored as string |
+| `underlying_type` | AggregateFunction(any, String) | both | Asset type (coalesced; defaults to `'INDEX'`) |
+| `moneyness` | AggregateFunction(argMax, String, DateTime) | flow | Latest moneyness (`ITM`/`ATM`/`OTM`) |
+| `expiry_days` | AggregateFunction(argMax, Nullable(Int32), DateTime) | both | Latest DTE |
+| `premium` | AggregateFunction(sum, Int32) | flow | Total premium |
+| `size` | AggregateFunction(sum, Int64) | flow | Total contracts |
+| `trade_count` | AggregateFunction(sum, Int64) | flow | Total raw trades aggregated |
+| `oi` | AggregateFunction(argMax, Int64, DateTime) | both | Latest open interest |
+| `daily_volume` | AggregateFunction(argMax, Int64, DateTime) | both | Latest daily volume |
+| `net_dex` | AggregateFunction(sum, Int64) | flow | Net signed DEX |
+| `bullish_dex` | AggregateFunction(sumIf, Int64, UInt8) | flow | DEX from bullish-sentiment trades |
+| `bearish_dex` | AggregateFunction(sumIf, Int64, UInt8) | flow | DEX from bearish-sentiment trades |
+| `iv` | AggregateFunction(argMax, Float32, DateTime) | both | Latest implied volatility |
+| `delta` | AggregateFunction(argMax, Float32, DateTime) | both | Latest delta |
+| `underlying_price` | AggregateFunction(argMax, Float32, DateTime) | flow | Latest underlying price |
+| `latest_trade_time` | AggregateFunction(max, DateTime) | flow | Latest trade time |
+| `prev_oi` | AggregateFunction(argMax, Nullable(Int32), UInt64) | structure | Prior available snapshot OI |
+| `bid` | AggregateFunction(argMax, Float32, DateTime) | both | Latest bid |
+| `ask` | AggregateFunction(argMax, Float32, DateTime) | both | Latest ask |
+| `close` | AggregateFunction(argMax, Float32, UInt64) | structure | Chain close/settlement |
+| `gamma` | AggregateFunction(argMax, Float32, DateTime) | both | Latest gamma |
+| `theta` | AggregateFunction(argMax, Float32, DateTime) | both | Latest theta |
+| `vega` | AggregateFunction(argMax, Float32, DateTime) | both | Latest vega |
+
+**Compute at query time, do not store**: `oi_delta`, `oi_delta_pct`, `vol_oi_ratio`, `contract_gex`, `premium_per_contract`, `avg_trade_size`, expiry buckets.
+
+**Do not store**: `next_oi`, `next_oi_delta`, `next_oi_delta_pct`. Use date `D` flow versus date `D+1` mart rows for lead-lag research.
+
+- **Engine**: `SharedAggregatingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`
+- **Partition**: `PARTITION BY date`
+- **Order**: `ORDER BY (date, option_symbol)`
+- **Source**: `AggregatedOptionTrades` for live flow; batch/backfill SQL for structure fields
 
 **Query pattern**: Merge states in a CTE, then filter/sort on materialized columns:
 
@@ -265,15 +310,20 @@ WITH merged_contracts AS (
     sumMerge(premium)         AS premium,
     sumMerge(trade_count)     AS trade_count,
     argMaxMerge(oi)           AS oi,
+    argMaxMerge(prev_oi)      AS prev_oi,
     argMaxMerge(daily_volume) AS daily_volume,
+    argMaxMerge(gamma)        AS gamma,
     sumMerge(net_dex)         AS net_dex
-    -- ... other columns
   FROM mv_contract_day_flow
   WHERE date = {effective_date:Date}
   GROUP BY option_symbol
 )
-SELECT *, if(oi > 0, toFloat64(daily_volume) / toFloat64(oi), 0) AS vol_oi_ratio
+SELECT
+  *,
+  oi - prev_oi AS oi_delta,
+  if(oi > 0, toFloat64(daily_volume) / toFloat64(oi), 0) AS vol_oi_ratio
 FROM merged_contracts
+WHERE trade_count > 0
 ORDER BY premium DESC
 LIMIT {limit:UInt64} OFFSET {offset:UInt64}
 ```
@@ -310,8 +360,8 @@ Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (
 | **RawOptionTrades**        | Raw option trades                      | Exact T&S, research, unaggregated flow                                |
 | **OptionChainTable**       | Option chain snapshot                  | OI, GEX, call/put walls, strike analysis, `oi_change_1d` per contract |
 | **SymbolMetaData**         | Underlying metadata                    | Filters, joins, sector/volume/market cap                              |
-| **mv_symbol_day_flow**     | MV: per-symbol daily flow aggregates   | Market Rank screener (replaces full-day scan)                         |
-| **mv_contract_day_flow**   | MV: per-contract daily flow aggregates | Contract Flow Rank screener, full_day mode                            |
+| **mv_symbol_day_flow**     | MV: symbol-day flow + structure mart   | Symbol-level analysis, Market Rank, GEX/vol context                   |
+| **mv_contract_day_flow**   | MV: contract-day flow + structure mart | Contract Flow Rank screener, OI/contract context                      |
 | **SymbolVolDaily**         | Derived daily ATM IV + rank/percentile | IV Rank, IV Percentile, Volatility Desk                               |
 
 ---
@@ -321,7 +371,7 @@ Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (
 - **OI timing**: Open interest is updated overnight (e.g. ~6:30 AM ET). Intraday `oi` in flow/chain tables is the prior day’s value; see [OI Update Frequency](./basic_concepts.md#oi-update-frequency).
 - **Time zones**: `AggregatedOptionTrades.time` is `DateTime` (server TZ); `RawOptionTrades.time` is explicitly `America/New_York`.
 - **SharedMergeTree**: Tables use ClickHouse shared storage (`{uuid}`, `{shard}`, `{replica}`); replace with your cluster layout as needed.
-- **Materialized views (`AggregatingMergeTree`)**: `mv_symbol_day_flow` and `mv_contract_day_flow` store `AggregateFunction(...)` columns. Query with `-Merge` suffix functions (e.g. `sumMerge(total_premium)`). They trigger on INSERTs to `AggregatedOptionTrades` only — OptionChainTable inserts do not affect them.
+- **Materialized views (`SharedAggregatingMergeTree`)**: `mv_symbol_day_flow` and `mv_contract_day_flow` store `AggregateFunction(...)` columns. Query with `-Merge` suffix functions (e.g. `sumMerge(total_premium)`). Live flow rows trigger on INSERTs to `AggregatedOptionTrades`; structure fields are populated by separate batch/backfill writes from `OptionChainTable`, `SymbolMetaData`, and `SymbolVolDaily`.
 - **SymbolVolDaily**: Populated by a daily batch job (not an MV). IV Rank and IV Percentile require ~252 trading days of history to reach full accuracy.
 - **`oi_change_1d`**: Computed at ingestion time in the pipeline. For backfill, use a `Join` engine table + `ALTER TABLE UPDATE ... joinGet(...)` pattern (version-sensitive; validate against your ClickHouse version).
 

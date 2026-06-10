@@ -1,6 +1,6 @@
 ---
 name: check-data-integrity
-description: Runs a post-close ClickHouse data integrity scan on the latest trading date for TradingFlow UW ingest. Checks premium mix, metadata pollution, DEI gaps, row counts, and SymbolMetaData coverage. Use when the user asks for data integrity, data pollution, ETL health, post-close audit, May-29-style regressions, or zero market_cap/dei issues.
+description: Runs a post-close ClickHouse data integrity and Option Trades latency scan on the latest trading date for TradingFlow UW ingest. Checks premium mix, metadata pollution, DEI gaps, row counts, SymbolMetaData coverage, and producer persist lag (open-window p50/p95, >30s/>5m tails, small-trade coverage). Use when the user asks for data integrity, data pollution, ETL health, post-close audit, latency, May-29-style regressions, or zero market_cap/dei issues.
 ---
 
 # Data Integrity Scan (TradingFlow)
@@ -18,7 +18,9 @@ Agent runbook for judging whether **AggregatedOptionTrades** data for the latest
 | Item | Location |
 | --- | --- |
 | ClickHouse credentials | `tradingflow-process-service-ec2/.env` — `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD` |
-| Automated script | `tradingflow-process-service-ec2/scripts/check-data-integrity.ts` |
+| Integrity script | `tradingflow-process-service-ec2/scripts/check-data-integrity.ts` |
+| Latency scripts | `tradingflow-process-service-ec2/scripts/verify-producer-freshness.ts`, `audit-small-trade-coverage.ts` |
+| Latency harness (SLOs, Better Stack fields) | `tradingflow-process-service-ec2/wiki/harness/check-optiontrades-latency/` |
 | **Do not** use ClickHouse MCP against production cloud | Use `.env` + HTTP/fetch or `bun` script per process-service `AGENTS.md` |
 
 Live UW ingest runs in **`tradingflow-cfworker-service`** (`UwIngestionDO`). Nightly symbol meta runs in **`tradingflow-process-service-ec2`** (`SyncSymbolMetaService`).
@@ -126,11 +128,12 @@ Copy and track:
 ```
 - [ ] 1. Resolve latest trading date (ET)
 - [ ] 2. Run automated integrity script (--strict)
-- [ ] 3. If any breach → drill-down SQL (Section 4)
-- [ ] 4. Check SymbolMetaData coverage for that date
-- [ ] 5. Optional: Better Stack uw_websocket_health corroboration
-- [ ] 6. Verdict + remediation (Section 6–7)
-- [ ] 7. Report to user (Section 8 template)
+- [ ] 3. Run Option Trades latency audit (Section 4)
+- [ ] 4. If any breach → drill-down SQL (Section 5)
+- [ ] 5. Check SymbolMetaData coverage for that date
+- [ ] 6. Optional: Better Stack uw_websocket_health corroboration (Section 6)
+- [ ] 7. Verdict + remediation (Section 7–8)
+- [ ] 8. Report to user (Section 9 template)
 ```
 
 ### 1. Resolve latest trading date
@@ -170,9 +173,9 @@ BASELINE=2026-05-28       # recent healthy day, ~1 week prior
 bun scripts/check-data-integrity.ts --date "$DATE" --baseline-date "$BASELINE" --strict
 ```
 
-Exit **0** = all thresholds pass. Exit **1** = at least one breach (investigate Section 4).
+Exit **0** = all thresholds pass. Exit **1** = at least one breach (investigate Section 5).
 
-### 3. Thresholds (defaults in script)
+### 3. Thresholds (defaults in integrity script)
 
 | Metric | Healthy (typical) | Breach threshold | Likely cause |
 | --- | --- | --- | --- |
@@ -187,7 +190,48 @@ Exit **0** = all thresholds pass. Exit **1** = at least one breach (investigate 
 
 ---
 
-## 4. Drill-down SQL (run on breach)
+## 4. Option Trades latency (producer persist lag)
+
+Measures **trade time → ClickHouse row** lag on `AggregatedOptionTrades` (`time` vs `updated_timestamp`). This is **not** UI latency or UW vendor delay alone — see `wiki/harness/check-optiontrades-latency/reference-metrics.md` for Δ vs persist lag and Better Stack fields.
+
+**Timing:** Run on the same `DATE` as the integrity scan, after the session has rows (post-close). Skip if `total = 0` (pre-open / ingest not finished).
+
+From `tradingflow-process-service-ec2`:
+
+```bash
+cd tradingflow-process-service-ec2
+DATE=2026-06-08   # from step 1
+bun scripts/verify-producer-freshness.ts "$DATE"
+bun scripts/verify-producer-freshness.ts --compare 2026-06-05,"$DATE"   # optional baseline day
+bun scripts/audit-small-trade-coverage.ts "$DATE"
+```
+
+### Latency thresholds (open window 09:30–09:35 ET)
+
+| Metric | Healthy (typical) | Investigate | Likely cause |
+| --- | --- | --- | --- |
+| Open **p50** lag | **≤ 3s** | **> 10s** | Write-buffer backlog, slow drain, or upstream burst at bell |
+| Open **p95** lag | **≤ ~65s** | **> 120s** | Buffer depth, CH insert pressure, or UW upstream tail |
+| Open **`rows_gt_30s` / open rows** | Down vs prior days | **> ~30%** of open rows | Same; compare with `--compare` |
+| Open **`rows_gt_5min`** | **0** (usual) | **> 0** sustained at bell | Severe producer backlog at open |
+| Full-day **`rows_gt_5min_day`** | **&lt; ~50k** | **> ~100k** with **`rows_gt_10min_day = 0`** | Mid-session catch-up (5–10 min lag), not row drops |
+| Full-day **`rows_gt_10min_day`** | **0** on healthy days | **> 0** or **0** with low row count | **0 + thin day** → possible dropped rows (May 19 pattern) |
+| Hourly coverage | All RTH hours **> 0** | Hour **10 ET = 0** | Mid-morning ingest failure |
+| **`agg_to_raw_ratio`** (coverage script) | **~0.99–1.01** per hour | **&lt; 0.95** | Silent raw/agg loss or aggregation gap |
+
+**Small-trade coverage (`audit-small-trade-coverage.ts`):** Confirms low-premium bands are present and hourly `raw_rows` ≈ `sum(trade_count)` on aggregates. A healthy premium mix with ratio ≈ 1.0 rules out May-29-style buffer starvation even when latency tails are elevated.
+
+**Good latency verdict:** open p50 ≤ 3s, p95 ≤ ~65s, `rows_gt_10min_day = 0`, hourly holes none, `agg_to_raw_ratio` ≈ 1.0, no Better Stack buffer drops (Section 6).
+
+**Degraded latency verdict:** open p50 OK but elevated p95 or large `rows_gt_5min_day` with `rows_gt_10min_day = 0` — usually **catch-up backlog**, corroborate with Better Stack `max_low_priority_lag_ms` / `write_buffer_*_drops`.
+
+**Bad latency verdict:** open p50 **> 10s**, hour 10 = 0 rows, `write_buffer_high_drops > 0`, or `agg_to_raw_ratio` collapse with inverted premium mix (integrity breach).
+
+Full audit procedure, Better Stack signals, and report fields: `tradingflow-process-service-ec2/wiki/harness/check-optiontrades-latency/SKILL.md`.
+
+---
+
+## 5. Drill-down SQL (run on breach)
 
 Run from process-service with `.env` loaded (`bun -e` or script). Replace `YYYY-MM-DD`.
 
@@ -300,7 +344,7 @@ Expect first trade ~**09:35 ET**, last ~**16:59 ET** on full days.
 
 ---
 
-## 5. Better Stack corroboration (optional)
+## 6. Better Stack corroboration (optional)
 
 Search **`uw_websocket_health`** on production CF Worker during the session:
 
@@ -315,7 +359,7 @@ See `tradingflow-cfworker-service/wiki/operation.md` (Post-incident prevention d
 
 ---
 
-## 6. Remediation (after bad verdict)
+## 7. Remediation (after bad verdict)
 
 | Finding | Fix |
 | --- | --- |
@@ -323,6 +367,7 @@ See `tradingflow-cfworker-service/wiki/operation.md` (Post-incident prevention d
 | Widespread `market_cap=0` on one day | `bun scripts/backfill-trade-metadata.ts --date YYYY-MM-DD --apply` |
 | BRKB/BFB/CMCS zeros | Ensure not in `EXCLUDED_SYMBOLS`; aliases in `src/shared/symbol-meta-aliases.ts`; re-run sync or one-off meta insert |
 | DEI zeros | `bun scripts/backfill-dei.ts --date YYYY-MM-DD --apply` |
+| Elevated open p95 / large `>5m` tail, coverage OK | Check CF Worker `UW_LOW_STARVATION_FORCE_DRAIN_MS`, buffer depth; see `check-optiontrades-latency/reference-audit.md` |
 | Missing agg rows (never written) | **Not recoverable** from ClickHouse alone — gap is permanent for that window |
 | MV contract columns stale | `tradingflow-webapp-fullstack/scripts/clickhouse/backfill/run-backfill.mjs` (schema probe picks legacy vs modern) |
 
@@ -330,7 +375,7 @@ After backfills, wait for ClickHouse mutations (`system.mutations`, `is_done=1`)
 
 ---
 
-## 7. Upstream vs local (attribution cheat sheet)
+## 8. Upstream vs local (attribution cheat sheet)
 
 | Symptom | Usually |
 | --- | --- |
@@ -342,17 +387,21 @@ After backfills, wait for ClickHouse mutations (`system.mutations`, `is_done=1`)
 | Reference null `market_cap`, history OK | **Expected upstream gap** — Polygon Reference + Longport static both missed; row still inserted; not a full skip |
 | Symbol skipped after all history providers empty | **Upstream no-data** for that ticker — check `aggregatesNoData` in sync summary |
 | Broad Polygon errors (&gt;5% of universe) | Possible **true upstream outage** — corroborate sync logs |
+| Open p50 OK, large `>5m(d)`, `>10m(d)=0`, ratios ≈ 1.0 | **Local** catch-up backlog — buffer/drain tuning, not data loss |
+| High open p50 + CH hour gaps | **Local** ingest / write-buffer incident |
 
 Do **not** blame Massive API outage until drill-down shows **broad** multi-symbol failure **and** sync logs show Polygon errors at scale. Isolated symbols (aliases, exclusions, illiquid OTC) are usually config or per-ticker upstream limits, not platform outage.
 
 ---
 
-## 8. Report template
+## 9. Report template
 
 ```markdown
 ## Data integrity — {date} (ET)
 
 **Verdict:** Good / Degraded / Bad
+
+### Metadata & row health
 
 | Check | Value | Threshold | Status |
 | --- | --- | --- | --- |
@@ -362,6 +411,18 @@ Do **not** blame Massive API outage until drill-down shows **broad** multi-symbo
 | zero_dei_with_dex share | | ≤ 0.02 | |
 | SymbolMetaData rows | | ≥ 5000 | |
 | Coverage gaps (≥10 trades) | | 0 symbols | |
+
+### Option Trades latency (09:30–09:35 ET)
+
+| Check | Value | Threshold | Status |
+| --- | --- | --- | --- |
+| Open p50 lag | | ≤ 3s | |
+| Open p95 lag | | ≤ ~65s | |
+| Open rows &gt; 30s | | down vs baseline | |
+| Full-day rows &gt; 5m | | &lt; ~100k (context) | |
+| Full-day rows &gt; 10m | | 0 typical | |
+| agg_to_raw_ratio (hourly) | | ~1.0 | |
+| Hourly gaps | | none | |
 
 **Top issues:** (symbols / counts)
 
@@ -391,6 +452,8 @@ bun scripts/check-greeks-parity.ts --date YYYY-MM-DD
 | Artifact | Repo |
 | --- | --- |
 | `scripts/check-data-integrity.ts` | `tradingflow-process-service-ec2` |
+| `scripts/verify-producer-freshness.ts`, `scripts/audit-small-trade-coverage.ts` | `tradingflow-process-service-ec2` |
+| `wiki/harness/check-optiontrades-latency/` | `tradingflow-process-service-ec2` |
 | `scripts/check-greeks-parity.ts` | `tradingflow-process-service-ec2` |
 | `scripts/backfill-trade-metadata.ts`, `backfill-dei.ts` | `tradingflow-process-service-ec2` |
 | `src/sync-symbol-meta/coverage-gate.ts` | `tradingflow-process-service-ec2` |

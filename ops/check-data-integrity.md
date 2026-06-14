@@ -1,11 +1,28 @@
 ---
 name: check-data-integrity
-description: Runs a post-close ClickHouse data integrity and Option Trades latency scan on the latest trading date for TradingFlow UW ingest. Checks premium mix, metadata pollution, DEI gaps, row counts, SymbolMetaData coverage, and producer persist lag (open-window p50/p95, >30s/>5m tails, small-trade coverage). Use when the user asks for data integrity, data pollution, ETL health, post-close audit, latency, May-29-style regressions, or zero market_cap/dei issues.
+description: Runs a post-close ClickHouse data integrity and Option Trades latency scan on the latest trading date for TradingFlow UW ingest from the local workspace projects. Checks premium mix, metadata pollution, DEI gaps, row counts, SymbolMetaData coverage, and producer persist lag (open-window p50/p95, >30s/>5m tails, small-trade coverage). Use when the user asks for data integrity, data pollution, ETL health, post-close audit, latency, May-29-style regressions, or zero market_cap/dei issues.
 ---
 
 # Data Integrity Scan (TradingFlow)
 
-Agent runbook for judging whether **AggregatedOptionTrades** data for the latest trading date is healthy. Based on the May 2026 CF Worker cutover incident (write-buffer starvation, missing SymbolMetaData, BRKB/BFB alias gaps).
+Workspace runbook for judging whether **AggregatedOptionTrades** data for the latest trading date is healthy. Based on the May 2026 CF Worker cutover incident (write-buffer starvation, missing SymbolMetaData, BRKB/BFB alias gaps).
+
+## Local workspace project map
+
+The workspace root on this machine is:
+
+```bash
+WORKSPACE=/Users/evansmacbookpro/Desktop/Projects
+```
+
+| Role | Project |
+| --- | --- |
+| Runbook source | `$WORKSPACE/awesome-ai-coding-rules` |
+| ClickHouse audit scripts, symbol meta sync, backfills | `$WORKSPACE/tradingflow-process-service-ec2` |
+| Live UW ingest, write buffer, Better Stack health logs | `$WORKSPACE/tradingflow-cfworker-service` |
+| Webapp consumers, contract-rank backfill helper | `$WORKSPACE/tradingflow-webapp-fullstack` |
+
+Other sibling projects currently in the workspace (`tradingflow-api-service-lambda`, `tradingflow-cron-service-lambda`, `tradingflow-quant-service`, `tradingflow-web-landingpage`) are not primary sources for this UW trade/meta integrity audit. Only pull them in if a drill-down points to an API, cron, quant, or landing-page boundary.
 
 ## When to run
 
@@ -15,15 +32,17 @@ Agent runbook for judging whether **AggregatedOptionTrades** data for the latest
 
 ## Prerequisites
 
-| Item | Location |
+| Item | Workspace location |
 | --- | --- |
-| ClickHouse credentials | `tradingflow-process-service-ec2/.env` — `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD` |
-| Integrity script | `tradingflow-process-service-ec2/scripts/check-data-integrity.ts` |
-| Latency scripts | `tradingflow-process-service-ec2/scripts/verify-producer-freshness.ts`, `audit-small-trade-coverage.ts` |
-| Latency harness (SLOs, Better Stack fields) | `tradingflow-process-service-ec2/wiki/harness/check-optiontrades-latency/` |
+| ClickHouse credentials | `$WORKSPACE/tradingflow-process-service-ec2/.env` — `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD` |
+| Integrity script | `$WORKSPACE/tradingflow-process-service-ec2/scripts/check-data-integrity.ts` |
+| Latency scripts | `$WORKSPACE/tradingflow-process-service-ec2/scripts/verify-producer-freshness.ts`, `audit-small-trade-coverage.ts` |
+| Latency harness (SLOs, Better Stack fields) | `$WORKSPACE/tradingflow-process-service-ec2/wiki/harness/check-optiontrades-latency/` |
 | **Do not** use ClickHouse MCP against production cloud | Use `.env` + HTTP/fetch or `bun` script per process-service `AGENTS.md` |
 
 Live UW ingest runs in **`tradingflow-cfworker-service`** (`UwIngestionDO`). Nightly symbol meta runs in **`tradingflow-process-service-ec2`** (`SyncSymbolMetaService`).
+
+Run the executable checks from `tradingflow-process-service-ec2`; keep this repo as the runbook/docs source. Prefer `bun` for these scripts because it auto-loads `.env` in this project.
 
 ---
 
@@ -164,10 +183,10 @@ WHERE date = toDate('YYYY-MM-DD')
 
 ### 2. Run automated script
 
-From `tradingflow-process-service-ec2`:
+From the process-service project:
 
 ```bash
-cd tradingflow-process-service-ec2
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
 DATE=2026-06-03          # from step 1
 BASELINE=2026-05-28       # recent healthy day, ~1 week prior
 bun scripts/check-data-integrity.ts --date "$DATE" --baseline-date "$BASELINE" --strict
@@ -196,10 +215,10 @@ Measures **trade time → ClickHouse row** lag on `AggregatedOptionTrades` (`tim
 
 **Timing:** Run on the same `DATE` as the integrity scan, after the session has rows (post-close). Skip if `total = 0` (pre-open / ingest not finished).
 
-From `tradingflow-process-service-ec2`:
+From the process-service project:
 
 ```bash
-cd tradingflow-process-service-ec2
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
 DATE=2026-06-08   # from step 1
 bun scripts/verify-producer-freshness.ts "$DATE"
 bun scripts/verify-producer-freshness.ts --compare 2026-06-05,"$DATE"   # optional baseline day
@@ -355,7 +374,7 @@ Search **`uw_websocket_health`** on production CF Worker during the session:
 | `dei_suppressed_missing_symbol_meta` | ~0 after meta loaded | Missing snapshot rows at normalize |
 | `market_cap_suppressed_missing_symbol_meta` | ~0 after meta loaded | Same, for market_cap |
 
-See `tradingflow-cfworker-service/wiki/operation.md` (Post-incident prevention deploy).
+See `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service/wiki/operation.md` (Post-incident prevention deploy). Treat existing uncommitted changes in that repo as user work unless the task explicitly asks to modify them.
 
 ---
 
@@ -369,7 +388,7 @@ See `tradingflow-cfworker-service/wiki/operation.md` (Post-incident prevention d
 | DEI zeros | `bun scripts/backfill-dei.ts --date YYYY-MM-DD --apply` |
 | Elevated open p95 / large `>5m` tail, coverage OK | Check CF Worker `UW_LOW_STARVATION_FORCE_DRAIN_MS`, buffer depth; see `check-optiontrades-latency/reference-audit.md` |
 | Missing agg rows (never written) | **Not recoverable** from ClickHouse alone — gap is permanent for that window |
-| MV contract columns stale | `tradingflow-webapp-fullstack/scripts/clickhouse/backfill/run-backfill.mjs` (schema probe picks legacy vs modern) |
+| MV contract columns stale | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/scripts/clickhouse/backfill/run-backfill.mjs` (schema probe picks legacy vs modern) |
 
 After backfills, wait for ClickHouse mutations (`system.mutations`, `is_done=1`) before re-running this scan.
 
@@ -441,7 +460,7 @@ Trade/metadata integrity does **not** validate IV, delta, or option prices. Afte
 - **Phase B** — `mv_contract_day_flow` vs `OptionChainTable` (internal consistency for contract-rank Greeks)
 
 ```bash
-cd tradingflow-process-service-ec2
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
 bun scripts/check-greeks-parity.ts --date YYYY-MM-DD
 ```
 
@@ -449,15 +468,15 @@ bun scripts/check-greeks-parity.ts --date YYYY-MM-DD
 
 ## Related code
 
-| Artifact | Repo |
+| Artifact | Workspace project |
 | --- | --- |
-| `scripts/check-data-integrity.ts` | `tradingflow-process-service-ec2` |
-| `scripts/verify-producer-freshness.ts`, `scripts/audit-small-trade-coverage.ts` | `tradingflow-process-service-ec2` |
-| `wiki/harness/check-optiontrades-latency/` | `tradingflow-process-service-ec2` |
-| `scripts/check-greeks-parity.ts` | `tradingflow-process-service-ec2` |
-| `scripts/backfill-trade-metadata.ts`, `backfill-dei.ts` | `tradingflow-process-service-ec2` |
-| `src/sync-symbol-meta/coverage-gate.ts` | `tradingflow-process-service-ec2` |
-| `src/shared/symbol-meta-aliases.ts` | both process-service and cfworker |
-| `wiki/operation.md`, `wiki/uw-ingestion-do.md` | `tradingflow-cfworker-service` |
-| Pipeline context | `awesome-ai-coding-rules/knowledge/data-flow.md` |
-| Symbol meta invariants + fallback detail | `tradingflow-process-service-ec2/wiki/domain-invariants/symbol-meta.md` |
+| `scripts/check-data-integrity.ts` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `scripts/verify-producer-freshness.ts`, `scripts/audit-small-trade-coverage.ts` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `wiki/harness/check-optiontrades-latency/` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `scripts/check-greeks-parity.ts` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `scripts/backfill-trade-metadata.ts`, `backfill-dei.ts` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `src/sync-symbol-meta/coverage-gate.ts` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` |
+| `src/shared/symbol-meta-aliases.ts` | process-service and `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service` |
+| `wiki/operation.md`, `wiki/uw-ingestion-do.md` | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service` |
+| Pipeline context | `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/knowledge/data-flow.md` |
+| Symbol meta invariants + fallback detail | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2/wiki/domain-invariants/symbol-meta.md` |

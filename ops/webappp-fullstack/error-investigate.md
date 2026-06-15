@@ -346,7 +346,7 @@ Return:
 4. Better Stack pattern ids with counts/timestamps and drill-down summary.
 5. Correlation keys used: time slice, correlationId, scope, operation, requestUrl/route, stack top frames, channel.
 6. Clustered likely root causes with confidence and evidence.
-7. EvidenceAudit lines for phases run/skipped (post-deploy-backlog, posthog-list, posthog-detail, betterstack-errors, betterstack-logs, repo-read, runbook-maint, none).
+7. EvidenceAudit lines for phases run/skipped (post-deploy-backlog, posthog-access, posthog-list, posthog-detail, betterstack-errors, betterstack-logs, repo-read, runbook-maint, none).
 8. Targeted repo paths worth reading next, if any.
 9. Fix plan and verification signals (no implementation).
 10. Runbook maintenance: backlog row added, archived, or unchanged.
@@ -379,6 +379,7 @@ The Master writes one `EvidenceAudit` block after each Subagent return. It answe
 ```text
 EvidenceAudit (turn N):
 - post-deploy-backlog: <ran|skipped>  why=<reason>  rows=<backlog fix names checked>  result=<pass|fail|pending>
+- posthog-access    : <ran|skipped>  why=<reason>  tools=<@posthog tool names or unavailable>  fallback=<none|chrome-approved|chrome-requested>
 - posthog-list      : <ran|skipped>  why=<reason>  ids=<issue UUIDs or empty>
 - posthog-detail    : <ran|skipped>  why=<reason>  ids=<issue UUIDs drilled or empty>
 - betterstack-errors: <ran|skipped>  why=<reason>  ids=<pattern ids or empty>  app=<resolved application_id>

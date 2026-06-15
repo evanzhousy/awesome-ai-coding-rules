@@ -17,12 +17,13 @@ Use this skill when:
 
 ## Repo map
 
-### Blog posts (this repo)
+### Blog posts (target repo)
+- Target checkout: `../tradingflow-web-landingpage` when this runbook is opened from `awesome-ai-coding-rules`.
 - Posts: `content/posts/<slug>/` with `index.mdx`, `index.zh.mdx`, and `images/` (including `cover.png`).
 - Build/assets: `bun run build:dev` → `scripts/copy-assets.ts` copies non-MDX assets to `public/<postsBasePath>/` (see `site.config.ts` `posts.basePath`, often `blogs`).
 - Capture script: `scripts/capture-blog-ui-screenshots.ts` (uses Playwright against sibling webapp dev server).
 
-### Product Changelog (this repo)
+### Product Changelog (target repo)
 - Release data: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`, `PRODUCT_CHANGELOG_AREAS`, helpers).
 - Tests: `src/lib/productChangelog.test.ts`.
 - Page UI: `src/components/ProductChangelog.tsx`.
@@ -30,7 +31,26 @@ Use this skill when:
 - i18n chrome: `src/i18n/translations.ts`.
 - Feature gate: `site.config.ts` `features.changelog.enabled`.
 
-**Important invariant:** The single source of truth for release data is **this repo** (`tradingflow-web-landingpage`). The webapp (`tradingflow-webapp-fullstack`) only links to `${MARKETING_SITE_URL}/changelog` and does not duplicate `PRODUCT_CHANGELOG_RELEASES`.
+**Important invariant:** The single source of truth for release data is **the landing repo** (`tradingflow-web-landingpage`). The webapp (`tradingflow-webapp-fullstack`) only links to `${MARKETING_SITE_URL}/changelog` and does not duplicate `PRODUCT_CHANGELOG_RELEASES`.
+
+### Current app route topology
+- **Rank workbench:** `/app/rank`
+- **Contract-level analysis:** `/app/rank/contracts`; legacy `/app/contract-rank` redirects here.
+- **Symbol-level analysis:** `/app/rank/symbols`; legacy `/app/market-rank` and `/app/symbol-level` redirect here.
+- **Option Chain Analysis:** no standalone route; GEX / Vol / Positioning / Chain capabilities live in Rank Symbols and the symbol inspection drawer. Legacy `/app/option-chain-analysis` should land on Rank Symbols.
+
+### Preflight safety
+Before touching files, check all involved worktrees:
+
+```bash
+git -C ../tradingflow-web-landingpage status --short
+git -C ../tradingflow-webapp-fullstack status --short
+git status --short
+```
+
+- Treat unrelated modified/deleted/untracked files as user or external work. Do not revert them.
+- If a sibling dev server is already running, reuse the active port after confirming it serves the webapp.
+- Keep intended edits scoped to the landing repo, the webapp What's New config/tests, and this runbook unless the product/docs contract requires more.
 
 ## Blog Posts Maintenance
 
@@ -54,7 +74,7 @@ Use this skill when:
    - OTP: `424242` (`E2E_VERIFICATION_CODE`)
 4. References: webapp `tests/e2e/fixtures/auth.ts`, its `doc/automation/e2e-test/README.md`, and landing `AGENTS.md`.
 
-The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`, seeds `sessionStorage` for feature announcements (default campaign `2026-05-product-ships`, overridable via `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID`), and handles What's New dismissal.
+The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`, seeds `sessionStorage` for feature announcements (default campaign `2026-06-rank-workbench`, overridable via `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID`), and handles What's New dismissal.
 
 **Troubleshooting:** wrong `BLOG_UI_CAPTURE_BASE_URL` port, mismatched Clerk keys, stale OTP env — fix before re-running.
 
@@ -66,10 +86,19 @@ BLOG_UI_CAPTURE_BASE_URL=http://localhost:8000 bun run capture-blog-ui
 
 Constants: `VIEWPORT` 1600×900, `TABLE_SCREENSHOT_MAX_HEIGHT_PX` (960), `DRAWER_SCREENSHOT_MAX_HEIGHT_PX` (1700), contract drawer env vars for option symbol / underlying (default TSLA).
 
+### Capture output triage
+- A missing Rank Symbols Filters button can be an expected warning when that toolbar state does not expose filters; the optional crop should warn and continue.
+- If Contract Rank cannot find the default TSLA rows, either set `BLOG_UI_CAPTURE_CONTRACT_UNDERLYING_SYMBOL` to a visible ticker or accept the heuristic fallback only after visually checking the saved drawer.
+- If a saved table PNG is very short, mostly blank, or much smaller than prior captures, inspect it immediately and strengthen the route readiness or crop logic before continuing.
+- Do not rely on dimensions alone: a 1600px-wide image can still be a spinner frame.
+- Always inspect raw screenshots for loading copy, skeletons, progress bars, and spinners before annotating or building. If a screenshot is still loading, fix the capture readiness gate and recapture instead of documenting around it.
+
 ### `ROUTE_PLAN` and retired-post sync
 `ROUTE_PLAN` in the capture script lists every `/app/...` route and the relative PNG paths (viewport, table, drawer, optional filters).
 
-- Option Chain Analysis outputs are duplicated into legacy `gex-screener` paths in the same pass.
+- Rank Contracts outputs source the Contract-level blog images.
+- Rank Symbols outputs source the Symbol-level blog images and the Option Chain Analysis feature-set images.
+- Option Chain Analysis-named outputs are duplicated into legacy `gex-screener` paths in the same pass.
 - After the loop, `syncRetiredPostScreenshotsFromOptionChainAnalysis()` copies from `option-chain-analysis/images/` into `oi-change-rank` and `volatility-desk` (including `cover.png`).
 
 ### Avoid screenshots while loading
@@ -77,20 +106,39 @@ Use deterministic waits:
 - Session: `waitForAppReady`
 - Shell: `waitForDataAppShellIdle`
 - Route surface: `waitForRouteSurfaceReady` (first table, specific testids, charts)
-- Drawers: hide loading text / aria-busy cycles, fall back to documented no-data/error text.
+- Drawers: hide loading text / aria-busy cycles, fall back to documented no-data/error text or the current deferred-load panel when the product intentionally asks the user to load premium detail.
+
+Current drawer openers:
+- Rank Contracts: `contract-flow-drawer-shortcut-flow-*` opens the Flow tab. If no preferred `BLOG_UI_CAPTURE_CONTRACT_UNDERLYING_SYMBOL` rows are visible, the capture script falls back to heuristic rows and may keep the first visible deferred-load drawer.
+- Rank Symbols: click the symbol chip button whose aria label starts with `Open symbol drawer`.
+- Rank Symbols may not expose a Filters button in every state; missing optional filter crops should warn and continue, not fail the full capture.
+- Option Trades readiness must wait for `[data-agent-id="option-trades-filter-view-trigger"]`, `table tbody`, at least one visible `tr td`, and the `Loading table data` overlay to clear before writing table PNGs.
 
 Re-open drawers and re-capture if a saved PNG still shows loading UI.
 
 ### Remove blank space
 - Tables: `page.screenshot({ fullPage: false, clip: firstTable.boundingBox() })` clamped to max height. Never use `locator.screenshot()` on `<table>` (captures full DOM height → thousands of px).
+- If a virtualized table reports only a shallow height (for example just header / rendered window), expand the crop to a useful viewport slice before saving so the PNG includes real rows.
 - Drawers: clip `[data-slot="sheet-content"]` (capped height, no full dimmed backdrop).
 - After manual `sips` crop/resize, re-run `bun run build:dev`.
 
 ### Image quality checks
 - No spinner/skeleton text or progress overlays.
+- No route-level loading copy such as `Loading Contract-level analysis...`, `Loading ranked contracts...`, or `Loading table data`.
 - Drawer images show panel content only.
 - Table images are useful top crops (not full scroll).
 - Spot-check dimensions with `sips -g pixelWidth -g pixelHeight`.
+- Visually inspect at least one representative table and drawer after every capture run, including `option-trades-table-ui.png`, `contract-rank-drawer-ui.png`, and `option-chain-analysis-drawer-ui.png` when those files are regenerated.
+
+### Screenshot annotations
+Use annotations when a dense product screenshot needs help explaining the workflow. Keep them instructional, not decorative.
+
+- Annotate only after the raw capture has passed the loading-state check.
+- Keep labels short and tied to user-visible product concepts, such as `Session freshness`, `Filters and refresh`, `Ranked contract grid`, or `Option Trades handoff`.
+- Do not cover the data the label is explaining. Prefer callout boxes, thin outlines, and leader lines placed over low-information areas.
+- If an annotation obscures core table rows, titles, or controls, adjust the callout and regenerate from a clean capture.
+- Use `bun run annotate-blog-ui contract-rank` for the current Contract-level analysis callouts after `bun run capture-blog-ui`.
+- After annotation, visually inspect the annotated PNGs again and run the normal build verification.
 
 ### Content rules
 - **EN + zh:** Keep `index.mdx` and `index.zh.mdx` in sync (structure, images, adapted captions).
@@ -103,7 +151,7 @@ Blog work for a product ship should be coordinated with changelog / What's New u
 After capture/MDX edits:
 - If a post slug is in an active slide’s `postPath`, refresh the slide’s `body` and confirm `postPath`.
 - If cover art under `public/feature-announcement/` changed, bump cache-bust in webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`.
-- Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/domain-invariants/feature/new-feature-modal.md` (Invariant 11) and the changelog skill’s “What's New sync” section.
+- Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")** and the changelog skill’s “What's New sync” section.
 - If `FEATURE_ANNOUNCEMENT.campaignId` changes, update the capture script default and `AGENTS.md`.
 
 ### Verification (blog)
@@ -124,17 +172,17 @@ Use `bun run build` when you need production image optimizer hash refresh (see `
 
 **Do not** use for raw git history, engineering-only logs, or duplicate ledgers in the webapp.
 
-### How to load this skill
-This lives under `docs/skills/` (not auto-discovered by Cursor). Reference explicitly with `@...` or add a pointer in `AGENTS.md`.
+### How to load this runbook
+This lives in `awesome-ai-coding-rules/ops/landingpage/update-blog-posts-and-changelog.md`; when working in the landing repo, reference it as the sibling `../awesome-ai-coding-rules/...` runbook.
 
 ### Greenfield invariant
-**Exactly one** changelog source of truth: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`) in **this repo**. The webapp links to the marketing page; it does not own the data.
+**Exactly one** changelog source of truth: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`) in the **landing repo**. The webapp links to the marketing page; it does not own the data.
 
 ### Mandatory reads (sibling webapp)
 1. `doc/knowledge/glossary.md` — Use canonical surface names (Option Trades, Contract-level analysis, Option Chain Analysis, etc.). Do not invent alternate labels.
-2. `doc/domain-knowledge/domain-invariants/feature/new-feature-modal.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
+2. `doc/domain-knowledge/domain-invariants/platform.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
 
-### Repo map (this repo)
+### Repo map (landing repo)
 - Release data: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`, `PRODUCT_CHANGELOG_AREAS`, `PRODUCT_CHANGELOG_SECTION_ORDER`, `Localized<T>`, pick helpers).
 - Invariant tests: `src/lib/productChangelog.test.ts`.
 - Page UI: `src/components/ProductChangelog.tsx`.
@@ -193,25 +241,25 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 **Grouping:** Merge commits into one card per ship moment. Pick `publishedAt` as the calendar date of the latest user-visible ship in the cluster.
 
 ### Workflow
-1. **Gather** — App-facing: dated `git log` on `tradingflow-webapp-fullstack origin/main`. Landing-only: same on this repo. Map to glossary surface names.
+1. **Gather** — App-facing: dated `git log` on `tradingflow-webapp-fullstack origin/main`. Landing-only: same on `tradingflow-web-landingpage`. Map to glossary surface names.
 2. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history).
 3. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
 4. **What's New (webapp)** — After new/updated cards, sync the in-app carousel (see “What's New sync” below). Do **not** duplicate the releases array into the webapp.
 5. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
-6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/domain-invariants/feature/new-feature-modal.md` (per its `AGENTS.md`).
+6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/domain-invariants/platform.md` (per its `AGENTS.md`).
 7. **Webapp locales** — If changing in-app strings that link to changelog, edit webapp `src/locales/*.ts` and run its locale parity checker.
 
 ### What's New sync (sibling webapp)
 After editing `productChangelog.ts`, keep the in-app carousel aligned:
 
-1. Read webapp `doc/domain-knowledge/domain-invariants/feature/new-feature-modal.md` (Invariant 11).
+1. Read webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")**.
 2. Edit `src/config/featureAnnouncement.config.ts` — for each new/materially updated release in the top ~30 days, add/update a slide:
    - `publishedAt` = changelog `publishedAt`
    - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (45-day TTL)
    - `title` / `body` = short carousel copy from `summary` + top 1–2 bullets (English); use glossary names.
    - `coverId`, `linkHref`, optional `postPath` / `postLabel` from the mapping table (see original skill for details; areas map to specific covers and routes).
 3. Delete slide rows whose `activeUntilIso` is in the past.
-4. Bump `campaignId` when the active slide set changes; extend `showUntilIso`.
+4. Bump `campaignId` when the active slide set changes; extend `showUntilIso` and update any tests that assert the global expiry date.
 5. Verify: `pnpm exec vitest run src/config/featureAnnouncement.test.ts` (in webapp).
 6. If `campaignId` changed, update landing `scripts/capture-blog-ui-screenshots.ts` default `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID` and [AGENTS.md].
 
@@ -233,15 +281,18 @@ You are updating TradingFlow’s public blog posts and Product Changelog.
 Before editing blog posts (content/posts/**):
 - Read the combined skill for audit rules (screenshots, covers, no loading UI, crop/clip rules, retired-post sync via ROUTE_PLAN, EN/zh parity).
 - Use `tradingflow-webapp-fullstack` dev server + Clerk dev keys for captures.
+- After capture, inspect regenerated screenshots for loading copy/spinners/skeletons before accepting them.
+- If using screenshot callouts, annotate only after raw captures are clean and verify the labels do not cover the data.
 - Coordinate with changelog / What's New when the post accompanies a product ship.
 
 Before editing the changelog:
 1. Read tradingflow-webapp-fullstack/doc/knowledge/glossary.md for canonical surface names.
 2. Follow the combined update-blog-posts-and-changelog skill (release card shape, scope, Git history guidance for which repo to mine, What's New sync).
-3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/domain-invariants/feature/new-feature-modal.md.
+3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/domain-invariants/platform.md.
 
 Implementation:
 - Blog: edit MDX + images under content/posts; run capture-blog-ui when needed; keep covers in images/cover.png; sync retired posts from Option Chain Analysis when appropriate.
+- Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
 - After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, bump campaignId, update capture script default if needed.

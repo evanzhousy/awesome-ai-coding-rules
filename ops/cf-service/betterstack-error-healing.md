@@ -7,6 +7,20 @@
 
 ---
 
+## Recommended Invocation
+
+Use `/goal` for live or post-incident runs:
+
+- Objective: determine whether the process-service producer is alive, writing fresh ClickHouse rows, and free of drain/drop patterns for the requested trading session.
+- Success criteria: Better Stack source/table resolved at runtime, ClickHouse coverage checked with `verify-producer-freshness.ts`, drain/drop/runtime-summary evidence interpreted, and the report names the verdict plus next action.
+- Stop condition: producer health is proven, a production-safe remediation path is identified, or access to Better Stack/ClickHouse/EC2 is explicitly blocked.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no Better Stack, ClickHouse, or EC2 production checks were executed.
+
 ## When to use this runbook
 
 - ClickHouse `AggregatedOptionTrades` / `RawOptionTrades` look empty or thin for part of a session.

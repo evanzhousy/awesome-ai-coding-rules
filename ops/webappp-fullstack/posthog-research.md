@@ -8,6 +8,22 @@ disable-model-invocation: true
 
 Agent runbook for using **PostHog live access** to review web traffic, user behavior, event tracking quality, and dashboard setup for the TradingFlow webapp. The preferred access path is the one requested by the user for the run: PostHog MCP/plugin when requested, or `posthog-cli` when CLI-only evidence is requested. The default output is a research report, not code changes.
 
+## Recommended Invocation
+
+Use `/goal` for each analytics review:
+
+- Objective: produce an evidence-backed PostHog review of traffic, behavior, tracking quality, dashboards, and long-term watchlist status.
+- Success criteria: access mode is confirmed, the live project/date range/filters are named, each criteria-for-success item is answered or blocked, and the long-term watchlist plus this runbook are pruned/updated when reusable findings change.
+- Stop condition: the report is complete, PostHog access is blocked with the exact attempted path, or the user expands scope to dashboard/tracking changes.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+### Look First
+
+- [ ] Revisit every active item in [Long-Term Issue Watchlist](#long-term-issue-watchlist) before broad exploration; mark each `worse`, `unchanged`, `improved`, `resolved`, or `blocked`, and prune/revise only with current evidence.
+
 ## Goal
 
 Produce an evidence-backed product analytics review that answers three questions:

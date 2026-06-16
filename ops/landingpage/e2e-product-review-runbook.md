@@ -6,6 +6,20 @@ This is the **unified runbook** for AI coding agents. It combines E2E journey ma
 
 **Do not** treat this as separate "E2E maintenance" then "PM review". The power comes from doing realistic user simulation **while** conducting the review.
 
+## Recommended Invocation
+
+Use `/goal` for composite or multi-round reviews:
+
+- Objective: simulate the selected user journeys and produce the requested E2E maintenance and/or product review output.
+- Success criteria: required references are read, the chosen mode is explicit, CoverageAudit is produced when tests change, product findings use the required formats, verification commands are run or blocked, and runbook friction is folded back into this file.
+- Stop condition: the scoped review artifacts are complete, Playwright/product-code verification is blocked with evidence, or the user narrows the review.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no browser journeys, tests, or product reviews were executed.
+
 ## References (read in order)
 
 1. [`AGENTS.md`](../../../AGENTS.md) — task routing, domain truth precedence, composite rules.

@@ -22,6 +22,20 @@ This is the **serving-layer** companion to:
 
 ---
 
+## Recommended Invocation
+
+Use `/goal` for production status checks:
+
+- Objective: determine whether the production cf-service Worker is serving populated, correctly shaped, fresh, and size-safe DO/KV data.
+- Success criteria: steps 0-6 are completed or explicitly blocked, public HTTP and read-only `wrangler` checks are separated from Better Stack evidence, and the report template has a verdict for each serving surface.
+- Stop condition: serving-layer health is proven, source-data failure is handed off to `check-data-integrity.md`, or a production-safe remediation decision is required.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no production Worker, Cloudflare, or Better Stack checks were executed.
+
 ## Local workspace project map
 
 ```bash

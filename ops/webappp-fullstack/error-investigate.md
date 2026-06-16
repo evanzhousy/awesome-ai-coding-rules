@@ -8,6 +8,20 @@ disable-model-invocation: true
 
 Agent runbook for **recent production errors**—default **past 24 hours**—using **PostHog Error Tracking** (`$exception` issues) and **Better Stack** (Errors patterns + optional Telemetry logs). It is optimized for a **Master/Subagent** investigation loop: the Master owns the Goal and verifies evidence; the Subagent gathers bounded evidence and returns a triage report plus a fix plan. Do **not** implement code, change routing, resolve/suppress issues, or edit observability policy unless the user explicitly asks after the plan.
 
+## Recommended Invocation
+
+Use `/goal` for each production error triage:
+
+- Objective: produce an evidence-backed `-24h` production error triage and smallest safe fix plan across PostHog Error Tracking and Better Stack.
+- Success criteria: active fix verification backlog is checked first, PostHog/Better Stack access and schemas are resolved at runtime, EvidenceAudit is complete, and any confirmed backlog row is pruned from active state.
+- Stop condition: the deliverable meets the criteria for success, source access is explicitly blocked, or the user authorizes a separate implementation/suppression step.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. Start every real run with [Active fix verification backlog](#active-fix-verification-backlog); it is currently empty after the auth provisioning row was archived.
+
 ## Goal
 
 Produce an evidence-backed production error triage for the requested window that identifies dominant clusters, likely root causes, confidence, and the smallest safe fix plan without speculative code changes.
@@ -68,9 +82,9 @@ Rows track fixes that **shipped in code** but are **not yet confirmed in product
 
 | Fix | Shipped (repo) | Pre-fix baseline (-24h, triage date) | Verify first (same window) | Confirmed |
 | --- | --- | --- | --- | --- |
-| **Auth provisioning gate + session heal** — `completeAuthLogin` returns `{ ok: false }` when register fails; **session heal** via `ensureSessionProvisioned` in `PostAuthFlowCoordinator` + Google `session_exists` path; billing gated until heal completes ([`src/platform/auth-flow/index.ts`](../../../src/platform/auth-flow/index.ts), [`PostAuthFlowCoordinator`](../../../src/components/Auth/PostAuthFlowCoordinator.tsx)). | 2026-06-03 | **Better Stack:** ~53× `UserNotProvisionedError` (-24h, triage 2026-06-03); pattern `fe8e2c32` (22). **PostHog:** 31 AppError “account setup incomplete” (`019e83ff`, `019e8a98`); legacy `019e747d` = 0. | BS `UserNotProvisionedError` **<10**/24h; PH AppError incomplete **<5** total; `auth_login_completed` with `session_heal: true` before first `/app/*` query for affected users. | **No** — 2026-06-16 Better Stack partial pass: 8× `UserNotProvisionedError`/24h; PostHog unavailable, so full confirmation still pending |
+| *(none)* | — | — | — | — |
 
-**Next run priority:** If the auth row is still unconfirmed, Phase V (below) is **mandatory** before ranking new P0 clusters.
+**Next run priority:** If any row is added here, Phase V (below) is **mandatory** before ranking new P0 clusters.
 
 ## Resolved fixes (archive)
 
@@ -78,7 +92,7 @@ Move rows here after verification passes. Keep one line each so future runs know
 
 | Fix | Confirmed | Outcome |
 | --- | --- | --- |
-| *(none yet)* | — | — |
+| **Auth provisioning gate + session heal** — `completeAuthLogin` returns `{ ok: false }` when register fails; **session heal** via `ensureSessionProvisioned` in `PostAuthFlowCoordinator` + Google `session_exists` path; billing gated until heal completes. | 2026-06-17 | Confirmed in live `-24h`: Better Stack `UserNotProvisionedError` / pattern `fe8e2c32` = 0; PostHog “account setup incomplete” / `USER_NOT_PROVISIONED` issues = 0; `auth_login_completed` with `session_heal=true` = 119 events / 29 users. |
 
 ## Runbook maintenance (post-deploy verification)
 

@@ -7,6 +7,20 @@ description: Maintains TradingFlow landing-page blog posts (MDX under content/po
 
 This combined skill covers maintenance of two closely related areas on the marketing site: the bilingual blog posts and the public Product Changelog. They frequently intersect during product ships (blog post + changelog card + What's New carousel slide).
 
+## Recommended Invocation
+
+Use `/goal` for product-ship or content-refresh runs:
+
+- Objective: update the requested blog posts, screenshots, changelog releases, and What's New sync without drifting from the current product contract.
+- Success criteria: involved worktrees are checked before edits, screenshots/covers/changelog cards are verified with the documented commands, sibling webapp What's New sync is handled or explicitly deferred, and this runbook is updated for reusable drift.
+- Stop condition: all requested content artifacts pass verification, or a blocker identifies the exact missing repo access, login, screenshot, locale, or test condition.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no blog, changelog, screenshot, or What's New work was executed.
+
 ## When to use
 
 Use this skill when:

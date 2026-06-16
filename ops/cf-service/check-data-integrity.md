@@ -9,6 +9,22 @@ Workspace runbook covering **trade/metadata integrity + latency** (UW ingest hea
 
 Companion concerns that together give a full picture after nightly `SyncSymbolMetaService` (~19:00 ET) and `OptionChainTable` ingest.
 
+## Recommended Invocation
+
+Use `/goal` for each full audit:
+
+- Objective: audit the most recent fully closed ET trading session for data integrity, latency, small-trade coverage, and Greeks/price parity.
+- Success criteria: target date and healthy baseline are justified, integrity/latency/small-trade checks are run or explicitly blocked, Greeks Phase A/B status is reported, and `Latest run note` plus `Agent Handoff` are pruned/updated.
+- Stop condition: the report separates healthy signals from triage triggers, or a blocker names the missing credential/schema/tool and the next verification step.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+### Look First
+
+- [ ] Resolve the Phase B Greeks parity blocker before trusting full Greeks parity: live `mv_contract_day_flow` may expose legacy `premium` instead of execution-side `ask_premium`/`bid_premium`/`mid_premium` states. Run `DESCRIBE TABLE mv_contract_day_flow` and align `scripts/check-greeks-parity.ts` with the deployed schema before Phase B.
+
 ## Local workspace project map
 
 The workspace root on this machine is:

@@ -1,5 +1,19 @@
 ## PostHog Events & Funnels – TradingFlow Landing
 
+## Recommended Invocation
+
+Use `/goal` when auditing or extending landing analytics:
+
+- Objective: verify the landing-site PostHog taxonomy, event emitters, funnel definitions, and dashboard assumptions remain aligned with the current marketing site.
+- Success criteria: code emitters are checked against the taxonomy, PostHog dashboard/insight references are confirmed or marked stale, and any new event/property is documented here with governance notes.
+- Stop condition: taxonomy and dashboards are confirmed, or the blocker names the missing PostHog access/tooling.
+
+## Agent Handoff
+
+Last updated: 2026-06-17
+
+No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no PostHog project or landing code checks were executed.
+
 ### Event Taxonomy
 
 - **page_viewed**
@@ -104,4 +118,3 @@
 - **Naming conventions**
   - Event names and property keys use `snake_case`.
   - Reuse the same property sets when adding new insights or funnels in PostHog so definitions stay stable over time.
-

@@ -98,6 +98,16 @@ Move rows here after verification passes. Keep one line each so future runs know
 
 This runbook is the **living checklist** for “did the last fix work in prod?” — not only for triage.
 
+At the end of every triage or verification run:
+
+1. Decide whether the run revealed a reusable lesson for future error investigations.
+2. Promote durable lessons into source access, MCP workflow, noise rules, EvidenceAudit, backlog verification, or deliverable structure.
+3. Keep transient state in [Active fix verification backlog](#active-fix-verification-backlog), [Self-maintained guidance from recent runs](#self-maintained-guidance-from-recent-runs), or the final report only.
+4. Prune completed or obsolete backlog/guidance items before adding new ones.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the deliverable.
+
+Update this runbook when tool schemas, source IDs, event/error semantics, noise filters, verification signals, or recurring blockers drift. Do not update it for one-off counts, raw logs, temporary incidents, speculative fix ideas, or completed progress that belongs only in the report.
+
 **When a fix ships (implementation session, after merge/deploy):**
 
 1. Capture **pre-fix baselines** from the triage deliverable (PostHog issue UUIDs, Better Stack `pattern` ids, counts/users, triage date).
@@ -126,6 +136,8 @@ This runbook is the **living checklist** for “did the last fix work in prod?�
 ## Self-maintained guidance from recent runs
 
 Update this section when an investigation exposes repeatable runbook friction, MCP schema drift, or source-access behavior that future agents should not rediscover.
+
+Keep this section compact and reusable. Remove or rewrite entries when they become obsolete, are promoted into the main workflow, or stop helping future investigations.
 
 - **2026-06-16 — PostHog plugin unavailable in Codex:** `tool_search` for PostHog / Error Tracking / HogQL exposed no usable PostHog query tools in this session. Treat this as a PostHog source blocker, not as zero PostHog errors. Do not substitute Chrome/browser UI unless the user explicitly asks for `@chrome` or approves that fallback.
 - **2026-06-16 — Subagent requirement can be host-policy blocked:** this Codex host exposes multi-agent tools only when the user explicitly asks for delegation. When that policy applies, use the [Single-agent fallback](#master-loop), name it in **Blockers**, and still run schema reads, Better Stack ID resolution, and `EvidenceAudit`.

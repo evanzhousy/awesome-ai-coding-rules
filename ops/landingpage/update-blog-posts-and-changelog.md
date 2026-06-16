@@ -284,11 +284,17 @@ After editing `productChangelog.ts`, keep the in-app carousel aligned:
 ### Runbook self-maintenance
 This runbook is part of the workflow. Update it in the same pass when a real run discovers drift.
 
+- At the end of each run, decide whether the run revealed a reusable lesson for future blog/changelog/What's New work.
+- Promote durable lessons into the relevant workflow section, pasteable instruction, verification command, or anti-pattern list.
+- Keep transient next-run state in `Agent Handoff`; keep one-off content decisions, release candidates, screenshot review notes, and current-run blockers in the final report unless they remain unresolved.
+- Prune completed or obsolete handoff items before adding new ones.
+- If no durable rule changed, state `Runbook maintenance: no change` in the final report.
 - Update selectors, route topology, expected warnings, commands, verification steps, and screenshot/annotation rules when the live repos disagree with this document.
 - When adding a new helper script or package script, document the command here and in any pasteable agent instruction.
 - When changing the What's New modal workflow, update both this runbook and the webapp `featureAnnouncement` tests so the operational contract is executable.
 - Keep guidance concrete: include exact file paths, env vars, and acceptance checks. Remove stale references instead of layering contradictory notes.
 - Do not use self-maintenance as a reason for broad cleanup; keep runbook edits tied to lessons from the current run.
+- Do not update this runbook for one-off changelog copy choices, raw git logs, temporary screenshot artifacts, or completed progress that belongs only in the final handoff.
 
 ### Anti-patterns
 - Pasting commit subjects as bullets.

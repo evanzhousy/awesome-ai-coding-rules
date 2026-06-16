@@ -25,6 +25,13 @@ Last updated: 2026-06-17
 
 No open handoff items in this alias. Look first at `ops/cf-service/check-data-integrity.md`, especially its `Agent Handoff` and `Latest run note`.
 
-## Maintenance Rule
+## Runbook Self-Maintenance
 
-Do not duplicate the canonical runbook body here. If future callers still open `data-quality.md`, keep this alias accurate and improve `check-data-integrity.md` first.
+At the end of each run:
+
+1. Maintain `ops/cf-service/check-data-integrity.md` first; it owns the full procedure and handoff state.
+2. Update this alias only if the canonical path, alias purpose, or routing guidance changes.
+3. Keep this file thin. Do not duplicate the canonical runbook body here.
+4. If no durable alias rule changed, state `Runbook maintenance: no change` in the final report.
+
+Do not add one-off findings, raw outputs, latest-run notes, or open investigation todos to this alias.

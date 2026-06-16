@@ -33,6 +33,14 @@ No open handoff items after the latest maintenance sweep. Start by selecting the
 | Landing | `ops/landingpage/posthog-events.md` | Auditing or extending landing-site PostHog event taxonomy and funnel definitions. |
 | Skills/runbooks | `ops/skill-maintainer.md` | Maintaining runbooks and skills so future agents run them cleanly. |
 
-## Maintenance Rule
+## Runbook Self-Maintenance
 
-After any runbook execution, update only durable lessons in the body and keep transient next-run state in the runbook's `Agent Handoff`, backlog, or watchlist. Prune completed handoff items in the same edit that confirms they are done.
+After any runbook execution:
+
+1. Decide whether the run revealed a reusable lesson for the selected runbook or this index.
+2. Promote durable lessons into the runbook's procedure, prerequisites, verification, or troubleshooting sections.
+3. Keep transient next-run state in `Agent Handoff`, active backlog, watchlist, or latest-run note only.
+4. Prune completed or obsolete handoff items in the same edit that confirms they are done.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+
+Update this index only when routing, canonical ownership, aliases, or the shared maintenance contract changes. Do not add one-off incident notes, raw outputs, or completed progress here.

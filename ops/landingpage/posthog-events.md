@@ -14,6 +14,18 @@ Last updated: 2026-06-17
 
 No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no PostHog project or landing code checks were executed.
 
+## Runbook Self-Maintenance
+
+At the end of each run:
+
+1. Decide whether analytics audit work exposed a reusable lesson for this taxonomy.
+2. Promote durable lessons into event definitions, property contracts, funnel/dashboard references, environment rules, or naming conventions.
+3. Keep transient next-run state in `Agent Handoff`; keep one-off PostHog counts and dashboard observations in the final report.
+4. Prune completed or obsolete handoff items before adding new ones.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+
+Update this runbook when event names/properties, emitters, dashboard/insight links, production gating, or governance rules drift. Do not update it for one-off traffic counts, temporary campaign observations, raw query output, or completed audit progress.
+
 ### Event Taxonomy
 
 - **page_viewed**

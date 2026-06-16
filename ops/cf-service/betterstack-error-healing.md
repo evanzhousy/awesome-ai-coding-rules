@@ -21,6 +21,18 @@ Last updated: 2026-06-17
 
 No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no Better Stack, ClickHouse, or EC2 production checks were executed.
 
+## Runbook Self-Maintenance
+
+At the end of each run:
+
+1. Decide whether producer-health investigation exposed a reusable lesson for this runbook.
+2. Promote durable lessons into source resolution, event predicates, interpretation, verification, alerting, or remediation sections.
+3. Keep transient state in `Agent Handoff` only, unless it belongs in an incident-specific external record.
+4. Prune completed or obsolete handoff items before adding new ones.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+
+Update this runbook when Better Stack source names, SQL collection shape, event names, thresholds, heartbeat behavior, ClickHouse verification commands, or remediation safety rules drift. Do not update it for one-off row counts, temporary incidents, raw logs, or completed incident progress.
+
 ## When to use this runbook
 
 - ClickHouse `AggregatedOptionTrades` / `RawOptionTrades` look empty or thin for part of a session.

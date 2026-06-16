@@ -389,6 +389,13 @@ Use this structure:
 
 At the end of each run, decide whether the runbook itself should change.
 
+Use this self-maintenance rule:
+
+1. Promote durable lessons into access mode, workflow, query examples, dashboard checks, evidence rules, watchlist handling, or report structure.
+2. Keep transient state in `Agent Handoff`, [Long-Term Issue Watchlist](#long-term-issue-watchlist), or the run report only.
+3. Prune completed or obsolete handoff/watchlist items before adding new ones.
+4. If no durable rule changed, state `Runbook maintenance: no change` in the report.
+
 Update this file in the same session when the run reveals a reusable improvement, such as:
 
 - A PostHog tool discovery pattern that worked or failed repeatedly.
@@ -398,7 +405,7 @@ Update this file in the same session when the run reveals a reusable improvement
 - A stale project ID, repo path, event convention, or dashboard assumption.
 - A reporting section that should be added so future runs do not bury important blockers.
 
-Do not update this file for one-off product conclusions, temporary incident findings, raw traffic numbers, or dashboard recommendations that belong only in that run's report.
+Do not update this file for one-off product conclusions, temporary incident findings, raw traffic numbers, raw query output, dashboard recommendations that belong only in that run's report, or completed progress.
 
 When maintenance is performed, include a short `Runbook maintenance` note in the report that says what changed and why.
 

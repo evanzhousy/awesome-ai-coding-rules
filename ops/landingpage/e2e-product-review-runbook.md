@@ -20,6 +20,18 @@ Last updated: 2026-06-17
 
 No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no browser journeys, tests, or product reviews were executed.
 
+## Runbook Self-Maintenance
+
+At the end of each run:
+
+1. Decide whether journey simulation, E2E maintenance, or product review exposed a reusable lesson for this runbook.
+2. Promote durable lessons into references, mode selection, coverage audit rules, product review passes, output formats, or verification commands.
+3. Keep transient next-run state in `Agent Handoff`; keep review findings in the session output unless the user asks for a persistent artifact.
+4. Prune completed or obsolete handoff items before adding new ones.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the final handoff.
+
+Update this runbook when route topology, seeded accounts, Playwright commands, journey quality rules, output formats, or product-review/e2e boundaries drift. Do not update it for one-off UX findings, raw test logs, screenshots, or completed review progress.
+
 ## References (read in order)
 
 1. [`AGENTS.md`](../../../AGENTS.md) — task routing, domain truth precedence, composite rules.

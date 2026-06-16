@@ -36,6 +36,18 @@ Last updated: 2026-06-17
 
 No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no production Worker, Cloudflare, or Better Stack checks were executed.
 
+## Runbook Self-Maintenance
+
+At the end of each run:
+
+1. Decide whether the status check exposed a reusable lesson for this runbook.
+2. Promote durable lessons into inspection channels, endpoint expectations, thresholds, remediation, or report templates.
+3. Keep transient next-run state in `Agent Handoff`; keep incident-specific evidence in the final report or external incident record.
+4. Prune completed or obsolete handoff items before adding new ones.
+5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+
+Update this runbook when Worker routes, compact payload shape, KV keys, DO names, Cloudflare limits, `wrangler` commands, Better Stack source behavior, or safe remediation rules drift. Do not update it for one-off payload sizes, current incident counts, raw logs, or completed production checks.
+
 ## Local workspace project map
 
 ```bash

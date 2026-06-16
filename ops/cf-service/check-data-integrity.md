@@ -77,11 +77,15 @@ Keep this file as the canonical operator entrypoint for this check:
 
 - Canonical path: `ops/cf-service/check-data-integrity.md`.
 - If a duplicate or alias file exists, update this file first and keep the alias in sync only when a caller still depends on it.
+- At the end of each run, decide whether this runbook changed because the run revealed a reusable lesson. Promote durable lessons into procedure, prerequisites, thresholds, SQL, verification, or remediation sections.
+- Keep transient state in `Agent Handoff` and `Latest run note` only. Prune completed or obsolete handoff items before adding new ones.
+- If no durable rule changed, state `Runbook maintenance: no change` in the final report.
 - Every time you run this runbook, update the "Latest run note" below with the target date, baseline, commands, exit status, and the short verdict. Do not let old run notes masquerade as current proof.
 - Prefer the most recent fully closed ET trading session as `DATE`. If the current US session is still open, use the prior trading day. Confirm `last_time_et >= 16:55:00` and that RTH hours 9-16 have rows before calling it complete.
 - Pick `BASELINE` from a recent healthy full session with normal row volume and no known disconnect or backfill artifact. Do not use the target date as its own baseline. If the investigation asks for an April-average comparison, run the explicit April-average SQL instead of forcing the single-date script to answer that question.
 - Treat a strict failure as a triage trigger, not an automatic outage verdict. Drill down by symptom: row ratio and small-trade coverage for ingest loss, DEI/market-cap top symbols for metadata gaps, and Better Stack/Queue telemetry for write-buffer or spillover pressure.
 - Before Phase B Greeks parity, run `DESCRIBE TABLE mv_contract_day_flow`. The deployed table may be either legacy `premium` state or execution-side `ask_premium`/`bid_premium`/`mid_premium` states. If the script query does not match the live schema, run `--phase a` only and record Phase B as blocked until the script/query is aligned.
+- Do not update durable procedure for one-off counts, temporary vendor incidents, raw logs, or current-run-only findings.
 
 ### Latest run note
 

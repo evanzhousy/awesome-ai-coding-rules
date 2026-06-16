@@ -150,9 +150,13 @@ Blog work for a product ship should be coordinated with changelog / What's New u
 
 After capture/MDX edits:
 - If a post slug is in an active slide’s `postPath`, refresh the slide’s `body` and confirm `postPath`.
+- For every user-visible release card or product walkthrough refresh, check `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts`. The modal should either be updated or explicitly left unchanged with a reason.
+- What's New cards are intentionally non-disruptive: each card expires seven calendar days after `publishedAt`; if all cards are expired, the modal must not pop up.
+- Keep modal card copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals in the modal.
 - If cover art under `public/feature-announcement/` changed, bump cache-bust in webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`.
 - Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")** and the changelog skill’s “What's New sync” section.
 - If `FEATURE_ANNOUNCEMENT.campaignId` changes, update the capture script default and `AGENTS.md`.
+- Add or update `src/config/featureAnnouncement.test.ts` assertions when the active campaign, route links, post links, expiry, or modal copy contract changes.
 
 ### Verification (blog)
 ```bash
@@ -244,7 +248,7 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 1. **Gather** — App-facing: dated `git log` on `tradingflow-webapp-fullstack origin/main`. Landing-only: same on `tradingflow-web-landingpage`. Map to glossary surface names.
 2. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history).
 3. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
-4. **What's New (webapp)** — After new/updated cards, sync the in-app carousel (see “What's New sync” below). Do **not** duplicate the releases array into the webapp.
+4. **What's New (webapp)** — After new/updated cards, sync the in-app carousel in `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts` (see “What's New sync” below). Do **not** duplicate the releases array into the webapp.
 5. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
 6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/domain-invariants/platform.md` (per its `AGENTS.md`).
 7. **Webapp locales** — If changing in-app strings that link to changelog, edit webapp `src/locales/*.ts` and run its locale parity checker.
@@ -253,15 +257,24 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 After editing `productChangelog.ts`, keep the in-app carousel aligned:
 
 1. Read webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")**.
-2. Edit `src/config/featureAnnouncement.config.ts` — for each new/materially updated release in the top ~30 days, add/update a slide:
+2. Edit `src/config/featureAnnouncement.config.ts` — for each new/materially updated release still inside the seven-day What's New window, add/update a slide:
    - `publishedAt` = changelog `publishedAt`
-   - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (45-day TTL)
-   - `title` / `body` = short carousel copy from `summary` + top 1–2 bullets (English); use glossary names.
+   - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (7-day TTL; exclusive end)
+   - `title` / `body` = short, story-level carousel copy. Use glossary names, but do not copy detailed changelog bullets.
    - `coverId`, `linkHref`, optional `postPath` / `postLabel` from the mapping table (see original skill for details; areas map to specific covers and routes).
-3. Delete slide rows whose `activeUntilIso` is in the past.
+3. Delete slide rows whose `activeUntilIso` is in the past. If all slides are expired, leave the active slide set empty so the modal does not pop up.
 4. Bump `campaignId` when the active slide set changes; extend `showUntilIso` and update any tests that assert the global expiry date.
 5. Verify: `pnpm exec vitest run src/config/featureAnnouncement.test.ts` (in webapp).
 6. If `campaignId` changed, update landing `scripts/capture-blog-ui-screenshots.ts` default `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID` and [AGENTS.md].
+
+### Runbook self-maintenance
+This runbook is part of the workflow. Update it in the same pass when a real run discovers drift.
+
+- Update selectors, route topology, expected warnings, commands, verification steps, and screenshot/annotation rules when the live repos disagree with this document.
+- When adding a new helper script or package script, document the command here and in any pasteable agent instruction.
+- When changing the What's New modal workflow, update both this runbook and the webapp `featureAnnouncement` tests so the operational contract is executable.
+- Keep guidance concrete: include exact file paths, env vars, and acceptance checks. Remove stale references instead of layering contradictory notes.
+- Do not use self-maintenance as a reason for broad cleanup; keep runbook edits tied to lessons from the current run.
 
 ### Anti-patterns
 - Pasting commit subjects as bullets.
@@ -271,6 +284,7 @@ After editing `productChangelog.ts`, keep the in-app carousel aligned:
 - Shipping local-only or unreleased features.
 - Duplicating `PRODUCT_CHANGELOG_RELEASES` in the webapp (forbidden).
 - Adding What's New slides without proper `activeUntilIso` or leaving stale expired rows.
+- Writing What's New cards like detailed changelog entries instead of short story-level announcements.
 - Forgetting to bump `campaignId`.
 - Treating landing `git` history as default for in-app product bullets (it's mostly marketing/SEO).
 
@@ -295,7 +309,8 @@ Implementation:
 - Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
-- After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, bump campaignId, update capture script default if needed.
+- After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, update featureAnnouncement.test.ts, bump campaignId, update capture script default if needed.
+- If the run reveals drift in these instructions, update this runbook in the same pass with the exact selector, command, warning, or acceptance check.
 - After blog MDX/image changes: bun run lint && bun run build:dev (or build for prod hashes).
 - After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then in webapp run the featureAnnouncement test.
 

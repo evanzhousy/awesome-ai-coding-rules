@@ -55,31 +55,6 @@ Nightly symbol meta + OptionChainTable + audits run from **`tradingflow-process-
 
 Prefer running the executable checks from the process-service checkout (it auto-loads `.env` via bun).
 
-## Self-maintained runbook rules
-
-Keep this file as the canonical operator entrypoint for this check:
-
-- Canonical path: `ops/cf-service/check-data-integrity.md`.
-- If a duplicate or alias file exists, update this file first and keep the alias in sync only when a caller still depends on it.
-- Every time you run this runbook, update the "Latest run note" below with the target date, baseline, commands, exit status, and the short verdict. Do not let old run notes masquerade as current proof.
-- Prefer the most recent fully closed ET trading session as `DATE`. If the current US session is still open, use the prior trading day. Confirm `last_time_et >= 16:55:00` and that RTH hours 9-16 have rows before calling it complete.
-- Pick `BASELINE` from a recent healthy full session with normal row volume and no known disconnect or backfill artifact. Do not use the target date as its own baseline. If the investigation asks for an April-average comparison, run the explicit April-average SQL instead of forcing the single-date script to answer that question.
-- Treat a strict failure as a triage trigger, not an automatic outage verdict. Drill down by symptom: row ratio and small-trade coverage for ingest loss, DEI/market-cap top symbols for metadata gaps, and Better Stack/Queue telemetry for write-buffer or spillover pressure.
-- Before Phase B Greeks parity, run `DESCRIBE TABLE mv_contract_day_flow`. The deployed table may be either legacy `premium` state or execution-side `ask_premium`/`bid_premium`/`mid_premium` states. If the script query does not match the live schema, run `--phase a` only and record Phase B as blocked until the script/query is aligned.
-
-### Latest run note
-
-2026-06-16 Asia/Shanghai / 2026-06-15 ET:
-
-- Target: `DATE=2026-06-15`, `BASELINE=2026-06-10`.
-- Latest-date SQL showed `2026-06-15` had `14,432,815` aggregate rows and `last_time_et=2026-06-15 16:59:59`; `SymbolMetaData` had `6,070` rows for the same date.
-- `bun scripts/check-data-integrity.ts --date 2026-06-15 --baseline-date 2026-06-10 --strict` exited `1` only because `zero_dei_with_dex_share=0.0204` exceeded the `0.02` threshold. Other metrics were healthy: `<25k premium share=0.9690`, `zero_market_cap_stock_share=0.0003`, `agg_row_ratio=2.3517`.
-- `bun scripts/verify-producer-freshness.ts 2026-06-15` showed open p50 `1s`, p95 `59s`, no `>5m` or `>10m` rows, and full-session extent `09:30:44` to `16:59:59`.
-- `bun scripts/audit-small-trade-coverage.ts --compare 2026-06-10,2026-06-15` showed all RTH raw-vs-aggregate ratios near `1.0`; `2026-06-15` raw rows were `23,834,360` and aggregate `sum(trade_count)` was `23,831,756`.
-- DEI drill-down pointed to localized metadata gaps, not broad ingest loss: top non-index `dei=0 AND dex>10` symbols were `SOXS` (`3,451` rows), `PBRA` (`126`), `SHOE` (`123`), and `TZA` (`69`); coverage gate missing symbols were `PBRA` (`126`), `MOGA` (`45`), `MXEF` (`40`), and `XSPBW` (`33`).
-- `bun scripts/check-greeks-parity.ts --date 2026-06-15 --phase a` completed but Phase A breached on `39/39` compared contracts across `AAPL,NVDA,QQQ,SPY,TSLA`; treat as a Greeks/chain parity investigation, not an Option Trades row-loss signal.
-- Full Greeks run was blocked in Phase B because live `mv_contract_day_flow` currently has legacy `premium AggregateFunction(sum, Int32)` and does not have `ask_premium`, `bid_premium`, or `mid_premium`. Align `scripts/check-greeks-parity.ts` with the live schema before trusting Phase B.
-
 ---
 
 ## Domain context — read before interpreting any numbers
@@ -226,7 +201,7 @@ In `check-greeks-parity.ts` (Phase A) these are the main sources of "breaches" t
 
 Contract-rank uses **flow Greeks** from `mv_contract_day_flow` (normalized at trade time, currently `argMaxMerge` of iv/delta), **not** the EOD `OptionChainTable` Greeks. Phase B exists to catch pipeline-internal disagreement.
 
-**Schema note (Phase B):** verify the live `mv_contract_day_flow` schema before running Phase B. Some deployments use legacy `premium AggregateFunction(sum, Int32)`; newer execution-side marts derive premium as `sumIfMerge(ask_premium) + sumIfMerge(bid_premium) + sumIfMerge(mid_premium)`. The parity script must match the deployed schema.
+**Recent schema note (Phase B):** `mv_contract_day_flow` premium is now derived as `sumIfMerge(ask_premium) + sumIfMerge(bid_premium) + sumIfMerge(mid_premium)` (the 009+ execution-side mart no longer stores a denormalized `premium` column).
 
 ---
 
@@ -510,7 +485,7 @@ Run **after** nightly OptionChainTable ingest completes.
 
 Contract-rank does **not** read chain Greeks for ranking — it uses the flow Greeks stored in `mv_contract_day_flow` (normalized at execution time). Phase B catches the pipeline disagreeing with itself.
 
-**Schema note for Phase B:** Run `DESCRIBE TABLE mv_contract_day_flow` first. If the table has legacy `premium AggregateFunction(sum, Int32)`, Phase B must use `sumMerge(premium)`. If the table has execution-side `ask_premium`, `bid_premium`, and `mid_premium` states, Phase B must use their `sumIfMerge(...)` total. Do not trust a Phase B failure caused only by a query/schema mismatch.
+**Recent schema note for Phase B:** The mart now derives total premium as `sumIfMerge(ask_premium) + sumIfMerge(bid_premium) + sumIfMerge(mid_premium)`. The query in the script reflects the 009+ execution-side schema (no denormalized `premium` column).
 
 ### When to run (Greeks-specific)
 
@@ -599,7 +574,7 @@ In the parity script these are filtered or expected within thresholds.
 
 **Sample (current):**
 - Top N contracts by derived premium from `mv_contract_day_flow` for the date (default 50, configurable `--phase-b-top`).
-- Query for execution-side schema:
+- Query (note the 009+ mart change):
 
 ```sql
 SELECT
@@ -614,24 +589,6 @@ WHERE date = toDate('YYYY-MM-DD')
 GROUP BY option_symbol
 HAVING sumMerge(trade_count) > 0
 ORDER BY ...premium... DESC, trade_count DESC
-LIMIT N;
-```
-
-- Query for legacy schema:
-
-```sql
-SELECT
-  option_symbol,
-  anyMerge(symbol) AS symbol,
-  toString(sumMerge(premium)) AS premium,
-  toString(sumMerge(trade_count)) AS trade_count,
-  toString(argMaxMerge(iv)) AS iv,
-  toString(argMaxMerge(delta)) AS delta
-FROM mv_contract_day_flow
-WHERE date = toDate('YYYY-MM-DD')
-GROUP BY option_symbol
-HAVING sumMerge(trade_count) > 0
-ORDER BY sumMerge(premium) DESC, sumMerge(trade_count) DESC
 LIMIT N;
 ```
 

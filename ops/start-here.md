@@ -23,11 +23,11 @@ No open handoff items after the latest maintenance sweep. Start by selecting the
 | Area | Runbook | Use first when |
 | --- | --- | --- |
 | CF service | `ops/cf-service/check-durability-object-status.md` | Checking production Worker DO/KV/API serving health, freshness, and size. |
-| CF service | `ops/cf-service/check-data-integrity.md` | Auditing ClickHouse trade/meta integrity, latency, small-trade coverage, and Greeks parity. |
-| CF service | `ops/cf-service/data-quality.md` | Legacy alias; it points to `check-data-integrity.md`. |
+| CF service | `ops/cf-service/data-quality.md` | Auditing ClickHouse trade/meta integrity, latency, small-trade coverage, contract-rank correctness, and Greeks parity. |
 | CF service | `ops/cf-service/betterstack-error-healing.md` | Investigating process-service producer ingest gaps with Better Stack plus ClickHouse coverage. |
 | Webapp | `ops/webappp-fullstack/error-investigate.md` | Correlating recent production errors across PostHog Error Tracking and Better Stack. |
 | Webapp | `ops/webappp-fullstack/posthog-research.md` | Running product analytics, event quality, dashboard, and behavior reviews in PostHog. |
+| Webapp | `ops/webappp-fullstack/browser-e2e-product-review.md` | Walking webapp UI journeys with `@Browser` for manual E2E product testing, UI defects, and PM/trader UX findings. |
 | Landing | `ops/landingpage/e2e-product-review-runbook.md` | Simulating user journeys while doing E2E maintenance and product review. |
 | Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts, screenshots, public changelog, and What's New sync. |
 | Landing | `ops/landingpage/posthog-events.md` | Auditing or extending landing-site PostHog event taxonomy and funnel definitions. |

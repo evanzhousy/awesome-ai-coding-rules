@@ -1,6 +1,6 @@
 ---
 name: check-durability-object-status
-description: Production health/status runbook for the TradingFlow cf-service Cloudflare Worker Durable Objects (ContractRankSnapshotDO, UwIngestionDO, CFWorkerService) and the KV reference-data layer. Verifies the DO/KV data model is populated, the public API returns the expected shape, the served data is fresh (not stale) vs the latest trading session, and the stored/served data size stays within Cloudflare limits. Checks via three channels — public HTTP (curl), the Cloudflare wrangler CLI, and the Better Stack MCP (log cross-verify). Use when the user asks to check DO status/health, whether contract-rank / option-flow / available-dates / symbol-meta endpoints are up, whether the snapshot is stale, whether ingestion is live, whether DO/KV storage is near its limit, "is the worker serving current data", post-deploy smoke, or empty-cache / MISS / 503 reports. Serving-layer companion to check-data-integrity.md (ClickHouse source) and betterstack-error-healing.md (producer logs).
+description: Production health/status runbook for the TradingFlow cf-service Cloudflare Worker Durable Objects (ContractRankSnapshotDO, UwIngestionDO, CFWorkerService) and the KV reference-data layer. Verifies the DO/KV data model is populated, the public API returns the expected shape, the served data is fresh (not stale) vs the latest trading session, and the stored/served data size stays within Cloudflare limits. Checks via three channels — public HTTP (curl), the Cloudflare wrangler CLI, and the Better Stack MCP (log cross-verify). Use when the user asks to check DO status/health, whether contract-rank / option-flow / available-dates / symbol-meta endpoints are up, whether the snapshot is stale, whether ingestion is live, whether DO/KV storage is near its limit, "is the worker serving current data", post-deploy smoke, or empty-cache / MISS / 503 reports. Serving-layer companion to data-quality.md (ClickHouse source) and betterstack-error-healing.md (producer logs).
 ---
 
 # CF-Service Durable Object & API Status Check (TradingFlow) — Production
@@ -15,7 +15,7 @@ Runbook for an AI agent to assess the **production serving layer** of `tradingfl
 > **Scope: production only.** This runbook checks the production Worker `cfworker-service`. (test/local are out of scope — note that in non-prod the scheduled contract-rank rebuild and UW ingest are intentionally off, so "freshness" there is meaningless.)
 
 This is the **serving-layer** companion to:
-- `ops/cf-service/check-data-integrity.md` — audits the **ClickHouse source** (trades/metadata/Greeks). When a freshness check here fails, the source may still be healthy (a refresh/cron problem) — cross-check it before blaming upstream.
+- `ops/cf-service/data-quality.md` — audits the **ClickHouse source** (trades/metadata/contract-rank/Greeks). When a freshness check here fails, the source may still be healthy (a refresh/cron problem) — cross-check it before blaming upstream.
 - `ops/cf-service/betterstack-error-healing.md` — the **process-service/EC2 producer** Better Stack source. This runbook uses the **separate cf-worker** Better Stack source (see §5).
 
 > **Read-only.** Per the cf-service deploy rules, **do not mutate production**. Every check below is a `GET` / `wrangler tail|kv get|deployments list` / Better Stack query. The only write is the sanctioned `POST .../refresh` escape hatch (Remediation). Never `wrangler deploy`, `wrangler kv key put/delete`, or curl a mutation — those are the deploy pipeline, not a status check.
@@ -28,13 +28,14 @@ Use `/goal` for production status checks:
 
 - Objective: determine whether the production cf-service Worker is serving populated, correctly shaped, fresh, and size-safe DO/KV data.
 - Success criteria: steps 0-6 are completed or explicitly blocked, public HTTP and read-only `wrangler` checks are separated from Better Stack evidence, and the report template has a verdict for each serving surface.
-- Stop condition: serving-layer health is proven, source-data failure is handed off to `check-data-integrity.md`, or a production-safe remediation decision is required.
+- Stop condition: serving-layer health is proven, source-data failure is handed off to `data-quality.md`, or a production-safe remediation decision is required.
 
 ## Agent Handoff
 
 Last updated: 2026-06-17
 
-No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no production Worker, Cloudflare, or Better Stack checks were executed.
+### Look First
+- [ ] Investigate the production `/uw-ingestion/status` strict-live path: during the 2026-06-17 10:37-10:43 ET run it timed out at 20s, 60s, and 15s while `/canary`, contract-rank, available-dates, and symbol-meta were healthy; Wrangler tail showed the stateless `/uw-ingestion/status` fetch canceled client-side without a corresponding `UwIngestionDO` response, and Better Stack showed no UW interval report after the 09:30 ET `streaming_resumed` event.
 
 ## Runbook Self-Maintenance
 
@@ -99,9 +100,9 @@ KV_ID=be4ecc1147134239b54a01b9a6e593f1
 | Item | Where / how |
 | --- | --- |
 | `curl` + `jq` | local |
-| `wrangler` + Cloudflare auth | `npm i -g wrangler`; `wrangler login` (or `CLOUDFLARE_API_TOKEN`); run from `tradingflow-cfworker-service` |
+| `wrangler` + Cloudflare auth | Use the repo-local CLI from `tradingflow-cfworker-service` (`npx wrangler ...`) so the project `wrangler` version is used; `wrangler login` (or `CLOUDFLARE_API_TOKEN`) |
 | Better Stack MCP (`user-betterstack`) | optional but recommended for cross-verify (§5) |
-| (optional) ClickHouse source check | `ops/cf-service/check-data-integrity.md` |
+| (optional) ClickHouse source check | `ops/cf-service/data-quality.md` |
 
 Status/meta/snapshot `GET`s need no auth (`/uw-ingestion/status`, `/api/v1/contract-rank/*`, `/api/v1/available-dates`, `/api/v1/symbol-meta/latest*`). The retired client stream (`/api/v1/flow-stream`) returns 404; live fanout is the authenticated WebSocket upgrade on `/`.
 
@@ -136,7 +137,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$WORKER_ORIGIN/canary"   # expect 200
 curl -s "$WORKER_ORIGIN/canary"                                    # expect: Success
 
 # What's actually deployed right now (read-only):
-cd "$WORKSPACE/tradingflow-cfworker-service" && wrangler deployments list --env production | head
+cd "$WORKSPACE/tradingflow-cfworker-service" && npx wrangler deployments list --env production | head
 ```
 
 Non-200 canary → the Worker script is down/misrouted; stop and escalate (Cloudflare dashboard / recent deploy). A surprising `deployments list` head (old version) explains stale behavior — a fix may be committed but not deployed.
@@ -206,8 +207,8 @@ curl -s "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq '{date, rowCount, a
 
 # via wrangler — read the raw KV value directly (also measures size — §6)
 cd "$WORKSPACE/tradingflow-cfworker-service"
-wrangler kv key get "refdata:available-dates"  --namespace-id "$KV_ID" --remote | jq '{effective, latestDate, count}'
-wrangler kv key list --namespace-id "$KV_ID" --remote | jq -r '.[].name'   # enumerate refdata keys
+npx wrangler kv key get "refdata:available-dates"  --namespace-id "$KV_ID" | jq '{effective, latestDate, count}'
+npx wrangler kv key list --namespace-id "$KV_ID" | jq -r '.[].name'   # enumerate refdata keys
 ```
 
 | Question | Pass | Fail / red flag |
@@ -257,9 +258,11 @@ Watch the stream live (cron nudges, drains, errors in real time):
 
 ```bash
 cd "$WORKSPACE/tradingflow-cfworker-service"
-wrangler tail --env production --format json \
+npx wrangler tail --env production --format json \
   | jq -rc 'select(.logs != null) | .logs[].message? // .'      # Ctrl-C to stop
 ```
+
+If `/uw-ingestion/status` times out but other Worker routes are healthy, run a bounded `npx wrangler tail --env production --format json` while issuing one status request. If the tail only shows the stateless fetch canceled and no `UwIngestionDO` entry, treat the live status/control path as degraded and cross-check Better Stack for the latest UW lifecycle and interval-report events before attempting any remediation.
 
 For a stuck stream see `tradingflow-cfworker-service/wiki/runbook/human/restore-streaming.md` (Unusual Whales allows one websocket per API token; a zombie session starves trades until reconnect).
 
@@ -270,7 +273,7 @@ For a stuck stream see `tradingflow-cfworker-service/wiki/runbook/human/restore-
 Before declaring the DO/KV "stale", confirm the source has newer data. If ClickHouse has no rows for today yet (early morning, or an upstream gap), the DO is *correct* to serve yesterday.
 
 - DO/KV `effectiveDate` / available-dates `effective` should equal the latest full (post-09:30-ET) trading date in `AggregatedOptionTrades` / `mv_contract_rank_flow`.
-- Use `ops/cf-service/check-data-integrity.md` → "Resolve latest trading date" for the authoritative date + row counts.
+- Use `ops/cf-service/data-quality.md` → "Resolve latest trading date" for the authoritative date + row counts.
 
 | DO/API says | ClickHouse says | Conclusion |
 | --- | --- | --- |
@@ -335,8 +338,8 @@ curl -s -o /dev/null -w 'snapshot bytes: %{size_download}\n' \
 
 # 2) KV value sizes — symbol-meta is the big one (thousands of symbols); must stay < 25 MiB
 cd "$WORKSPACE/tradingflow-cfworker-service"
-echo "symbol-meta bytes:   $(wrangler kv key get 'refdata:symbol-meta:latest' --namespace-id "$KV_ID" --remote | wc -c)"
-echo "available-dates bytes: $(wrangler kv key get 'refdata:available-dates' --namespace-id "$KV_ID" --remote | wc -c)"
+echo "symbol-meta bytes:   $(npx wrangler kv key get 'refdata:symbol-meta:latest' --namespace-id "$KV_ID" | wc -c)"
+echo "available-dates bytes: $(npx wrangler kv key get 'refdata:available-dates' --namespace-id "$KV_ID" | wc -c)"
 
 # 3) payloadBytes trend — Better Stack §5: contract_rank_snapshot_refresh_completed.payloadBytes over the last N days
 # 4) DO total stored bytes (10 GB cap) — Cloudflare dashboard → Workers & Pages → DO namespace → Metrics → "Stored data"
@@ -394,10 +397,10 @@ Read-only checks never change state. The actions below do — **no ad-hoc CLI mu
 | Scheduled rebuild stalled despite force working | Better Stack `contract_rank_snapshot_refresh_failed` (`requestStage`), check the cron (`*/1 * * * *`) and DO reset-looping (§6). Fix in code, deploy. |
 | available-dates / symbol-meta stale | Confirm cron firing (`wrangler tail`); a cold `GET` triggers populate-on-miss, but a stuck cron needs a code/deploy fix. Don't `wrangler kv key put` in prod. |
 | UW stream down | `tradingflow-cfworker-service/wiki/runbook/human/restore-streaming.md` (reconnect; one ws per UW token). |
-| Drain stalled / buffer growing | ClickHouse reachability + `ch_drain_fail`; write-buffer tuning in `check-data-integrity.md`. |
+| Drain stalled / buffer growing | ClickHouse reachability + `ch_drain_fail`; write-buffer tuning in `data-quality.md`. |
 | Storage bloat / DO stored bytes rising | Investigate cleanup regression (`cleanupRetainedSnapshots`); a fresh DO name (the `-v2` precedent) is the last resort — code change + deploy, not a CLI op. |
 | Size regression (payload/symbol-meta growing) | Find the row/encoding blow-up; keep chunks < 2 MB and KV values < 25 MiB. |
-| Source itself wrong/empty | Not a serving bug — switch to `ops/cf-service/check-data-integrity.md`. |
+| Source itself wrong/empty | Not a serving bug — switch to `ops/cf-service/data-quality.md`. |
 
 After any `force` rebuild or deploy, re-run steps 0–6 and confirm `asOf` advanced, `effectiveDate` matches the latest session, and sizes are stable.
 
@@ -442,8 +445,8 @@ After any `force` rebuild or deploy, re-run steps 0–6 and confirm `asOf` advan
 | `src/util/betterstack.ts` (cf-worker telemetry sink → Better Stack source used in §5) | `tradingflow-cfworker-service` |
 | `wrangler.jsonc` (worker name, KV namespace ids, DO backends, prod vars) | `tradingflow-cfworker-service` |
 | `wiki/operation.md`, `wiki/uw-ingestion-do.md`, `wiki/runbook/human/restore-streaming.md` | `tradingflow-cfworker-service` |
-| ClickHouse source audit (the upstream this layer serves) | `ops/cf-service/check-data-integrity.md` |
+| ClickHouse source audit (the upstream this layer serves) | `ops/cf-service/data-quality.md` |
 | Better Stack **producer/EC2** triage (separate source) | `ops/cf-service/betterstack-error-healing.md` |
 | Cloudflare limits reference | DO: developers.cloudflare.com/durable-objects/platform/limits · KV: developers.cloudflare.com/kv/platform/limits |
 
-**Serving-layer vs source.** A green run here means the Worker is *serving populated, correctly-shaped, current, size-safe* data from DO storage + KV. It does **not** prove the underlying ClickHouse data is correct — pair with `check-data-integrity.md` for the full picture.
+**Serving-layer vs source.** A green run here means the Worker is *serving populated, correctly-shaped, current, size-safe* data from DO storage + KV. It does **not** prove the underlying ClickHouse data is correct — pair with `data-quality.md` for the full picture.

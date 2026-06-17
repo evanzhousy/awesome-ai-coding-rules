@@ -19,7 +19,7 @@ Use `/goal` for product-ship or content-refresh runs:
 
 Last updated: 2026-06-17
 
-No open handoff items after the latest maintenance sweep. This was a documentation normalization only; no blog, changelog, screenshot, or What's New work was executed.
+No open handoff items after the latest run. Blog cover lettering was regenerated for the product posts with `bun run letter-blog-covers`; keep using that command after screenshot capture/sync when cover copy needs to stay current, and keep the generated covers aligned with the landing repo's shadcn/base-mira visual system.
 
 ## When to use
 
@@ -76,8 +76,13 @@ git status --short
 ### Cover images
 - Set `coverImage: "./images/cover.png"` in both `index.mdx` and `index.zh.mdx` for card display.
 - Place at `content/posts/<slug>/images/cover.png`.
-- Active data-app posts: prefer current hero from the route (or the viewport PNG written by the capture script).
-- Retired / merged posts: reuse the live replacement app’s cover and note in prose that the image is from the current surface.
+- Cover copy is part of the artifact, but keep it extremely sparse and content-led. Do not put the blog title or `TradingFlow` brand text on the cover. When the post story, product positioning, or retired-route messaging changes, update the visible short content cue too; do not leave obsolete names embedded in the image.
+- Regenerate deterministic cover lettering with `bun run letter-blog-covers` (landing repo). The script writes `content/posts/<slug>/images/cover.png` for the current product post set.
+- Cover visual style should follow the landing repo's shadcn setup. Check `bunx --bun shadcn@latest info --json` when the project style may have changed; as of this run the project uses `base-mira`, neutral base color, blue theme/chart accents, Inter, small radius, subtle menu accent, and installed `card` / `badge` / `button` primitives.
+- The generated cover should feel like a quiet shadcn product surface: neutral page background, `bg-card`-like white surfaces, subtle border/ring/shadow, compact badge/button shapes, restrained blue chart accents, and one post-specific UI motif from the blog content. Do not use Apple logos, Apple brand assets, decorative Bauhaus-only compositions, or busy dashboard/card collages.
+- Active data-app posts: the short phrase should describe the workflow or user story from the post, not simply repeat the surface name.
+- Retired / merged posts: use a short phrase that points to where the capability lives now (for example `GEX in Symbols`, `OI in Positioning`, `Vol in Symbols`) while prose explains replacement or retired status.
+- Visual check: inspect at least the changed covers after generation for readable minimal text, post-specific meaning, shadcn-style neutral/blue card-badge treatment, no overlap, and current product naming.
 - After changes: `bun run build:dev` (local) or `bun run build` (production image optimizer hashes).
 
 ### Webapp login (required for screenshots)
@@ -114,6 +119,7 @@ Constants: `VIEWPORT` 1600×900, `TABLE_SCREENSHOT_MAX_HEIGHT_PX` (960), `DRAWER
 - Rank Symbols outputs source the Symbol-level blog images and the Option Chain Analysis feature-set images.
 - Option Chain Analysis-named outputs are duplicated into legacy `gex-screener` paths in the same pass.
 - After the loop, `syncRetiredPostScreenshotsFromOptionChainAnalysis()` copies from `option-chain-analysis/images/` into `oi-change-rank` and `volatility-desk` (including `cover.png`).
+- If cover copy differs by retired post, run `bun run letter-blog-covers` **after** capture/sync so `oi-change-rank` and `volatility-desk` do not inherit the generic Option Chain Analysis cover.
 
 ### Avoid screenshots while loading
 Use deterministic waits:
@@ -174,6 +180,7 @@ After capture/MDX edits:
 
 ### Verification (blog)
 ```bash
+bun run letter-blog-covers   # when cover copy/assets changed
 bun run lint
 bun run build:dev
 ```
@@ -291,6 +298,7 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - If no durable rule changed, state `Runbook maintenance: no change` in the final report.
 - Update selectors, route topology, expected warnings, commands, verification steps, and screenshot/annotation rules when the live repos disagree with this document.
 - When adding a new helper script or package script, document the command here and in any pasteable agent instruction.
+- When cover art or cover copy drifts, document the cover-lettering command and acceptance checks; future agents must be able to regenerate covers without manual image editing, and cover acceptance checks should include the current shadcn project style.
 - When changing the What's New modal workflow, update both this runbook and the webapp `featureAnnouncement` tests so the operational contract is executable.
 - Keep guidance concrete: include exact file paths, env vars, and acceptance checks. Remove stale references instead of layering contradictory notes.
 - Do not use self-maintenance as a reason for broad cleanup; keep runbook edits tied to lessons from the current run.
@@ -307,6 +315,7 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - Writing What's New cards like detailed changelog entries instead of short story-level announcements.
 - Forgetting to bump `campaignId`.
 - Treating landing `git` history as default for in-app product bullets (it's mostly marketing/SEO).
+- Updating MDX screenshots while leaving `images/cover.png` with obsolete route names, legacy product positioning, or unreadable cover lettering.
 
 ### Pasteable agent instruction (combined for blog + changelog)
 ```text
@@ -317,6 +326,7 @@ Before editing blog posts (content/posts/**):
 - Use `tradingflow-webapp-fullstack` dev server + Clerk dev keys for captures.
 - After capture, inspect regenerated screenshots for loading copy/spinners/skeletons before accepting them.
 - If using screenshot callouts, annotate only after raw captures are clean and verify the labels do not cover the data.
+- Update `images/cover.png` visible short content cue when the post story, route, or retired/merged status changes; run `bun run letter-blog-covers` and inspect changed covers for no brand/title text, legibility, minimal copy, post-specific meaning, and alignment with the landing repo's current shadcn style.
 - Coordinate with changelog / What's New when the post accompanies a product ship.
 
 Before editing the changelog:
@@ -325,13 +335,13 @@ Before editing the changelog:
 3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/domain-invariants/platform.md.
 
 Implementation:
-- Blog: edit MDX + images under content/posts; run capture-blog-ui when needed; keep covers in images/cover.png; sync retired posts from Option Chain Analysis when appropriate.
+- Blog: edit MDX + images under content/posts; run capture-blog-ui when needed; keep covers in images/cover.png; sync retired posts from Option Chain Analysis when appropriate, then run letter-blog-covers if cover copy should differ by post.
 - Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
 - After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, update featureAnnouncement.test.ts, bump campaignId, update capture script default if needed.
 - If the run reveals drift in these instructions, update this runbook in the same pass with the exact selector, command, warning, or acceptance check.
-- After blog MDX/image changes: bun run lint && bun run build:dev (or build for prod hashes).
+- After blog MDX/image changes: run `bun run letter-blog-covers` when cover copy/assets changed, then `bun run lint && bun run build:dev` (or build for prod hashes).
 - After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then in webapp run the featureAnnouncement test.
 
 Verify both:

@@ -36,9 +36,10 @@ The investigation is complete only when all applicable checks pass:
 4. **Correlation attempted** — Clusters are aligned by time slice, then `correlationId`, `scope`, `operation`, `requestUrl`/route, stack top frames, and `channel` as available.
 5. **Noise separated** — Known PostHog/rrweb/TradingView/deploy-skew noise is explicitly separated from product defects.
 6. **Root cause confidence stated** — Each cluster has a high/medium/low confidence label with evidence from PostHog, Better Stack, and targeted repo reads where needed.
-7. **EvidenceAudit recorded** — Each Subagent round has an `EvidenceAudit` line set (`post-deploy-backlog`, `posthog-list`, `posthog-detail`, `betterstack-errors`, `betterstack-logs`, `repo-read`, `runbook-maint`, `none`) with ids and reasons.
-8. **Fix and verification plan included** — The deliverable names likely files/areas to inspect or change, plus the exact PostHog/Better Stack signals that should drop after a fix. When [Active fix verification backlog](#active-fix-verification-backlog) has unconfirmed rows, **Verification** must report pass/fail against pre-fix baselines before net-new clusters.
-9. **Boundaries preserved** — No code implementation, observability policy change, issue suppression, or Better Stack state update occurs unless the user explicitly expands scope.
+7. **EvidenceAudit recorded** — Each Subagent round has an `EvidenceAudit` line set (`post-deploy-backlog`, `posthog-access`, `posthog-list`, `posthog-detail`, `betterstack-errors`, `betterstack-logs`, `observability-set`, `repo-read`, `runbook-maint`, `none`) with ids and reasons.
+8. **Observability setup audited** — When the task asks whether errors/info are being captured, run [Observability setup audit](#observability-setup-audit) before finalizing: verify the P0/P1 routing matrix, confirm no app-level `P2` priority is being assumed, inspect representative caught-error paths for `reportError` / `processApiResponseSystemError`, and name any intentional local-only catches.
+9. **Fix and verification plan included** — The deliverable names likely files/areas to inspect or change, plus the exact PostHog/Better Stack signals that should drop after a fix. When [Active fix verification backlog](#active-fix-verification-backlog) has unconfirmed rows, **Verification** must report pass/fail against pre-fix baselines before net-new clusters.
+10. **Boundaries preserved** — No code implementation, observability policy change, issue suppression, or Better Stack state update occurs unless the user explicitly expands scope.
 
 ## When to use
 
@@ -62,6 +63,7 @@ If the task names product surfaces or routes, skim only what you need from [`doc
 
 4. **[Check first on every run](#check-first-on-every-run)** — pending post-deploy verification rows below; run before opening new clusters.
 5. **[Runbook maintenance (post-deploy verification)](#runbook-maintenance-post-deploy-verification)** — how to add, check, and remove backlog rows after fixes ship.
+6. **[Observability setup audit](#observability-setup-audit)** — required when the user asks whether logging/alerts are set up correctly or when a cluster appears silent in one source.
 
 ## Check first on every run
 
@@ -82,7 +84,8 @@ Rows track fixes that **shipped in code** but are **not yet confirmed in product
 
 | Fix | Shipped (repo) | Pre-fix baseline (-24h, triage date) | Verify first (same window) | Confirmed |
 | --- | --- | --- | --- | --- |
-| *(none)* | — | — | — | — |
+| **Option Trades cold/live stats serialization behind rows** — `useOptionTradesStore` keeps rows as the primary request, serializes optional stats behind cold/live rows, and skips stats after a rows failure so the rows RPC is not competing with a second stats query during timeout-prone loads. | `tradingflow-webapp-fullstack` local patch, pending deploy, 2026-06-17 | 2026-06-17 pre-fix: PostHog issue `019ece10-5bbc-7040-b2e1-6a8783992071` “Rows request timed out after 22s” = 7 occurrences / 3 users; Better Stack Errors pattern `e1494dc8ae11d3adec3cbc7453fff06ff1ebb544b370a7e92efead72ad2e5af1` = 5 exceptions; Better Stack Info `fetchData` rows timeout `error.P0` = 8 events; `option-trades-live` transport/network `error.P1` = 64 events. | Query PostHog issue `019ece10-5bbc-7040-b2e1-6a8783992071`; Better Stack pattern `e1494dc8ae11d3adec3cbc7453fff06ff1ebb544b370a7e92efead72ad2e5af1`; Better Stack Info for `surface=option-trades` / `operation=fetchOptionTradesRows` / `requestStage=timeout_client` and confirm counts drop materially after deploy. | No |
+| **Contract Rank direct snapshot recovered-fallback diagnostics** — `contractFlowRankService` splits direct JSON parse vs fetch/decode stages and marks direct snapshot/meta fallbacks as `failureKind=recovered_fallback` while preserving P1 capture and server fallback behavior. | `tradingflow-webapp-fullstack` local patch, pending deploy, 2026-06-17 | 2026-06-17 pre-fix: PostHog issue `019eb693-5781-7bd3-8a42-405e7854ce61` “CF snapshot returned unsupported compact payload” = 4 occurrences / 1 user; Better Stack pattern `dde126aeb830b9ee827a61e475f77e364c2aeed30f53a2cdde735e0688bef63c` = 2 exceptions; JSON parse issue `019e8dfa-d541-7132-a2cf-8a67347950c5` and Better Stack pattern `e32fc0da3a7021e0f7e3205f3bbaaf3e864a73806e8e330cd45c58007347299e` = 3-6 events; Better Stack Info `contractFlowRank.snapshot` direct snapshot failed `error.P1` = 7 events; `query:contractFlowRankSnapshot` unsupported payload `error.P0` = 2 events. | Query PostHog issues `019eb693-5781-7bd3-8a42-405e7854ce61` and `019e8dfa-d541-7132-a2cf-8a67347950c5`; Better Stack patterns `dde126aeb830b9ee827a61e475f77e364c2aeed30f53a2cdde735e0688bef63c` and `e32fc0da3a7021e0f7e3205f3bbaaf3e864a73806e8e330cd45c58007347299e`; Better Stack Info for `scope=contractFlowRank.snapshot`, `failureKind=recovered_fallback`, `requestStage in (cf_direct_snapshot_parse, cf_direct_snapshot_decode, cf_direct_snapshot_meta_parse, cf_direct_snapshot_meta_decode)`, and confirm no paired `query:contractFlowRankSnapshot` P0 for recovered direct fallbacks. | No |
 
 **Next run priority:** If any row is added here, Phase V (below) is **mandatory** before ranking new P0 clusters.
 
@@ -133,6 +136,52 @@ Update this runbook when tool schemas, source IDs, event/error semantics, noise 
 
 **Prompt maintenance suggestion** in triage deliverables should call out backlog edits (`added row`, `confirmed and archived`, `needs baseline update`) when relevant.
 
+## Observability setup audit
+
+Use this section when the user asks to verify logging/routing, when an error appears in one source but not another, or when a fix plan adds/changes `reportError`, `reportInfo`, or `processApiResponseSystemError`.
+
+**Policy source:** always read [`doc/harness/observability-rules.md`](../../harness/observability-rules.md) first. If this rules repo does not contain that file, read `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/doc/harness/observability-rules.md` from the sibling app checkout and record the fallback path in **EvidenceAudit**.
+
+**Priority vocabulary:** the WebFullStack observability policy has only `P0` and `P1`; there is no app-level `P2` routing. If a prompt asks about `P2`, state that `P2` is not a valid app observability priority and map the intent to `P1` unless the policy doc changes.
+
+**Expected routing matrix (must match `src/lib/observability/router.ts`):**
+
+| Event | Expected sinks |
+| --- | --- |
+| `error.P0` | Discord error, PostHog `$exception`, Better Stack Telemetry error, Better Stack Errors/Sentry |
+| `error.P1` | Discord error, PostHog `$exception`, Better Stack Telemetry error, Better Stack Errors/Sentry |
+| `info.P0` | Discord info, Better Stack Telemetry info |
+| `info.P1` | Better Stack Telemetry info only |
+
+**Repo audit commands (run from `tradingflow-webapp-fullstack` when code access is in scope):**
+
+```bash
+rg -n "type Priority|const ROUTES|reportError|reportInfo|processApiResponseSystemError" src/lib/observability src/utils src/server src/platform src/services src/pages src/hooks -g '*.ts' -g '*.tsx'
+rg -n "P2|reportError\\(|reportInfo\\(|processApiResponseSystemError\\(" src doc -g '*.ts' -g '*.tsx' -g '*.md'
+rg -n "catch \\([^)]*\\) \\{|catch \\{|\\.catch\\(" src/server src/platform src/services src/pages src/hooks src/utils -g '*.ts' -g '*.tsx'
+```
+
+**How to judge setup:**
+
+1. Confirm `src/lib/observability/types.ts` allows only `P0 | P1` and `src/lib/observability/router.ts` matches the routing matrix above.
+2. Confirm `src/lib/observability/router.test.ts` has coverage for `info.P0`, `info.P1`, `error.P0`, and `error.P1`; if not, add or request a small test before claiming routing is verified.
+3. For every caught failure in the suspected surface, classify it:
+   - **User-flow breaks / intended action cannot complete** — should report `error.P0` through `reportError` or `processApiResponseSystemError` before returning an error response or showing a blocking toast.
+   - **Recovered fallback / secondary path / operationally relevant but not request-breaking** — should report `error.P1` with small structured fields (`surface`, `operation`, `requestStage`, `correlationId` when available).
+   - **High-signal successful operational checkpoint** — use `info.P0` only when humans should see it in Discord; otherwise use `info.P1`.
+   - **Expected local-only catch** — acceptable only for best-effort browser storage, UUID generation, optional UI cleanup, product analytics failures, or observability sink self-protection. Name the rationale; do not call it "captured."
+4. Check that handled server function failures are reported before returning `STATUS.ERROR`; uncaught server function failures should be covered by `serverFn.uncaught` as `error.P0`.
+5. Check that `processApiResponseSystemError` callers do not accidentally hide user-blocking failures with `presentation: silent` / `inline` unless they explicitly set an appropriate severity and the UI has another visible failure state.
+6. Check Better Stack Telemetry logs for the matching `surface`, `operation`, `requestStage`, and `correlationId` after deploy; PostHog is error-only, so missing `info` in PostHog is expected.
+
+**Deliverable wording:** include an **Observability setup** subsection with:
+
+- routing matrix verified/not verified
+- priority vocabulary (`P0/P1 only`; no `P2`)
+- code paths checked and whether each reports `P0`/`P1` correctly
+- any silent catches and why they are acceptable or need a fix
+- exact tests run, or a blocker if tests were not run
+
 ## Self-maintained guidance from recent runs
 
 Update this section when an investigation exposes repeatable runbook friction, MCP schema drift, or source-access behavior that future agents should not rediscover.
@@ -144,6 +193,7 @@ Keep this section compact and reusable. Remove or rewrite entries when they beco
 - **2026-06-16 — Better Stack `telemetry_list_errors_tool` schema drift:** the live tool rejected `per_page` even though the static tool schema advertised it. Retry `telemetry_list_errors_tool` with only `application_id`, `state`, `start_time`, `end_time`, `environment`, `release`, `query`, `order_by`, and `page`.
 - **2026-06-16 — Historical Errors S3 collection missing:** `s3Cluster(primary, t203847_webfullstack_errors_2_s3)` failed with `NAMED_COLLECTION_DOESNT_EXIST`. For that run, metrics plus `telemetry_get_error_details_tool` and recent `remote(..._exceptions)` were valid evidence, but historical raw exception payloads were blocked until the Better Stack cloud connection is repaired.
 - **2026-06-16 — Current resolved IDs:** `WebFullStack-Errors` resolved to application `2412994`; `WebFullStack-Info` resolved to source `2357910`. These are evidence from one run only; still resolve fresh every run.
+- **2026-06-17 — Rank invariant doc path drift:** Some webapp repo guidance may still point to `doc/domain-knowledge/domain-invariants/data-apps/contract-rank.md`, but the current canonical Rank workbench invariant file is `doc/domain-knowledge/domain-invariants/data-apps/rank.md`. For Rank / Contract-level analysis / Symbol-level analysis clusters, resolve the path with `rg --files doc/domain-knowledge | rg 'rank|contract'`, read `rank.md`, and record the stale-path drift in **Prompt maintenance suggestion** until the webapp docs are corrected.
 
 ## Roles
 
@@ -322,7 +372,7 @@ Call out explicitly in the deliverable; do not treat as P0 app bugs by default:
 1. **Set Goal and Criteria** — Read [Check first on every run](#check-first-on-every-run) and [Active fix verification backlog](#active-fix-verification-backlog). Confirm the window, default sources, and any named issue/pattern/surface. Set `turn = 1`, `maxTurns = 8` unless the user expands budget. For long investigations, record round state in a short task note or issue comment with paths and ids only.
 2. **Prepare `nextRoundBrief`** — Fill the [Subagent prompt template](#subagent-prompt-template): time window, IDs to resolve, non-goals, allowed paths, and the specific phases the Subagent should run this round. If [Active fix verification backlog](#active-fix-verification-backlog) has unconfirmed rows, **include Phase V first**. Phase 0 starts with **`telemetry_list_applications_tool`** / **`telemetry_list_sources_tool`** to resolve current Better Stack IDs.
 3. **Delegate one Subagent round** — Always start by **launching a fresh Subagent** with the brief. The Subagent reads required docs, reads MCP tool descriptors, runs the assigned PostHog / Better Stack tools, and returns structured evidence. Keep raw tool payloads out of the Master context; require summaries with ids and counts.
-4. **Verify Criteria against the Subagent return** — Check whether sources, schemas, evidence, correlation, noise separation, confidence, `EvidenceAudit`, and verification plan are complete. Also confirm the Subagent reported the **resolved Better Stack `application_id` / `source_id`** it actually used.
+4. **Verify Criteria against the Subagent return** — Check whether sources, schemas, evidence, correlation, noise separation, observability setup (when requested), confidence, `EvidenceAudit`, and verification plan are complete. Also confirm the Subagent reported the **resolved Better Stack `application_id` / `source_id`** it actually used.
 5. **Continue or stop**:
    - **Stop** when Criteria pass, `EvidenceAudit` is `none` for warranted follow-up, or a hard blocker is explicit.
    - **Resume the same Subagent** when the round found useful state but missed a bounded follow-up, such as one pattern detail or one log correlation query.
@@ -382,11 +432,12 @@ Return:
 4. Better Stack pattern ids with counts/timestamps and drill-down summary.
 5. Correlation keys used: time slice, correlationId, scope, operation, requestUrl/route, stack top frames, channel.
 6. Clustered likely root causes with confidence and evidence.
-7. EvidenceAudit lines for phases run/skipped (post-deploy-backlog, posthog-access, posthog-list, posthog-detail, betterstack-errors, betterstack-logs, repo-read, runbook-maint, none).
-8. Targeted repo paths worth reading next, if any.
-9. Fix plan and verification signals (no implementation).
-10. Runbook maintenance: backlog row added, archived, or unchanged.
-11. Prompt friction or maintenance suggestion, if this runbook was ambiguous.
+7. EvidenceAudit lines for phases run/skipped (post-deploy-backlog, posthog-access, posthog-list, posthog-detail, betterstack-errors, betterstack-logs, observability-set, repo-read, runbook-maint, none).
+8. Observability setup audit when requested: P0/P1 routing, no app-level P2 assumption, info/error sink coverage, silent-catch review, tests/blockers.
+9. Targeted repo paths worth reading next, if any.
+10. Fix plan and verification signals (no implementation).
+11. Runbook maintenance: backlog row added, archived, or unchanged.
+12. Prompt friction or maintenance suggestion, if this runbook was ambiguous.
 ```
 
 ## Workflow phases (~24h)
@@ -402,6 +453,7 @@ The Master selects which phases the Subagent runs this round and lists them in `
 [ ] Phase C — Better Stack: refresh errors instructions for the resolved application_id; top patterns in same window (+ production filter when applicable)
 [ ] Phase D — Better Stack: drill pattern(s) for stacks / raw fields; optional logs source for correlationId / scope / operation
 [ ] Phase E — Correlate: align timestamps; map channel, scope, pathname, requestUrl; rule out known noise (see PostHog interpretation → Known noise section)
+[ ] Phase O — Observability setup: when requested or when a signal is missing, verify router/tests, P0/P1 vocabulary, caught-error reporting, P0 info routing, and intentional local-only catches
 [ ] Phase F — Code/docs: targeted repo read only when evidence points to a surface; for product/code interpretation follow AGENTS.md Mandatory Read Order (glossary + relevant doc/domain-knowledge/domain-invariants/* docs) before code reads
 [ ] Phase G — Deliverable: structured report + fix plan + verification plan (no implementation; never call telemetry_update_error_state_tool)
 ```
@@ -420,6 +472,7 @@ EvidenceAudit (turn N):
 - posthog-detail    : <ran|skipped>  why=<reason>  ids=<issue UUIDs drilled or empty>
 - betterstack-errors: <ran|skipped>  why=<reason>  ids=<pattern ids or empty>  app=<resolved application_id>
 - betterstack-logs  : <ran|skipped>  why=<reason>  ids=<correlationIds/scopes or empty>  source=<resolved source_id>
+- observability-set : <ran|skipped>  why=<reason>  paths=<router/types/tests/code paths checked>  result=<pass|fail|blocked>
 - repo-read         : <ran|skipped>  why=<reason>  paths=<targeted paths read or empty>
 - runbook-maint     : <ran|skipped>  why=<reason>  action=<archived confirmed row|added row|no change>
 - none              : <reason>       (use when no further evidence is warranted)
@@ -444,12 +497,13 @@ Use this structure (skimmable in under ~3 minutes):
 4. **Better Stack — top patterns** — For each: **`pattern`**, message/type, count trend in window, link to drill-down finding.
 5. **Clusters** — Group duplicates (deploy/chunk fetch, third-party, replay noise, etc.); cite the [Known noise / false-positive patterns](#known-noise--false-positive-patterns) section for PostHog noise.
 6. **Root cause** — Per cluster: **hypothesis**, **confidence** (high/medium/low), **evidence** (PostHog vs Better Stack vs code path).
-7. **Fix plan** — Ordered steps: smallest safe change first; note files/areas to touch; call out entitlement/auth/data-app wiki reads if needed.
-8. **EvidenceAudit** — Round-by-round `EvidenceAudit` lines, including skipped evidence and reasons.
-9. **Verification** — **Backlog first:** pass/fail per [Active fix verification backlog](#active-fix-verification-backlog) row with current vs baseline counts. Then net-new signals that should drop after any open fix plan; optional session replay spot-checks.
-10. **Runbook maintenance** — If a backlog row confirmed, state that the row was moved to [Resolved fixes (archive)](#resolved-fixes-archive) and removed from the backlog. If a new fix shipped since last run, state the row added (or defer to the implementation session).
-11. **Blockers** — MCP down, missing logs, need deploy time or feature flag context, etc.
-12. **Prompt maintenance suggestion** — `status:` `no-change` | `minor-tweak` | `needs-update`; `rationale:`; `proposed edits:`. Use for MCP schema drift, ID drift, new noise, ambiguity, or backlog/process gaps.
+7. **Observability setup** — Required when requested or when a source is unexpectedly silent: P0/P1 routing status, no-P2 note, info/error sink coverage, code paths checked, silent catches, tests/blockers.
+8. **Fix plan** — Ordered steps: smallest safe change first; note files/areas to touch; call out entitlement/auth/data-app wiki reads if needed.
+9. **EvidenceAudit** — Round-by-round `EvidenceAudit` lines, including skipped evidence and reasons.
+10. **Verification** — **Backlog first:** pass/fail per [Active fix verification backlog](#active-fix-verification-backlog) row with current vs baseline counts. Then net-new signals that should drop after any open fix plan; optional session replay spot-checks.
+11. **Runbook maintenance** — If a backlog row confirmed, state that the row was moved to [Resolved fixes (archive)](#resolved-fixes-archive) and removed from the backlog. If a new fix shipped since last run, state the row added (or defer to the implementation session).
+12. **Blockers** — MCP down, missing logs, need deploy time or feature flag context, etc.
+13. **Prompt maintenance suggestion** — `status:` `no-change` | `minor-tweak` | `needs-update`; `rationale:`; `proposed edits:`. Use for MCP schema drift, ID drift, new noise, ambiguity, or backlog/process gaps.
 
 ## Boundaries (mandatory)
 

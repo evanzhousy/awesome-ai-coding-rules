@@ -109,7 +109,8 @@ ToolAccess:
 | Webapp | `ops/webappp-fullstack/posthog-research.md` | Running product analytics, event quality, dashboard, and behavior reviews in PostHog. |
 | Webapp | `ops/webappp-fullstack/browser-e2e-product-review.md` | Walking webapp UI journeys with `@Browser` for manual E2E product testing, UI defects, and PM/trader UX findings. |
 | Landing | `ops/landingpage/e2e-product-review-runbook.md` | Simulating user journeys while doing E2E maintenance and product review. |
-| Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts, screenshots, public changelog, and What's New sync. |
+| Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts (`content/posts/**`), screenshots, public changelog, and What's New sync. |
+| Landing | `ops/landingpage/update-tutorial-series.md` | Creating/updating the bilingual tutorial series (`content/series/tradingflow-docs`) — page-based how-to chapters with annotated screenshots, Mermaid diagrams, and cross-links. |
 | Landing | `ops/landingpage/posthog-events.md` | Auditing or extending landing-site PostHog event taxonomy and funnel definitions. |
 | Skills/runbooks | `ops/skill-maintainer.md` | Maintaining runbooks and skills so future agents run them cleanly. |
 

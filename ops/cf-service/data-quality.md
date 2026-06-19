@@ -25,8 +25,8 @@ Latest production run executed for `DATE=2026-06-18` ET with `BASELINE=2026-06-1
 
 ### Look First
 
-- [ ] Investigate the 2026-06-18 UW ingest queue backlog: Better Stack showed about `5.98M` trades enqueued to `uw-option-trades-ingest-*`, but only about `1.78M` trade-attempts drained by `2026-06-19 05:56Z`; ClickHouse persisted rows into `2026-06-19 06:52Z` and still only had about `1.83M` aggregate rows.
-- [ ] Tune or redesign the ingest queue consumer path before trusting queue mode for full-volume production: production config is `high max_concurrency=8/max_batch_size=20`, `normal max_concurrency=4/max_batch_size=50`, `UW_MAX_INSERT_ATTEMPTS=1`, and observed drain throughput was below peak enqueue volume.
+- [ ] Fix the 2026-06-18 UW ingest queue backlog: Better Stack showed about `5.98M` trades enqueued to `uw-option-trades-ingest-*`, while consumer drain was about `95k-135k` trades/hour and ClickHouse had only about `1.94M` aggregate rows when rechecked. Code inspection found `processUwIngestQueueBatch` loops Cloudflare batch messages and calls `processUwIngestMessage()` per message, so production effectively drained one `~25`-trade message per logged write path.
+- [ ] Tune or redesign the ingest queue consumer path before trusting queue mode for full-volume production: production config is `high max_concurrency=8/max_batch_size=20`, `normal max_concurrency=4/max_batch_size=50`, `UW_MAX_INSERT_ATTEMPTS=1`, but the implementation did not combine queue messages into larger ClickHouse insert batches and also saw `26,212` consumer failures/retries from insert timeouts.
 - [ ] Investigate recurring strict DEI breach around `SPCX`: 2026-06-18 had `zero_dei_with_dex_share=0.0232`, with top actionable symbols `SPCX` (`2,825`) and `SOXS` (`389`) for `dei=0 AND dex>10`.
 - [ ] Track contract-rank/Greeks soft drift separately from ingest loss: next-day Massive live checks produced no hard identity failures after excluding same-day expired contracts, but still high quote/volume/Greek soft drift.
 
@@ -524,7 +524,7 @@ Also watch for `write_buffer_*_drops` coinciding with low premium share or eleva
 | Finding | Fix |
 | --- | --- |
 | Low <25k premium share + buffer drops | Deploy/tune CF Worker write buffer (high/medium thresholds, max entries/raw rows, low starvation force drain, low drain gate depth). Verify env vars took effect. |
-| Healthy premium mix + low row ratio + large `>10m` lag + `uw_ingest_queue_*` enqueue/drain gap | Tune or bypass Cloudflare Queue ingest consumer throughput (`max_batch_size`, `max_concurrency`, batch chunk size, direct-consumer fallback) and verify queue drain catches up before the next session. |
+| Healthy premium mix + low row ratio + large `>10m` lag + `uw_ingest_queue_*` enqueue/drain gap | Tune or bypass Cloudflare Queue ingest consumer throughput. First check whether `processUwIngestQueueBatch` is processing each queue message separately; combine delivered queue messages into larger ClickHouse insert batches before relying on `max_batch_size` / `max_concurrency` alone. |
 | Widespread `market_cap=0` / `earning_date` sentinel on one day | `bun scripts/backfill-trade-metadata.ts --date YYYY-MM-DD --apply` (or the DEI-specific backfill). |
 | BRKB/BFB/CMCS (or index roots) zeros | Ensure not in `EXCLUDED_SYMBOLS`; aliases present in `src/shared/symbol-meta-aliases.ts` (and cfworker copy); re-run sync or manual meta insert for the date. |
 | DEI zeros (with dex) | `bun scripts/backfill-dei.ts --date YYYY-MM-DD --apply`. |

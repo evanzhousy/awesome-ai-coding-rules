@@ -1,7 +1,7 @@
 # Data Schema
 
 > **Concepts Reference**: [OptionData Product Concepts](./basic_concepts.md)
-> **Last Updated**: 2026-06-11
+> **Last Updated**: 2026-06-19
 
 This document describes all persistent data stores: the ClickHouse analytics tables used for options flow and chain data, and the Neon Postgres table used for user persistence.
 
@@ -132,7 +132,7 @@ Snapshot of the option chain: OI, volume, Greeks, and quotes per strike/expirati
 | `gamma` | Float32 | Gamma |
 | `vega` | Float32 | Vega |
 | `theta` | Float32 | Theta |
-| `oi_change_1d` | Int32 | Daily OI change: today's OI minus prior day's OI (default 0; computed at ingestion) |
+| `oi_change_1d` | Int64 | Daily OI change: today's OI minus prior day's OI (default 0; computed at ingestion; type aligned with `oi`) |
 | `updated_timestamp` | UInt64 | ETL/update timestamp |
 
 **Engine**: `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`  
@@ -145,7 +145,7 @@ Snapshot of the option chain: OI, volume, Greeks, and quotes per strike/expirati
 
 ## SymbolMetaData
 
-Per-symbol, per-day metadata: price, volume, fundamentals, and classification. Use for filtering and joining with flow/chain tables.
+Per-symbol, per-day metadata: price, volume, fundamentals, and classification. Use for filtering and joining with flow/chain tables. It is also the **physical home of the logical "SymbolVolDaily" volatility surface**: the IV/vol columns below are written back nightly by the process-service `symbolVolDaily` batch via `ALTER TABLE SymbolMetaData UPDATE` on existing rows (not by the `sync-symbol-meta` insert).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -168,6 +168,17 @@ Per-symbol, per-day metadata: price, volume, fundamentals, and classification. U
 | `market_cap` | UInt64 | Market capitalization |
 | `historical_volatility` | Float32 | Historical volatility |
 | `earning_date` | Date | Next earnings date (if known) |
+| `iv30` | Nullable(Float32) | ATM 30-DTE implied volatility (IV/vol batch) |
+| `iv_rank_1y` | Nullable(Float32) | IV rank, 0–1 (IV/vol batch) |
+| `iv_percentile_1y` | Nullable(Float32) | IV percentile, 0–1 (IV/vol batch) |
+| `vol_date` | Nullable(Date) | As-of date for the IV/vol inputs |
+| `vol_updated_timestamp` | Nullable(UInt64) | Epoch (ms) of the last IV/vol update |
+| `skew_25d_30d` | Nullable(Float32) | 25Δ 30-DTE skew |
+| `atm_iv_30d` | Nullable(Float32) | ATM 30-DTE IV (equals `iv30` by construction) |
+| `butterfly_25d_30d` | Nullable(Float32) | 25Δ 30-DTE butterfly |
+| `iv_term_slope_30_90` | Nullable(Float32) | IV term-structure slope, 30→90 DTE |
+
+> The nine IV/vol columns (`iv30` … `iv_term_slope_30_90`) are added by one-time DDL (webapp `008_alter_symbol_metadata_iv_fields.sql` for the first five; process-service `sql/symbolmeta-add-iv-skew-term.sql` for the last four) and populated by a separate daily volatility batch (process-service `symbolVolDaily`) via `ALTER … UPDATE` on existing rows — the `sync-symbol-meta` insert does not write them. They are the live store of the metrics formerly held in the standalone `SymbolVolDaily` table.
 
 **Engine**: `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`  
 **Partition**: `PARTITION BY date`  
@@ -181,12 +192,12 @@ Per-symbol, per-day metadata: price, volume, fundamentals, and classification. U
 
 Canonical **symbol-day daily mart** at `(date, symbol)` grain. It combines live flow aggregates from `AggregatedOptionTrades` with structure, metadata, volatility, and GEX fields populated by batch/backfill writes.
 
-> **No longer read by any live webapp surface (v1, 2026-06-11).** The Symbol-level page was consolidated into the Contract-level **Symbols** tab, which is derived from `mv_contract_rank_flow` (the contract snapshot) joined with the `SymbolMetaData` ⋈ `SymbolVolDaily` catalog; the `mv_symbol_day_flow` Day Trend reader and the `marketRankList.ts` list/universe queries were deleted. The mart is still **populated** (ETL / potential other consumers) — audit before decommission.
+> **No longer read by any live webapp surface (v1, 2026-06-11).** The Symbol-level page was consolidated into the Contract-level **Symbols** tab, which is derived from `mv_contract_rank_flow` (the contract snapshot) joined with the `SymbolMetaData` catalog (which now carries the IV/vol surface — see below); the `mv_symbol_day_flow` Day Trend reader and the `marketRankList.ts` list/universe queries were deleted. There are **zero live webapp readers** — every remaining `mv_symbol_day_flow` reference in the webapp is a comment or test (a unit test actively asserts the contract symbol-context CTE does *not* read it). The mart is still **populated** (the `fillSymbolStructure` preopen/final crons plus the `004`/`007` trade MVs trigger on `AggregatedOptionTrades` INSERTs).
 
 **Write paths**:
 - **Flow (live)**: materialized view on `AggregatedOptionTrades` INSERT. Flow columns and `trade_count` are populated immediately; structure columns receive no-op `argMaxState` values until batch structure rows win on merge.
 - **Structure preopen (batch/backfill)**: after option-chain ingest, process-service writes chain/GEX and stable metadata fields from `OptionChainTable` and latest `SymbolMetaData.date <= date`. It also writes `underlying_type` from `SymbolMetaData` so structure-present rows classify stocks/ETFs/indexes before the first trade. Volatility fields are skipped.
-- **Structure final (batch/backfill)**: after `SymbolVolDaily`, process-service rewrites the same structure fields with a later structure version and adds `iv30`, `iv_rank_1y`, `iv_percentile_1y`, and `vol_date`.
+- **Structure final (batch/backfill)**: after the `symbolVolDaily` IV/vol batch writes the IV columns onto `SymbolMetaData`, process-service rewrites the same structure fields with a later structure version and adds `iv30`, `iv_rank_1y`, `iv_percentile_1y`, and `vol_date` (read from `SymbolMetaData`).
 
 **Presence checks are query-time derived, not stored**: flow-present when `sumMerge(trade_count) > 0 OR sumMerge(total_premium) > 0`; structure-present when `argMaxMerge(chain_contract_count) > 0`.
 
@@ -207,7 +218,7 @@ Canonical **symbol-day daily mart** at `(date, symbol)` grain. It combines live 
 | `average_stock_volume` | AggregateFunction(argMax, Nullable(UInt64), UInt64) | structure | Average daily stock volume from latest `SymbolMetaData.date <= date` |
 | `market_cap` | AggregateFunction(argMax, Nullable(UInt64), UInt64) | structure | Market capitalization |
 | `sector` | AggregateFunction(argMax, String, UInt64) | structure | Sector classification |
-| `iv30` | AggregateFunction(argMax, Nullable(Float32), UInt64) | final structure | ATM IV around 30 DTE (`SymbolVolDaily`) |
+| `iv30` | AggregateFunction(argMax, Nullable(Float32), UInt64) | final structure | ATM IV around 30 DTE (from `SymbolMetaData.iv30`, written by the `symbolVolDaily` batch) |
 | `iv_rank_1y` | AggregateFunction(argMax, Nullable(Float32), UInt64) | final structure | IV rank, 0-1 |
 | `iv_percentile_1y` | AggregateFunction(argMax, Nullable(Float32), UInt64) | final structure | IV percentile, 0-1 |
 | `vol_date` | AggregateFunction(argMax, Nullable(Date), UInt64) | final structure | As-of date for volatility metrics |
@@ -226,7 +237,7 @@ Canonical **symbol-day daily mart** at `(date, symbol)` grain. It combines live 
 - **Order**: `ORDER BY (date, symbol)`
 - **Settings**: `index_granularity = 8192`
 - **Source**: `AggregatedOptionTrades` for live flow; batch/backfill SQL for structure fields
-- **Retention**: 425 days (daily partition drops in the process-service `deleteOldData` job; one row per symbol-day, aligned with the SymbolMetaData/SymbolVolDaily year windows)
+- **Retention**: 425 days (daily partition drops in the process-service `deleteOldData` job, `shared-clients/clickhouse/retention.ts`; one row per symbol-day, aligned with the SymbolMetaData year window)
 
 **Query pattern**: Use `-Merge` suffix functions to finalize aggregate state:
 
@@ -255,13 +266,13 @@ GROUP BY date, symbol
 
 Canonical **contract-day daily mart** at `(date, option_symbol)` grain, on the **execution-side schema** (`009_create_mv_contract_rank_flow.sql`). It combines live flow aggregates from `AggregatedOptionTrades` with chain snapshot fields populated by batch/backfill writes.
 
-> **Blue/green transition**: this mart is the successor of the legacy `mv_contract_day_flow`, created alongside it (both MVs trigger off the same `AggregatedOptionTrades` INSERTs, and the structure fill dual-fills both). Readers resolve the active mart by **table existence** (no env flag; flip executed 2026-06-11) with a legacy fallback that is deleted at decommission; the legacy mart stays dual-filled until it is dropped after soak (`010_decommission_mv_contract_day_flow.sql`).
+> **Blue/green transition (complete)**: this mart is the successor of the legacy `mv_contract_day_flow`. Both the read-side flip (2026-06-11) and the writer cutover are **done**. The contract structure fill now writes **only** `mv_contract_rank_flow` and no longer dual-fills the legacy mart (process-service `service.ts` "Decommission B2", 2026-06-15). The legacy `mv_contract_day_flow` is kept **frozen and unused** but is **never dropped** (project decision) — it is no longer written or read, yet it must still **exist** because the `syncUwData` ingest preflight still `DESCRIBE`s it strictly (`mv_contract_rank_flow` is DESCRIBE-optional). The `010_decommission_mv_contract_day_flow.sql` DROP script exists in-repo but is intentionally not executed. NOTE: the in-repo DDL headers (`009`)/README and the process-service `client.ts` constant comment still describe the old "blue/green dual-fill, dropped at decommission" model — those artifacts are stale; ground truth is the fill code (`martStructureFill/service.ts`/`sql.ts`).
 
 The stored flow dimension is **execution side** (`ask_*` / `bid_*` / `mid_*` for premium, size, and DEX). Sentiment is **not stored**: it is exactly `f(put_call, side)` (see [Sentiment Derivation](./basic_concepts.md#sentiment-derivation-sentiment-field)), so the bullish/bearish/neutral family derives exactly at read time. The MV's flow expressions do not reference the `sentiment` column at all.
 
 **Write paths**:
 - **Flow (live)**: materialized view on `AggregatedOptionTrades` INSERT. Flow columns and trade-sourced bid/ask/Greeks are populated immediately; `prev_oi` receives a no-op value until batch structure rows win on merge.
-- **Structure (batch/backfill)**: process-service `FillContractStructure` (and the webapp backfill scripts) seed all chain contracts, including non-traded contracts, with structure fields from `OptionChainTable`. The structure write also **mark-fills `latest_trade_price` with the chain close** at version `toDateTime(1)` (real prints always win the merge) and writes placeholder states for the flow-only columns `moneyness` (`''`) and `underlying_price` (`0`) at the chain timestamp.
+- **Structure (batch/backfill)**: process-service `fillContractStructureForDate` (`martStructureFill/service.ts`; SQL in `martStructureFill/sql.ts` `CONTRACT_STRUCTURE_SQL` / `CONTRACT_PREV_OI_SQL`) and the webapp backfill scripts seed all chain contracts, including non-traded contracts, with structure fields from `OptionChainTable`. The structure write also **mark-fills `latest_trade_price` with the chain close** at version `toDateTime(1)` (real prints always win the merge) and writes placeholder states for the flow-only columns `moneyness` (`''`) and `underlying_price` (`0`) at the chain timestamp.
 
 **Rank filter**: contract flow ranks should filter on `sumMerge(trade_count) > 0` so structure-only baseline rows do not appear in flow rank lists.
 
@@ -310,7 +321,7 @@ neutral_dex  = mid_dex
 net_dex      = if(put_call = 'CALL', ask_dex - bid_dex, bid_dex - ask_dex)
 bullish/bearish/neutral premium follow the same put_call mapping over the side premiums
 net_dei      = (net_dex / average_stock_volume) * 100          -- display percent units
-underlying_type / average_stock_volume come from the symbol-context join on mv_symbol_day_flow
+underlying_type / average_stock_volume come from the symbol-context join on SymbolMetaData (latest date <= effective_date via argMax(col, date))
 ```
 
 Also query-time only: `oi_delta_pct`, `vol_oi_ratio`, `contract_gex`, `premium_per_contract`, `avg_trade_size`, expiry buckets. Contract Rank `oi_delta`/`Δ OI` uses `OptionChainTable.oi_change_1d` as the canonical value (resolved by `option_symbol`, then identity key); when chain delta is absent it falls back to `oi − prior OI`, where prior OI prefers `mv_contract_rank_flow.prev_oi` and fills gaps from prior-day chain OI lookups (by `option_symbol`, then identity key) — live flow MV rows can carry null `prev_oi` until structure writes/backfills run. Flow-only contracts missing from same-day `OptionChainTable` can receive `prev_oi` via `backfill_flow_only_contract_prev_oi.sql`.
@@ -323,7 +334,7 @@ Also query-time only: `oi_delta_pct`, `vol_oi_ratio`, `contract_gex`, `premium_p
 - **Partition**: `PARTITION BY date`
 - **Order**: `ORDER BY (date, option_symbol)`
 - **Settings**: `index_granularity = 8192`
-- **Source**: `AggregatedOptionTrades` for live flow; process-service `FillContractStructure` / backfill SQL for structure fields
+- **Source**: `AggregatedOptionTrades` for live flow; process-service `fillContractStructureForDate` (`martStructureFill/service.ts` + `sql.ts`) / backfill SQL for structure fields
 - **Retention**: 120 days (daily partition drops in the process-service `deleteOldData` job, via the embedded MV's inner storage table); deepest consumer is the 90-day contract drawer history
 
 **Query pattern**: Merge states in a CTE, derive the read-time columns, then filter/sort:
@@ -331,10 +342,10 @@ Also query-time only: `oi_delta_pct`, `vol_oi_ratio`, `contract_gex`, `premium_p
 ```sql
 WITH symbol_context AS (
   SELECT symbol,
-         anyMerge(underlying_type) AS underlying_type,
-         argMaxMerge(average_stock_volume) AS average_stock_volume
-  FROM mv_symbol_day_flow
-  WHERE date = {effective_date:Date}
+         argMax(underlying_type, date) AS underlying_type,
+         argMax(average_stock_volume, date) AS average_stock_volume
+  FROM SymbolMetaData
+  WHERE date <= {effective_date:Date}
   GROUP BY symbol
 ),
 merged_contracts AS (
@@ -372,23 +383,17 @@ LIMIT {limit:UInt64} OFFSET {offset:UInt64}
 
 ## SymbolVolDaily
 
-Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (30 DTE) with 400+ day retention, enabling IV Rank and IV Percentile screener rankings. **Not** a materialized view — populated by a daily batch job after OptionChainTable ingestion (~06:30 AM ET).
+> **Retired table — the IV/vol surface now lives on `SymbolMetaData`.** The per-symbol ATM IV (30 DTE), IV Rank, IV Percentile, and the skew/butterfly/term companions are stored as columns **on `SymbolMetaData`** (`iv30`, `iv_rank_1y`, `iv_percentile_1y`, `vol_date`, `vol_updated_timestamp`, `skew_25d_30d`, `atm_iv_30d`, `butterfly_25d_30d`, `iv_term_slope_30_90`; added by webapp DDL `008_alter_symbol_metadata_iv_fields.sql` + process-service `sql/symbolmeta-add-iv-skew-term.sql`). They are written nightly by the process-service `symbolVolDaily` batch via `ALTER TABLE SymbolMetaData UPDATE` after OptionChainTable ingestion (~06:30 AM ET), and the webapp reads IV30 / IV-rank / IV-percentile from `SymbolMetaData`. The standalone `SymbolVolDaily` table is **no longer written and no longer read** — it is kept only as rollback-only legacy with partition retention.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `date` | Date | Snapshot date |
-| `symbol` | LowCardinality(String) | Underlying ticker (e.g. AAPL, SPY) |
-| `iv30` | Float32 | ATM implied vol at ~30 DTE (avg of call + put IV at best ATM strike/expiry pair) |
-| `iv_rank_1y` | Float32 | 0–1; position of today's iv30 in the adaptive high/low window (prior non-null `iv30` days plus today). NULL if fewer than **30** prior+current samples, or flat min=max history |
-| `iv_percentile_1y` | Float32 | 0–1; fraction of **prior** trading days with `iv30` strictly lower than today's. NULL under the same **30**-sample minimum as rank (process-service `symbolVolDaily` / wiki refactor plan) |
-| `snapshot_spot` | Float32 | Underlying price at snapshot time (from SymbolMetaData) |
-| `underlying_type` | LowCardinality(String) | `ETF` / `STOCK` / `INDEX` |
+The compute logic (preserved, now writing onto `SymbolMetaData`): `iv30` is the ATM IV per expiry interpolated to 30 DTE (avg of call + put IV at the best ATM strike/expiry pair); `iv_rank_1y` is 0–1, the position of today's `iv30` in the adaptive high/low window (prior non-null `iv30` days plus today), NULL if fewer than **30** prior+current samples or flat min=max history; `iv_percentile_1y` is 0–1, the fraction of **prior** trading days with `iv30` strictly lower than today's, NULL under the same **30**-sample minimum; the `snapshot_spot` input comes from `SymbolMetaData.last`; `underlying_type` classifies `ETF` / `STOCK` / `INDEX`. IV Rank and IV Percentile require ~252 trading days of history to reach full accuracy.
+
+The legacy table (retained for rollback only):
 
 **Engine**: `SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')`  
 **Partition**: `PARTITION BY toYYYYMM(date)`  
 **Order**: `ORDER BY (symbol, date)`  
 **Settings**: `index_granularity = 8192`  
-**Retention**: 400+ days (monthly partitions; drop partitions older than 14 months)
+**Retention**: 425 days (`SYMBOL_VOL_DAILY_RETENTION_DAYS`; monthly `YYYYMM` partitions, drop partitions whose first day is older than today − 425d) — rollback-only legacy retention, since the table is no longer written or read.
 
 ---
 
@@ -400,10 +405,10 @@ Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (
 | **RawOptionTrades** | Raw option trades | Exact T&S, research, unaggregated flow |
 | **OptionChainTable** | Option chain snapshot | OI, GEX, call/put walls, strike analysis, `oi_change_1d` per contract |
 | **SymbolMetaData** | Underlying metadata | Filters, joins, sector/volume/market cap |
-| **mv_symbol_day_flow** | MV: symbol-day flow + structure mart | **No live webapp consumer (v1 2026-06-11)** — Symbol-level consolidated into the snapshot-derived Contract-level Symbols tab; mart still populated for ETL/audit |
+| **mv_symbol_day_flow** | MV: symbol-day flow + structure mart | **No live webapp readers (v1 2026-06-11)** — Symbol-level consolidated into the snapshot-derived Contract-level Symbols tab; still populated (crons + trade MVs) but every webapp reference is a comment/test |
 | **mv_contract_rank_flow** | MV: execution-side contract-day flow + structure mart | Contract Flow Rank screener (Contracts **and** snapshot-derived Symbols tab), OI/contract context, symbol-drawer Flow history + Chain quotes |
-| **mv_contract_day_flow** | Legacy contract-day mart (blue/green; dropped at decommission) | Reader fallback only since the 2026-06-11 flip; stays dual-filled until decommission |
-| **SymbolVolDaily** | Derived daily ATM IV + rank/percentile | IV Rank, IV Percentile, Volatility Desk |
+| **mv_contract_day_flow** | Legacy contract-day mart (frozen; never dropped) | Writer cutover done (2026-06-15) — no longer dual-filled or read; kept frozen/unused but must still exist for the `syncUwData` strict DESCRIBE preflight |
+| **SymbolVolDaily** | Retired vol table (rollback-only) | IV Rank / IV Percentile / Volatility Desk now read the IV columns on **SymbolMetaData** (`iv30`/`iv_rank_1y`/`iv_percentile_1y`/…); this table is no longer written or read |
 
 ---
 
@@ -412,10 +417,10 @@ Per-symbol, per-day derived volatility metrics. Stores underlying-level ATM IV (
 - **OI timing**: Open interest is updated overnight (e.g. ~6:30 AM ET). Intraday `oi` in flow/chain tables is the prior day’s value; see [OI Update Frequency](./basic_concepts.md#oi-update-frequency).
 - **Time zones**: `AggregatedOptionTrades.time` is `DateTime` (server TZ); `RawOptionTrades.time` is explicitly `America/New_York`.
 - **SharedMergeTree**: Tables use ClickHouse shared storage (`{uuid}`, `{shard}`, `{replica}`); replace with your cluster layout as needed.
-- **Materialized views (`SharedAggregatingMergeTree`)**: `mv_symbol_day_flow` and `mv_contract_rank_flow` (plus the legacy `mv_contract_day_flow` until decommission) store `AggregateFunction(...)` columns. Query with `-Merge` suffix functions (e.g. `sumMerge(total_premium)`). Live flow rows trigger on INSERTs to `AggregatedOptionTrades`; structure fields are populated by separate batch/backfill writes — `OptionChainTable`, `SymbolMetaData`, and `SymbolVolDaily` for the symbol mart, `OptionChainTable` only for the contract mart (its `underlying_type`/`net_dei` resolve via the symbol-context join at read time).
-- **Embedded MVs — no `ADD COLUMN`**: on TradingFlow ClickHouse Cloud both marts are materialized views with embedded storage. Schema changes require DROP+CREATE (the `004`/`009`-style recreate scripts) followed by rehydration via `scripts/clickhouse/backfill/run-backfill.sh`; partition operations target the inner `.inner_id.<uuid>` table. See `scripts/clickhouse/ddl/README.md`.
-- **Mart retention**: `mv_contract_rank_flow` 120 days, `mv_symbol_day_flow` 425 days — daily partition drops in the process-service `deleteOldData` job (which also covers the base tables and `SymbolVolDaily`).
-- **SymbolVolDaily**: Populated by a daily batch job (not an MV). IV Rank and IV Percentile require ~252 trading days of history to reach full accuracy.
+- **Materialized views (`SharedAggregatingMergeTree`)**: `mv_symbol_day_flow` and `mv_contract_rank_flow` store `AggregateFunction(...)` columns. (The legacy `mv_contract_day_flow` is frozen — no longer written or read — but still exists; it must remain because the `syncUwData` ingest preflight `DESCRIBE`s it strictly. The preflight stays strict until a future human-run DROP, which is intentionally not executed.) Query with `-Merge` suffix functions (e.g. `sumMerge(total_premium)`). Live flow rows trigger on INSERTs to `AggregatedOptionTrades`; structure fields are populated by separate batch/backfill writes — `OptionChainTable` and `SymbolMetaData` for the symbol mart (the IV/vol fields are read from `SymbolMetaData`, where the `symbolVolDaily` batch now writes them), `OptionChainTable` only for the contract mart (its `underlying_type`/`net_dei`/`average_stock_volume` resolve via the symbol-context join on `SymbolMetaData` at read time).
+- **Embedded MVs — no `ADD COLUMN`**: on TradingFlow ClickHouse Cloud both marts are materialized views with embedded storage. Schema changes require DROP+CREATE (the `004`/`009`-style recreate scripts) followed by rehydration via `scripts/clickhouse/backfill/run-backfill.mjs` (the Node runner; `run-backfill.sh` is a thin wrapper); partition operations target the inner `.inner_id.<uuid>` table. See `scripts/clickhouse/ddl/README.md`.
+- **Mart retention**: `mv_contract_rank_flow` 120 days, `mv_symbol_day_flow` 425 days — daily partition drops in the process-service `deleteOldData` job (orchestrated by `controllers/maintenance/deleteOldData.ts`; constants/logic in `shared-clients/clickhouse/retention.ts`). The legacy `mv_contract_day_flow` is **not** in the retention job (frozen/unused). `SymbolVolDaily` (rollback-only legacy) is retained 425 days via monthly `YYYYMM` partition drops.
+- **IV/vol surface on `SymbolMetaData`**: The retired standalone `SymbolVolDaily` table's metrics now live as columns on `SymbolMetaData` (`iv30`, `iv_rank_1y`, `iv_percentile_1y`, `vol_date`, `vol_updated_timestamp`, `skew_25d_30d`, `atm_iv_30d`, `butterfly_25d_30d`, `iv_term_slope_30_90`), written nightly by the process-service `symbolVolDaily` batch via `ALTER TABLE SymbolMetaData UPDATE` (not an MV). IV Rank and IV Percentile require ~252 trading days of history to reach full accuracy.
 - **`oi_change_1d`**: Computed at ingestion time in the pipeline. For backfill, use a `Join` engine table + `ALTER TABLE UPDATE ... joinGet(...)` pattern (version-sensitive; validate against your ClickHouse version).
 
 ---
@@ -435,7 +440,12 @@ Neon Postgres table for user persistence. Schema lives in `scripts/neon-users-mi
 | `watchlists` | `JSONB` | Yes | Array of Watchlist entries; default `[]` |
 | `option_trades_preferences` | `JSONB` | No | `OptionTradesPreferenceDocV1` object |
 | `created_at` | `TIMESTAMPTZ` | Yes | Defaults to `now()` |
-| `updated_at` | `TIMESTAMPTZ` | Yes | Maintained by trigger |
+| `updated_at` | `TIMESTAMPTZ` | Yes | Set by `BEFORE UPDATE` trigger `users_set_updated_at` calling `set_users_updated_at()` |
+
+**Constraints**:
+
+- `users_watchlists_array` — `CHECK (jsonb_typeof(watchlists) = 'array')`: `watchlists` must be a JSON array.
+- `users_option_trades_preferences_object` — `CHECK (option_trades_preferences IS NULL OR jsonb_typeof(option_trades_preferences) = 'object')`: `option_trades_preferences` must be NULL or a JSON object.
 
 ### JSONB Contracts
 
@@ -452,7 +462,7 @@ Neon Postgres table for user persistence. Schema lives in `scripts/neon-users-mi
 }
 ```
 
-Watchlist identity is `items[*].symbol`. `exchange` is optional cached metadata for display and may be refreshed from `SymbolMetaData`; Option Trades query consumers project Watchlists to bare symbols.
+Watchlist identity is `items[*].symbol`. `exchange` is cached metadata for display: the key is always present but its value may be `null` (`string | null`), and it may be refreshed from `SymbolMetaData`. The repository uppercases and trims `symbol`/`exchange` and de-duplicates items by symbol on read/write. Option Trades query consumers project Watchlists to bare symbols.
 
 `option_trades_preferences` stores the canonical Option Trades Preference document. The document may contain `savedFilterSets`, an array of named Option Trades Saved Filter Sets:
 

@@ -32,10 +32,10 @@ Use `/goal` for production status checks:
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-19
 
 ### Look First
-- [ ] Investigate the production `/uw-ingestion/status` strict-live path: during the 2026-06-17 10:37-10:43 ET run it timed out at 20s, 60s, and 15s while `/canary`, contract-rank, available-dates, and symbol-meta were healthy; Wrangler tail showed the stateless `/uw-ingestion/status` fetch canceled client-side without a corresponding `UwIngestionDO` response, and Better Stack showed no UW interval report after the 09:30 ET `streaming_resumed` event.
+- [ ] Re-check the production UW ingest queue backlog/write timeouts before declaring contract-rank serving stale. The latest RTH run showed the Worker connected and contract-rank snapshot refreshes completing, but `/uw-ingestion/status` had `ingestDeliveryMode:"queue"` with a rising `ingestQueuePendingTradeCount`, Better Stack showed queue send/write timeouts, and ClickHouse `AggregatedOptionTrades` / `mv_contract_rank_flow` were behind the live session trade time. Verify `/uw-ingestion/status`, Better Stack `event`/message patterns, and ClickHouse latest trade time; if still behind, hand off to the cf-service queue consumer / ClickHouse writer fix.
 
 ## Runbook Self-Maintenance
 
@@ -252,6 +252,8 @@ echo "$S" | jq '.lastIntervalReport // "no interval report yet"'
 | `lastDrainFinishedAtMs` | recent | stale + rising `writeBufferDepth` → drain stalled |
 | `writeBufferDepth` / `writeBufferRawRows` | low and draining (caps 6000 / 20000) | near/at cap → drops; **0 before market activity is normal** |
 
+**Queue-mode note:** when `ingestDeliveryMode:"queue"` and `ingestDirectConsumerEnabled:false`, the DO's direct drain counters (`tradesNormalized`, `rawRowsInserted`, `aggregateRowsInserted`, `lastClickHouseDrainAtMs`, `writeBufferDepth`) can stay zero even while live ingest is active. In that mode, check `lastIngestQueueEnqueueAtMs`, `lastIngestQueueErrorAtMs`, `ingestQueuePendingTradeCount`, and Better Stack queue consumer events/messages. A fresh `lastTradeAtMs` plus a growing queue backlog means UW is live but ClickHouse/mart writes are lagging behind the stream.
+
 `lastIntervalReport` (latest `uw_websocket_health` counters): `trades_in`, `normalize_ok`/`normalize_fail`, `ch_drain_ok`/`ch_drain_fail`, `ch_raw_rows`/`ch_agg_rows`, `write_buffer_high_drops`/`low_drops`, `max_write_buffer_depth`, `errors_total`. Healthy during RTH: `trades_in > 0`, `ch_drain_ok > 0`, `normalize_fail`/`errors_total` near zero.
 
 Watch the stream live (cron nudges, drains, errors in real time):
@@ -295,19 +297,23 @@ curl/wrangler show *now*; Better Stack shows *what happened* (refresh successes/
 
 **Events to query and what each cross-verifies:**
 
-| `operation` / event | Cross-verifies | Key fields |
+| `operation` / `event` / message pattern | Cross-verifies | Key fields |
 | --- | --- | --- |
 | `contract_rank_snapshot_refresh_completed` | §1 freshness **and** §6 size | `refreshStatus`, `effectiveDate`, `rowCount`, **`payloadBytes`**, `latencyMs`, `force` |
 | `contract_rank_snapshot_refresh_failed` / `refresh_failed` | a stale snapshot (§1) | `requestStage` |
 | `uw_websocket_health` (every 5 min, RTH P0) | §3 ingest health | `trades_in`, `ch_drain_ok/fail`, `write_buffer_*_drops`, `max_write_buffer_depth`, `max_low_priority_lag_ms` |
+| `uw_ingest_queue_enqueue_batch`, `uw_ingest_queue_enqueue_failed`, `uw_ingest_queue_drain_batch`, `uw_ingest_queue_consumer_failed`, `uw_ingest_queue_message_retry` | queue-mode ingest backlog / ClickHouse writer lag (§3/§4) | `tradeCount`, `messageCount`, `rawRowsInserted`, `aggregateRowsInserted`, `errorMessage`, queue kind |
 | `streaming_started` / `streaming_stopped` / `streaming_resumed` | UW socket lifecycle | reason, timestamps |
 | `first_option_trades_after_restart_missing` (P0) | no trades after join | — |
 | `end_of_day_summary` (P0, ≥16:00 ET) | the session settled cleanly | `happy_total_count`, `unhappy_total_count` |
+
+Queue-mode events may appear either in the JSON `event` field or as message text while `operation` is the generic `uw_ingestion_info` / `uw_ingestion_error`. If an `operation IN (...)` query misses queue activity, retry with `event IN (...)` and/or message filters such as `positionCaseInsensitive(raw, 'queued UW ingest messages')`, `failed to queue UW ingest batch`, `drained UW ingest queue batch`, `UW ingest queue consumer failed`, and `retrying UW ingest queue message`.
 
 Decision pairing:
 - Stale `asOf` (§1) **+** recent `contract_rank_snapshot_refresh_failed` → rebuild path broken (read `requestStage`); not an empty-source problem.
 - Stale `asOf` **+** no `refresh_*` events at all → the cron itself isn't firing (check §0 deployment, DO reset loop §6).
 - Stale `lastTradeAtMs` (§3) **+** `streaming_stopped` / `first_option_trades_after_restart_missing` → upstream socket issue → restore-streaming.
+- Fresh `lastTradeAtMs` (§3) **+** growing `ingestQueuePendingTradeCount` / queue write timeouts **+** ClickHouse latest trade time behind the clock → queue consumer or ClickHouse writer backlog; the snapshot DO may still refresh, but it can only serve the delayed mart state.
 - `payloadBytes` trending up sharply across `refresh_completed` events → size review (§6).
 
 (For producer-side ClickHouse ingest incidents — write-buffer drops, insert timeouts — that telemetry is on the EC2 source: use `betterstack-error-healing.md`.)
@@ -376,6 +382,7 @@ Outside market hours, contract-rank `asOf`/`effectiveDate` and UW `lastTradeAtMs
 | --- | --- |
 | contract-rank `MISS`/404, everything else OK | DO storage empty/reset → `force` rebuild |
 | contract-rank `effectiveDate` stuck mid-RTH, UW healthy, ClickHouse current | Scheduled **rebuild** stalled — Better Stack `contract_rank_snapshot_refresh_failed` (§5), cron, DO reset loop (§6) |
+| contract-rank `effectiveDate` and `asOf` current, but UI `Last trade` is old and ClickHouse `max(time)` is old | Source ingest/mart lag, usually UW queue consumer / ClickHouse writer backlog — check `ingestQueuePendingTradeCount` and queue timeout logs |
 | `effective` shows yesterday after 09:30 ET | Reference-data cron stalled, OR ClickHouse has no today rows yet (step 4). Pre-09:30 ET it's correct. |
 | symbol-meta date old / `symbolMetaCount` low | Nightly sync failed or DO meta refresh failing → downstream market_cap/DEI zeros (data-integrity) |
 | UW `connected:false` during RTH | Zombie UW socket / reconnect → restore-streaming |

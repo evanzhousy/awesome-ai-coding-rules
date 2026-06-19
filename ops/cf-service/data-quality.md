@@ -19,18 +19,16 @@ Use `/goal` for each full audit:
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-19
 
-Latest production run executed for `DATE=2026-06-16` ET with `BASELINE=2026-06-10`.
-
-Documentation-only correction after that run: `mv_contract_day_flow` is retired and must not be checked.
+Latest production run executed for `DATE=2026-06-18` ET with `BASELINE=2026-06-10`.
 
 ### Look First
 
-- [ ] Investigate the residual 2026-06-16 write-buffer pressure interval: Better Stack active reports showed `write_buffer_low_drops=17,786` and `write_buffer_dropped_raw_rows=20,495` at `2026-06-16 14:21:25Z`, with `UW_SPILLOVER_ENABLED=true` but no spillover enqueue/drain activity.
-- [ ] Investigate the strict DEI breach around `SPCX`: `zero_dei_with_dex_share=0.0292`, and `SPCX` had `63,607` non-index rows with `dei=0 AND dex>10` despite a same-day `SymbolMetaData` row with non-zero average stock volume.
-- [ ] Track residual aggregate duplicate fingerprints: 2026-06-16 had `107,656` exact duplicate aggregate rows by full-row fingerprint, concentrated in hours 10-14 ET. Raw duplicate fingerprints are not conclusive without source trade ids.
-- [ ] Contract-rank Massive spot check had no hard identity failures, but high soft quote/Greek drift (`97` field drifts across `40` sampled contracts). Re-run same-evening if this needs EOD parity rather than next-day live Massive comparison.
+- [ ] Investigate the 2026-06-18 UW ingest queue backlog: Better Stack showed about `5.98M` trades enqueued to `uw-option-trades-ingest-*`, but only about `1.78M` trade-attempts drained by `2026-06-19 05:56Z`; ClickHouse persisted rows into `2026-06-19 06:52Z` and still only had about `1.83M` aggregate rows.
+- [ ] Tune or redesign the ingest queue consumer path before trusting queue mode for full-volume production: production config is `high max_concurrency=8/max_batch_size=20`, `normal max_concurrency=4/max_batch_size=50`, `UW_MAX_INSERT_ATTEMPTS=1`, and observed drain throughput was below peak enqueue volume.
+- [ ] Investigate recurring strict DEI breach around `SPCX`: 2026-06-18 had `zero_dei_with_dex_share=0.0232`, with top actionable symbols `SPCX` (`2,825`) and `SOXS` (`389`) for `dei=0 AND dex>10`.
+- [ ] Track contract-rank/Greeks soft drift separately from ingest loss: next-day Massive live checks produced no hard identity failures after excluding same-day expired contracts, but still high quote/volume/Greek soft drift.
 
 ## Local workspace project map
 
@@ -59,7 +57,7 @@ Sibling projects (api-service-lambda, cron-service-lambda, quant-service, web-la
 
 **Timing notes:**
 - Data/meta scan: after symbol meta sync completes.
-- Contract-rank correctness + Greeks: after `OptionChainTable` ingest. Massive snapshot is live at fetch time — same evening for best EOD parity; intraday runs expect more drift.
+- Contract-rank correctness + Greeks: after `OptionChainTable` ingest. Massive snapshot is live at fetch time — same evening for best EOD parity; intraday or next-day runs expect more drift. If running after the ET date has rolled, exclude contracts expiring on the target date from Massive presence checks or classify those misses as timing artifacts because live Massive may no longer return expired same-day contracts.
 
 ## Prerequisites
 
@@ -97,18 +95,17 @@ Keep this file as the canonical operator entrypoint for this check:
 
 ### Latest run note
 
-2026-06-17 Asia/Shanghai / 2026-06-16 ET:
+2026-06-19 Asia/Shanghai / 2026-06-18 ET:
 
-- Target: `DATE=2026-06-16`, `BASELINE=2026-06-10`. Latest-date SQL showed `2026-06-16` had `15,444,617` aggregate rows, `last_time_et=2026-06-16 16:59:58`, `6,080` `SymbolMetaData` rows, `1,963,964` option-chain rows, and `1,966,706` `mv_contract_rank_flow` contracts.
-- `bun scripts/check-data-integrity.ts --date 2026-06-16 --baseline-date 2026-06-10 --strict` exited `1` because `zero_dei_with_dex_share=0.0292` exceeded the `0.02` threshold. Other metrics were healthy: `<25k premium share=0.9725`, `zero_market_cap_stock_share=0.0015`, `agg_row_ratio=2.5165`.
-- `bun scripts/verify-producer-freshness.ts 2026-06-16` exited `0`: open p50 `0s`, p95 `54s`, p99 `83.09s`, no `>5m` or `>10m` rows, and full-session extent `09:30:00` to `16:59:58`.
-- `bun scripts/audit-small-trade-coverage.ts 2026-06-16` and `--compare 2026-06-10,2026-06-15,2026-06-16` exited `0`. RTH raw-vs-aggregate hourly ratios were `0.9998-1.0005`; raw premium mix was `68.54% <1k`, `27.22% 1k-10k`, `2.65% 10k-25k`, `1.59% >=25k`.
-- DEI drill-down: top non-index `dei=0 AND dex>10` symbols were `SPCX` (`63,607`), `SPCH` (`5,028`), `SOXS` (`4,466`), `SSPC` (`1,967`), and `SPCF` (`945`). Coverage-gate missing symbols were smaller: `XSPBW` (`261`), `MXEF` (`48`), `PBRA` (`47`), `MOGA` (`23`), and `SPESG` (`15`).
-- Duplicate fingerprint smoke: `AggregatedOptionTrades` had `15,444,617` rows and `15,336,961` unique full-row fingerprints (`107,656` duplicates, about `0.7%`, concentrated in hours 10-14 ET). `RawOptionTrades` full-row fingerprints showed many duplicates, but raw has no source trade id, so identical raw rows can overstate true duplicate trades.
-- Better Stack active `uw_websocket_health` reports (`interval.tradesReceived > 0`) for the RTH window showed `181` OK/connected reports, `23,847,177` trades received, `1` ClickHouse drain failure, `0` high drops, `17,786` low pressure drops, `20,495` dropped raw rows, `0` spillover enqueue/drain failures, `0` spillover messages, `max_write_buffer_depth=5,401`, and `max_low_priority_lag_ms=16,515`. Separate non-active disconnected zero-trade reports are stale-alarm noise unless corroborated by active-report gaps.
-- Contract-rank Massive sample (`WING,CHYM,NVAX,TSLT,RRX`, `40` contracts) had `0` hard identity/structure failures and `97` soft quote/Greek/OI/volume drifts. Treat hard identity as passing and soft drift as timing/vendor-snapshot follow-up.
-- `bun scripts/check-greeks-parity.ts --date 2026-06-16 --phase a` exited `0` but breached on `32/40` compared contracts across `AAPL,NVDA,QQQ,SPY,TSLA`; treat as Greeks/chain parity investigation, not an Option Trades row-loss signal.
-- No Phase B was run after the runbook was corrected: `mv_contract_day_flow` is retired and should not be checked. Future Greeks parity should use `OptionChainTable` vs Massive unless a new active flow mart is explicitly named.
+- Target: `DATE=2026-06-18`, `BASELINE=2026-06-10`. Latest-date SQL showed rows still arriving during the run; the final probe had `1,836,039` aggregate rows, `2,216,177` aggregate fills, `last_time_et=2026-06-18 16:59:15`, max aggregate `updated_at_utc=2026-06-19 06:54:15`, `6,096` `SymbolMetaData` rows, `1,988,094` option-chain rows, and `1,988,135` `mv_contract_rank_flow` contracts.
+- `bun scripts/check-data-integrity.ts --date 2026-06-18 --baseline-date 2026-06-10 --strict` exited `1`: `agg_row_ratio=0.2961` and `zero_dei_with_dex_share=0.0232` breached. `<25k premium share=0.9555` and `zero_market_cap_stock_share=0.0001` were healthy.
+- `bun scripts/verify-producer-freshness.ts 2026-06-18` exited `0` but showed a severe backlog: open p50 `53s`, p95 about `626s`, p99 `886s`, `1,729,989` rows with `>10m` lag, and full-session extent `09:30:00` to `16:59:15`. Rows persisted hourly from `2026-06-18 13:00Z` through `2026-06-19 06:00Z`.
+- `bun scripts/audit-small-trade-coverage.ts 2026-06-18` and `--compare 2026-06-10,2026-06-17,2026-06-18` exited `0`. Raw-vs-aggregate hourly ratios were about `0.9999-1.0002`; raw premium mix was `66.68% <1k`, `26.03% 1k-10k`, `3.26% 10k-25k`, and `4.03% >=25k`. This was not a low-priority filtering signature.
+- DEI drill-down: non-index `dei=0 AND dex>0` was `37,579 / 1,618,265 = 0.0232`; top `dex>10` symbols were `SPCX` (`2,825`), `SOXS` (`389`), and `XDB` (`16`). Coverage-gate missing symbols were `MXEF` (`19`) and `XDB` (`16`).
+- Duplicate fingerprint smoke using live schema and `uniqExact(tuple(...))` showed `0` exact full-row aggregate duplicates across about `1.82M` rows.
+- Better Stack `uw_ingest_queue_*` telemetry for `2026-06-18 13:25Z` to `2026-06-19 07:00Z`: `uw_ingest_queue_enqueue_batch` logged about `5.98M` trade-attempts, enqueue failures logged `668` failed send attempts / `66,382` trade-attempts, and drain logs covered about `1.78M` trade-attempts / `1.66M` raw rows / `1.37M` aggregate rows. Active `uw_websocket_health` reports had `0` write-buffer drops and `0` spillover messages. Wrangler confirmed `uw-option-trades-ingest-high`, `uw-option-trades-ingest-normal`, and `uw-option-trades-spillover` each have one producer and one consumer.
+- Contract-rank Massive sample (`VIXW,LOFF,FUBO,ASTS,DOCN`, excluding contracts expiring on `2026-06-18`) had `0` hard identity failures and `86` soft drifts across `40` sampled contracts. The unfiltered sample produced same-day-expiry presence misses after Massive live rolled, so do not treat those as hard sync failures.
+- `bun scripts/check-greeks-parity.ts --date 2026-06-18 --phase a --strict` exited `1`: `40` sampled contracts, `22` compared, `18` breached, failing all default symbols (`AAPL,NVDA,QQQ,SPY,TSLA`). Treat as chain/provider EOD parity drift, not the direct cause of UW row loss.
 
 ---
 
@@ -487,10 +484,13 @@ Run this when retry policy, queue spillover, ClickHouse insert settings, or dedu
 SELECT
   'AggregatedOptionTrades' AS table_name,
   count() AS rows,
-  uniqExact(cityHash64(
-    symbol, option_symbol, date, time, price, size, premium, side,
-    put_call, strike, expiry, expiry_days, iv, delta, gamma, theta, vega,
-    rho, dex, dei, market_cap, underlying_price, updated_timestamp
+  uniqExact(tuple(
+    symbol, option_symbol, date, time, price, size, premium, bid, ask, side,
+    put_call, strike, expiration_date, expiry_days, underlying_type,
+    option_activity_type, oi, underlying_price, sentiment, moneyness,
+    iv, delta, gamma, daily_volume, earning_date, dex, dei, trade_count,
+    updated_timestamp, ask_size, bid_size, exchange, vega, theta, rho,
+    market_cap
   )) AS unique_rows,
   rows - unique_rows AS duplicate_rows
 FROM AggregatedOptionTrades
@@ -512,17 +512,19 @@ Current high-signal fields (from `ingestion-telemetry.ts` and write-buffer):
 - `spillover_enqueued_messages` / `spillover_enqueued_raw_rows` / `spillover_enqueue_failures`
 - `spillover_drained_messages` / `spillover_drained_raw_rows` / `spillover_drain_failures`
 - `spillover_backlog_count` / `spillover_backlog_bytes`
+- `uw_ingest_queue_enqueue_batch` / `uw_ingest_queue_enqueue_failed` / `uw_ingest_queue_drain_batch` event totals when `UW_INGEST_QUEUE_ENABLED=true`
 - `dei_suppressed_missing_symbol_meta` / `market_cap_suppressed_missing_symbol_meta`
 
 For historical sessions use Better Stack S3 storage (`s3Cluster(..._s3)` with `_row_type = 1`). Filter active health rows with `interval.tradesReceived > 0` before interpreting connection health; stale named Durable Object alarms can emit disconnected zero-trade reports that do not prove a live stream outage.
 
-Also watch for `write_buffer_*_drops` coinciding with low premium share or elevated open p95. If `UW_SPILLOVER_ENABLED=true` and low-pressure drops occur with `spillover_enqueued_messages=0`, treat it as a spillover admission-path bug until code/config proves those rows were intentionally ineligible.
+Also watch for `write_buffer_*_drops` coinciding with low premium share or elevated open p95. If `UW_SPILLOVER_ENABLED=true` and low-pressure drops occur with `spillover_enqueued_messages=0`, treat it as a spillover admission-path bug until code/config proves those rows were intentionally ineligible. If `UW_INGEST_QUEUE_ENABLED=true`, compare queue enqueue trade-attempts to queue drain trade-attempts by hour; a sustained enqueue/drain gap with high `>10m` ClickHouse lag is an ingest queue throughput incident, not an in-memory write-buffer incident.
 
 ### 7. Remediation (after bad verdict)
 
 | Finding | Fix |
 | --- | --- |
 | Low <25k premium share + buffer drops | Deploy/tune CF Worker write buffer (high/medium thresholds, max entries/raw rows, low starvation force drain, low drain gate depth). Verify env vars took effect. |
+| Healthy premium mix + low row ratio + large `>10m` lag + `uw_ingest_queue_*` enqueue/drain gap | Tune or bypass Cloudflare Queue ingest consumer throughput (`max_batch_size`, `max_concurrency`, batch chunk size, direct-consumer fallback) and verify queue drain catches up before the next session. |
 | Widespread `market_cap=0` / `earning_date` sentinel on one day | `bun scripts/backfill-trade-metadata.ts --date YYYY-MM-DD --apply` (or the DEI-specific backfill). |
 | BRKB/BFB/CMCS (or index roots) zeros | Ensure not in `EXCLUDED_SYMBOLS`; aliases present in `src/shared/symbol-meta-aliases.ts` (and cfworker copy); re-run sync or manual meta insert for the date. |
 | DEI zeros (with dex) | `bun scripts/backfill-dei.ts --date YYYY-MM-DD --apply`. |
@@ -546,6 +548,7 @@ After any ClickHouse backfill/mutation, wait for `system.mutations` `is_done=1` 
 | Symbol skipped after *all* history providers returned empty | **Upstream** no-data for that ticker (check `aggregatesNoData` + sync summary) |
 | Broad Polygon/Massive errors across >5% of universe | Possible true upstream outage — corroborate with sync logs at scale |
 | Open p50 OK, large >5m(d) tails, but `agg_to_raw_ratio` ≈ 1.0 and small trades present | **Local** catch-up backlog (buffer depth / drain pressure) |
+| Healthy premium mix, zero write-buffer drops, but low row ratio and `uw_ingest_queue` enqueue volume far above drain volume | **Local** Cloudflare Queue ingest throughput/backlog incident |
 | High open p50 + CH hour gaps + buffer drops | **Local** ingest / write-buffer incident |
 
 **Do not** blame a vendor (Massive, Polygon, Longport, Alpha Vantage) until you have **broad** multi-symbol failure **and** the sync logs show provider errors at scale. Isolated alias/excluded/OTC/illiquid cases are almost always local config or per-ticker upstream limits.
@@ -603,8 +606,10 @@ LIMIT 5;
 
 Then run a bounded Massive comparison. This is intentionally an operator snippet, not a durable script; if the check becomes routine, extract it into `scripts/check-contract-rank-massive-parity.ts`.
 
+If the target date is already in the past and Massive live has rolled forward, add `toDate(anyMerge(expiration_date)) > toDate('${DATE}')` to the `HAVING` clauses before treating Massive `presence` misses as hard failures. Same-day-expiring contracts can disappear from the live snapshot after the target date.
+
 ```bash
-bun <<'TS'
+bun run - <<'TS'
 import axios from "axios";
 import { clickhouseClient } from "./src/shared-clients/clickhouse/client";
 import { POLYGON_AGGREGATES_SYMBOL_ALIASES } from "./src/shared/symbol-meta-aliases";

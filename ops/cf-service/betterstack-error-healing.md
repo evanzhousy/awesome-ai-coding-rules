@@ -17,16 +17,17 @@ Use `/goal` for live or post-incident runs:
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-19
 
 ### Look First
 
-- [ ] Investigate the 2026-06-17 active-session start gap. `bun scripts/verify-producer-freshness.ts 2026-06-17` at 10:44 EDT showed the producer writing fresh aggregate rows (`max_time=10:44:57` ET, `total_rows=1,066,612`) but still `row_count=0` for 09:30-09:35 ET. Direct raw/aggregate probes showed both tables first had rows at 09:39:12 ET and were fresh through 10:45:16 ET (`AggregatedOptionTrades=1,072,641`, `RawOptionTrades=1,546,612`).
-- [ ] Investigate Worker ingest observability after first trade. Better Stack `cf-service` for 13:15-14:50 UTC showed `streaming_started=1`, `channel_join_ack=1`, `streaming_resumed=1`, `uw_ingestion_errors=1` only from pre-open spillover queue metrics timeout at 13:15:01 UTC, and no `write_buffer_drop`, `write_buffer_drop_summary`, `write_buffer_drain_batch`, or timeout logs after open. `uw_websocket_health` still stopped after 13:27:28 UTC despite fresh ClickHouse writes.
+- [ ] Decide and implement the queue retry budget for queue-mode ingest. The 2026-06-19 run saw delayed high-queue backlog still draining off-session with sustained `uw_ingest_queue_consumer_failed` and `uw_ingest_queue_message_retry`; in the last 2 hours, high had 2,568 consumer failures versus normal's 47, while both queues continued draining.
+- [ ] Quantify 2026-06-18 data completeness after queue catch-up. `bun scripts/verify-producer-freshness.ts 2026-06-18` showed full-session rows from 09:30:00 to 16:59:15 ET (`total_rows=1,818,462`) but high lag (`p95=626s`, `rows_gt_5min_day=1,769,478`); compare against recent baselines and missing-minute ranges before declaring no data loss.
+- [ ] Document or remediate the 2026-06-17 opening gap. A 2026-06-19 rerun confirmed `row_count=0` for 09:30-09:35 ET and first row `09:39:12` ET despite full-day `total_rows=6,533,446`.
 
 ### Blocked / Needs Decision
 
-- [ ] Check why `GET https://cfworker-service.engineering-601.workers.dev/uw-ingestion/status` still timed out for 45s on the 10:45 EDT rerun while `/canary` returned `Success`. The status timeout plus missing post-open health reports remain an observability/status-path problem, not proof of writer death, because ClickHouse rows were fresh.
+- [ ] Choose the loss-vs-catch-up policy for high and normal queues. Production currently has `UW_INGEST_QUEUE_ENABLED=true`, `UW_MAX_INSERT_ATTEMPTS=1`, and Cloudflare queue `max_retries=3`; current evidence supports reducing normal retries to 0 and high to at most 1 if throughput/cascade avoidance is preferred over best-effort replay.
 
 ## Runbook Self-Maintenance
 
@@ -85,6 +86,8 @@ Always pair **Better Stack producer logs** with **ClickHouse time coverage** (se
 | Worker streaming lifecycle | `event IN ('streaming_started', 'streaming_resumed', 'channel_join_sent', 'channel_join_ack')` on `cf-service` |
 | Worker health report | `event = 'uw_websocket_health'` on `cf-service`; inspect `interval.*`, `connected`, and `upstreamAllowed` |
 | Worker drain/drop | `event IN ('write_buffer_drain_batch', 'write_buffer_drop', 'write_buffer_drop_summary')` or `operation = 'uw_ingestion_error'` on `cf-service` |
+| Worker queue producer | `event IN ('uw_ingest_queue_enqueue_batch', 'uw_ingest_queue_enqueue_failed')` on `cf-service` |
+| Worker queue consumer | `event IN ('uw_ingest_queue_drain_batch', 'uw_ingest_queue_consumer_failed', 'uw_ingest_queue_message_retry', 'uw_ingest_queue_message_failed', 'uw_ingest_queue_invalid_message_acked')` on `cf-service` |
 
 ### Interpretation matrix
 
@@ -92,6 +95,9 @@ Always pair **Better Stack producer logs** with **ClickHouse time coverage** (se
 | --- | --- | --- |
 | Worker `streaming_started`/`channel_join_ack` before open, `streaming_resumed` at first trade, CH rows advancing | Active Worker producer is connected and writing | Healthy, unless CH coverage has gaps |
 | Worker CH rows advancing but `uw_websocket_health` stops or `/uw-ingestion/status` hangs | Status/observability path problem; do not confuse with write outage without CH staleness | P1 unless CH freshness also fails |
+| Queue mode active, `write_buffer_drain_batch=0`, and `uw_ingest_queue_drain_batch` rows advancing | Expected queue-mode writer path; consumer, not DO, writes ClickHouse | Healthy unless queue failures/retries are rising |
+| `uw_ingest_queue_consumer_failed` with `uw_ingest_queue_message_retry`, especially partial sink states like `aggregate=success, raw=timeout` or `aggregate=timeout, raw=success` | ClickHouse partial sink timeout; retry may repair the missing sink but can amplify repeated work | P1/P0 depending rate and backlog |
+| Queue drains/retries continue on a market holiday or closed session | Delayed backlog/catch-up, not live UW websocket failure by itself | P1 if sustained or starving production capacity |
 | `write_buffer_elevated`, drains succeeding, no drops | Normal/drain pressure; producer is compensating | Info dashboard |
 | `write_buffer_elevated` plus serial `write_buffer_drain_batch` pressure=`warn` | Warn pressure; aggregate/raw inserts serialized by policy | P1/dashboard |
 | `index_refresh_degraded_to_stale_cache` | Requested family served from stale Longport/Massive cache | P1/info |
@@ -230,6 +236,12 @@ SELECT
   countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'write_buffer_drop') AS write_buffer_drop_events,
   countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'write_buffer_drop_summary') AS write_buffer_drop_summary_events,
   countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'write_buffer_drain_batch') AS write_buffer_drain_batch_events,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_enqueue_batch') AS queue_enqueue_batches,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_enqueue_failed') AS queue_enqueue_failures,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_drain_batch') AS queue_drain_batches,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_consumer_failed') AS queue_consumer_failures,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_message_retry') AS queue_message_retries,
+  countIf(JSONExtract(raw, 'event', 'Nullable(String)') = 'uw_ingest_queue_message_failed') AS queue_message_failures,
   countIf(JSONExtract(raw, 'message', 'Nullable(String)') LIKE '%timeout%') AS timeout_message_logs,
   countIf(JSONExtract(raw, 'message', 'Nullable(String)') LIKE '%ch_drain_fail=%') AS health_like_ch_drain_fail_logs
 FROM (
@@ -240,6 +252,40 @@ FROM (
   WHERE _row_type = 1 AND dt >= toDateTime('2026-06-17 13:30:00') AND dt < toDateTime('2026-06-17 21:00:00')
 )
 ```
+
+In queue mode, break down queue pressure by queue kind:
+
+```sql
+SELECT
+  JSONExtract(raw, 'event', 'Nullable(String)') AS event,
+  JSONExtract(raw, 'queueKind', 'Nullable(String)') AS queue_kind,
+  count() AS logs,
+  sumOrNull(JSONExtract(raw, 'tradeCount', 'Nullable(UInt64)')) AS trades,
+  sumOrNull(JSONExtract(raw, 'rawRowsInserted', 'Nullable(UInt64)')) AS raw_rows,
+  sumOrNull(JSONExtract(raw, 'aggregateRowsInserted', 'Nullable(UInt64)')) AS aggregate_rows,
+  min(dt) AS first_seen_utc,
+  max(dt) AS last_seen_utc
+FROM (
+  SELECT dt, raw FROM remote(t203847_cf_service_logs)
+  WHERE dt >= toDateTime('2026-06-18 13:30:00') AND dt < toDateTime('2026-06-18 21:00:00')
+  UNION ALL
+  SELECT dt, raw FROM s3Cluster(primary, t203847_cf_service_s3)
+  WHERE _row_type = 1 AND dt >= toDateTime('2026-06-18 13:30:00') AND dt < toDateTime('2026-06-18 21:00:00')
+)
+WHERE JSONExtract(raw, 'event', 'Nullable(String)') IN (
+  'uw_ingest_queue_enqueue_batch',
+  'uw_ingest_queue_enqueue_failed',
+  'uw_ingest_queue_drain_batch',
+  'uw_ingest_queue_consumer_failed',
+  'uw_ingest_queue_message_retry',
+  'uw_ingest_queue_message_failed',
+  'uw_ingest_queue_invalid_message_acked'
+)
+GROUP BY event, queue_kind
+ORDER BY event ASC, queue_kind ASC
+```
+
+When queue-mode retry pressure is high, also sample recent `uw_ingest_queue_consumer_failed` logs and inspect sink statuses in `errorMessage`. Partial success on one sink plus timeout on the other is the main retry-amplification pattern.
 
 For legacy process-service ingest, use the original drain queries below.
 

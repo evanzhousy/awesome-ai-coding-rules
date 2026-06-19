@@ -15,20 +15,20 @@ This runbook is intentionally **browser-first**. Do not run the repository Playw
 Use `/goal` for a full review:
 
 - Objective: run a Browser-driven product E2E walkthrough for the requested TradingFlow webapp surface, finding UI defects and PM/trader UX issues without executing repository E2E scripts.
-- Success criteria: Browser plugin is used for walkthroughs, required product/domain context is read, scoped journeys are exercised for the relevant personas and viewports, premium guards are checked across the required account states when access is in scope, explicitly authorized billing lifecycle tests prove the user-visible payment/add-card/change-card/cancel flows through Browser, any Stripe SDK fixture mutations are restored to the original seeded state, findings use the required output tables, and this runbook is maintained if reusable friction is discovered.
+- Success criteria: Browser plugin is used for walkthroughs, required product/domain context is read, scoped journeys are exercised for the relevant personas and viewports, registration is tested with a real disposable email plus OTP when auth/signup is in scope, premium guards are checked across the required account states when access is in scope, explicitly authorized payment-capability tests prove through Browser that a user can start from the app, make a test payment, add a payment method, change payment method or billing/payment status through the user-facing flow, cancel or schedule cancellation where the UI permits it, return to the app, and see the correct billing/access result. The report must frame these as user capabilities, not as "Stripe status mutation" tests. No payment capability or payment-status change is marked passed from SDK-only mutation. Any Stripe SDK fixture mutations are restored to the original seeded state, findings use the required output tables, and this runbook is maintained if reusable friction is discovered.
 - Stop condition: scoped journeys are complete, a real browser/auth/data/local-env blocker is documented with evidence, or the user redirects scope.
 
 Pasteable objective:
 
 ```text
-Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Browser / plugin://browser@openai-bundled to walk the requested TradingFlow webapp journeys in the browser. Do not run repository Playwright E2E scripts. Use existing E2E specs only as read-only journey maps. When auth, billing, paid controls, or premium data are in scope, test the premium guard with guest, active, canceled, trial_no_pm, and trial_with_pm accounts. Produce UI defect findings, ProductReviewFinding rows, ElementActionMatrix, AccessTierGuardMatrix, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and runbook maintenance note.
+Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Browser / plugin://browser@openai-bundled to walk the requested TradingFlow webapp journeys in the browser. Do not run repository Playwright E2E scripts. Use existing E2E specs only as read-only journey maps. When auth or registration is in scope, test a real create-account flow with a unique disposable email alias, retrieve the OTP through an approved Gmail path, and verify the new signed-in account state. When auth, billing, paid controls, or premium data are in scope, test the premium guard with guest, active, canceled, trial_no_pm, and trial_with_pm accounts. When payment, add-card, change-card, cancellation, or billing-access behavior is explicitly in scope, run a Browser payment-capability review: prove whether the user can perform the app -> Stripe-hosted UI -> app-return journey and see the correct billing/access result. Do not scope or summarize the review as testing Stripe mutation. Use Stripe SDK/API mutation only to create preconditions, verify canonical state, force terminal states that the UI cannot directly create, or restore fixtures. Produce UI defect findings, ProductReviewFinding rows, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, BillingLifecycleMatrix when applicable, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and runbook maintenance note.
 ```
 
 ## Agent Handoff
 
-Last updated: 2026-06-18
+Last updated: 2026-06-19
 
-Last maintenance was documentation-only. Reframed the Stripe test section around Browser-driven user payment lifecycle testing; SDK mutation is documented as setup/verification/cleanup support only, not the testing goal.
+Last run found a durable Stripe-hosted UI limitation: the in-app Browser can verify app -> Stripe test portal handoff, but may be unable to type into Stripe Elements' cross-origin card iframe. If that happens, mark add-card/payment completion as Browser-blocked unless the user approves Chrome or SDK support. SDK support remains support-only evidence, not Browser proof of the hosted card form.
 
 No open handoff items.
 
@@ -41,6 +41,8 @@ Produce an evidence-backed Browser walkthrough report that answers:
 3. What is unreasonable or weak from a product manager and option trader perspective?
 4. Which UI elements should be added, deleted, merged, updated, or kept?
 5. Do premium guards allow paid/trial users to use premium controls while preventing guest or unpaid users from receiving premium data, starting live streams, or mutating gated table state?
+6. When billing lifecycle behavior is in scope, can the user complete the Browser-visible test-mode payment, add-payment-method, change-payment-method, payment-status, and cancellation journeys from the app through Stripe-hosted UI and back to the app with the correct billing/access result?
+7. When auth or registration is in scope, can a new user create an account with email verification and land in the expected signed-in access state?
 
 ## Non-Negotiables
 
@@ -51,6 +53,8 @@ Produce an evidence-backed Browser walkthrough report that answers:
 - Treat E2E specs as journey maps only: read titles, personas, setup, routes, and expected user outcomes; do not use selectors or spec line numbers as UX evidence.
 - Domain truth wins over current code and current tests. If glossary or invariant docs conflict with the observed UI, report the mismatch.
 - Do not transmit sensitive data, make purchases, save payment methods, submit destructive forms, change account permissions, or mutate Stripe/Neon billing state unless the user explicitly authorized that exact action for a test environment.
+- When the user explicitly authorizes billing lifecycle testing, judge pass/fail from the Browser-visible user action and app result. Stripe SDK/API mutation is support evidence only; it cannot prove that a user can pay, add or change payment method, change payment status, or cancel.
+- Do not bypass CAPTCHA, MFA, or account-protection challenges during registration. If a visible CAPTCHA challenge appears, ask the user to complete or explicitly approve the step. Automated E2E may use Clerk's test-token helper, but this Browser product review should treat CAPTCHA as a blocker unless the user intervenes.
 
 ## What "Not From Scripts" Means
 
@@ -125,9 +129,54 @@ Default credentials from `tests/e2e/fixtures/auth.ts`:
 | Trial without payment method | `trialing+clerk_test@example.com` | Trial access granted, payment method still needed |
 | Trial with payment method | `trialingwithpayment+clerk_test@example.com` | Trial access granted, payment method confirmed |
 
-OTP defaults to `424242` unless the repo docs or user say otherwise.
+Seeded test-account OTP defaults to `424242` unless the repo docs or user say otherwise. Fresh disposable registration must use the code actually delivered to Gmail.
 
 Before using these credentials in a Browser review, re-open `tests/e2e/fixtures/auth.ts` in the app repo and confirm the scenario labels and email defaults have not drifted. Environment overrides such as `E2E_LOGIN_EMAIL_ACTIVE` can change the actual seeded account in a local checkout.
+
+## Browser Registration Test
+
+Use this section whenever auth, signup, onboarding, or guest-to-user conversion is in scope. The app-under-test interactions must happen in `@Browser`; Gmail or Chrome is only support for retrieving the verification code.
+
+Disposable email pattern:
+
+- Preferred manual Browser-review address family: `evanzhousyforward+<date-or-run-id>@gmail.com`, for example `evanzhousyforward+0619codex1552@gmail.com`.
+- The verification email should arrive in the base Gmail mailbox `evanzhousyforward@gmail.com`.
+- Use a unique plus-address per run. If a run is retried after code expiry or account creation, generate a new suffix instead of reusing the same alias.
+
+OTP retrieval order:
+
+1. Prefer the Gmail connector when it is already available or the user approves installing it.
+2. If the Gmail connector is unavailable and the user has approved `@Chrome`, use `plugin://chrome@openai-bundled` to open Gmail and read the latest verification email for the alias.
+3. If neither path is available, stop at the verification-code screen and ask the user for the OTP. Do not guess or bypass the code.
+4. Do not include the OTP value in the final report unless the user explicitly asks. Record only that the OTP was retrieved from the approved mailbox path.
+
+Manual Browser procedure:
+
+1. Start from a signed-out state:
+   - Verify the header shows `Sign in` or equivalent signed-out copy.
+   - If a previous avatar/email is visible, sign out and clear Clerk/browser session state before continuing.
+2. Open the app route under review, normally `/app/option-trades/live` or the auth entrypoint requested by the user.
+3. Open `LoginModal` from the visible app CTA or gate.
+4. Switch to `Create account` / registration mode.
+5. Enter the unique disposable email alias and submit.
+6. CAPTCHA handling:
+   - If the Clerk CAPTCHA container is present but no visible challenge blocks the flow, continue.
+   - If a visible CAPTCHA, MFA, or account-protection challenge appears, stop and ask the user to complete or approve the step. Do not use automated CAPTCHA bypasses in this Browser review.
+7. Verify the modal advances to the code-entry state and clearly shows the target email alias.
+8. Retrieve the OTP from Gmail using the approved support path.
+9. Enter the OTP in Browser and submit.
+10. Verify post-registration state:
+    - Login modal closes.
+    - Header shows user avatar or signed-in account control.
+    - User/account menu shows the exact disposable email.
+    - `/app/billing` or the current app surface shows the expected new-user access state, such as trial banner, add-payment CTA, or default free/trial guard.
+    - The route under review recovers without losing the intended return path.
+11. If registration is part of premium-guard review, continue with the same account only after recording it as a new-user/trial scenario. Do not assume it replaces the seeded `active`, `canceled`, `trial_no_pm`, or `trial_with_pm` accounts unless the billing state proof matches one of those scenarios.
+
+Automated E2E note:
+
+- Repository E2E registration may use Clerk's testing token helper and `#clerk-captcha` fixture support.
+- That helper is not proof for this Browser product review. Browser review requires a real visible create-account flow unless the user explicitly changes scope to automated E2E certification.
 
 ## Premium Guard Account Matrix
 
@@ -149,19 +198,30 @@ Minimum cross-account pass:
 4. If trial behavior is in scope, repeat with `trial_no_pm` and `trial_with_pm`; both should have premium access, but billing copy and CTAs must differ by payment-method status.
 5. After every account switch, verify the displayed email or account identity plus `/app/billing` state before continuing. If the identity or billing state did not change, clear Clerk/browser session state and retry; do not count the run.
 
-Safety rule: do not complete Stripe checkout, add a payment method, change a subscription, or mutate seeded account billing state during a normal product review. It is acceptable to verify that a button navigates to Stripe test checkout or customer portal, then stop and record the destination evidence. If the user explicitly asks to test payment, add-payment-method, change-payment-method, cancel, or billing-status transitions in a test environment, use `Authorized Browser Billing Lifecycle Test` below.
+Safety rule: do not complete Stripe checkout, add a payment method, change a subscription, or mutate seeded account billing state during a normal product review. In a normal review, verifying that a button reaches Stripe Checkout or the customer portal proves CTA wiring only; it does not prove that the user can pay, add or change payment method, change payment status, or cancel. If the user explicitly asks to test payment, add-payment-method, change-payment-method, cancel, payment-status change, or billing-access behavior in a test environment, use `Authorized Browser Payment Capability Test` below.
 
-## Authorized Browser Billing Lifecycle Test
+## Authorized Browser Payment Capability Test
 
-Use this section only when the user explicitly asks to test payment, add-payment-method, change-payment-method, cancel, or billing-status transitions in a test environment. The testing goal is the user-visible Browser journey. Stripe SDK/API mutation is only fixture setup, canonical verification, or cleanup support; an SDK-only state change does not prove that the product flow works.
+Use this section only when the user explicitly asks to test payment, add-payment-method, change-payment-method, cancel, payment-status change, or billing-access behavior in a test environment. The testing goal is the user-visible Browser journey: the user starts from the app, completes the Stripe-hosted step a real user would take, returns to the app, and sees the correct billing/access result. Do not call this a Stripe mutation test; Stripe mutation is only fixture support.
 
-Browser-first rule:
+Intent boundary:
 
-- To mark `user can make payment`, `user can add payment method`, `user can change payment method`, or `user can cancel payment/subscription` as passed, the agent must perform the corresponding app/Stripe-hosted UI action in Browser and verify the visible result after returning to the app.
+- Name the objective and findings in user-capability language: `user can make payment`, `user can add payment method`, `user can change payment/billing status`, `user can cancel`, or `user cannot ... because ...`.
+- The product test asks whether the user can make payment, add a payment method, change payment method, change payment status through a user-facing billing flow, cancel or schedule cancellation, and still see correct access status in the app.
+- This is not a Stripe state-mutation test. A Stripe SDK/API state change can help set up, verify, force a terminal state, or clean up a scenario, but it is not the evidence that the user flow works.
+- If the app or Stripe-hosted UI blocks a Browser step, report that capability as `blocked` or `fail`; do not replace the missing Browser step with an SDK/API mutation and call it passed.
+- If terminal `canceled` cannot be produced through the user-facing portal, first test the Browser cancellation path that the user can actually perform, then use SDK/API only to force a disposable subscription into terminal `canceled` for app-state verification.
+- Treat `payment-status change` as a Browser-initiated user transition, such as trial/no-payment-method to trial-with-payment-method or active, active to scheduled cancellation, or active to terminal canceled when the portal exposes immediate cancellation. Direct SDK/API status mutation is fixture support, not the user capability under test.
+
+Browser-first pass rules:
+
+- To mark `user can make payment`, `user can add payment method`, `user can change payment method`, `user can change payment status`, or `user can cancel payment/subscription` as passed, the agent must perform the corresponding app and Stripe-hosted UI action in Browser and verify the visible result after returning to the app.
 - SDK/API state mutation may create a precondition that would be slow or impossible to reach safely through UI, verify the canonical Stripe/Neon state, force a terminal state that the UI cannot produce directly, or restore the seeded account.
 - Do not report a user payment capability as passed when the only evidence is a Stripe SDK update.
+- If `browserAction` is empty, skipped, or replaced by SDK/API mutation, the user capability is `blocked` or `fail`; the SDK/API step can only explain support work in `sdkSupportUsed`.
+- Put SDK/API work in the `sdkSupportUsed` column of `BillingLifecycleMatrix`; never put SDK/API mutation in `browserAction` as a substitute for the user action.
 
-Required safety gates before any payment lifecycle test:
+Required safety gates before any payment-capability test:
 
 1. Confirm the target app repo is `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack`.
 2. Read `.env.local` or the active runtime config locally and require the Stripe secret key used for verification or cleanup to start with `sk_test_`. Abort on missing key, `sk_live_`, or unknown key source.
@@ -175,7 +235,7 @@ Required safety gates before any payment lifecycle test:
 6. Prefer disposable test customers/subscriptions for destructive or hard-to-restore states. If the seeded user's Neon `stripe_customer_id` is repointed to a disposable customer, restore it before final response.
 7. Print only safe object IDs and statuses. Do not print API keys, raw env files, Clerk secrets, full card details, or full payment method payloads.
 
-Browser lifecycle pattern:
+Browser capability pattern:
 
 1. Prove the starting state in Browser:
    - `/app/billing` shows the expected account state and CTA, such as `Add Payment Method`, `View Plans`, `Manage Subscription`, or `Manage Payment Methods`.
@@ -183,7 +243,7 @@ Browser lifecycle pattern:
 2. Test payment or add-payment-method through UI:
    - Click the app CTA in Browser (`Add Payment Method`, `View Plans`, paywall CTA, or equivalent).
    - Verify navigation to Stripe Checkout or Customer Portal test flow.
-   - Complete the Stripe-hosted test flow only after the user has explicitly authorized this payment lifecycle test and test mode is verified.
+   - Complete the Stripe-hosted test flow only after the user has explicitly authorized this payment-capability test and test mode is verified.
    - Return to the app and verify billing refreshes to the expected state, such as active/trial-with-payment-method copy, subscription management controls, or premium access.
 3. Test changing payment method through UI:
    - Start from a state that has a payment method.
@@ -198,24 +258,31 @@ Browser lifecycle pattern:
 5. Test terminal canceled status when required:
    - If the product must handle immediate `canceled` but the user-facing portal only creates scheduled cancellation, use Stripe SDK/API only to move the disposable test subscription to the terminal canceled state after the Browser cancel flow has already been tested.
    - Browser-verify `/app/billing` canceled copy, hidden/gated paid management controls, and premium guard behavior on the scoped app route.
-6. Restore the seeded user:
+6. When starting from `trialing+clerk_test@example.com`, cover the full seeded-account lifecycle the user requested:
+   - Prove the initial `/app/billing` state is trial access with no payment method.
+   - Use Browser to start from the app CTA, complete the Stripe-hosted add-payment or checkout flow with Stripe test data, return to the app, and verify payment-method/active-access state plus premium surface access.
+   - Use Browser to open the billing portal from the app, cancel through the user-facing cancellation flow, return to the app, and verify scheduled-cancel or canceled copy plus the correct access behavior.
+   - If immediate terminal `canceled` cannot be produced from the user-facing portal, use SDK/API only after the Browser cancel flow, preferably on a disposable subscription, then Browser-verify the app's terminal canceled state.
+   - Restore the seeded user to the original trial/no-payment-method baseline before final response.
+7. Restore the seeded user:
    - Update Neon `users.stripe_customer_id` back to the original customer id if it was changed.
    - Ensure the original subscription is still `trialing` and not set to cancel.
    - Ensure the original customer has no default payment method and no attached card payment methods when restoring `trialing+clerk_test@example.com`.
    - Detach payment methods from disposable customers when possible.
    - Delete disposable customers when possible.
-7. Browser-verify restored state:
+8. Browser-verify restored state:
    - `/app/billing` shows the original trial/no-payment-method banner and management state.
    - `/app/option-trades/live` or the scoped premium surface regains entitled access.
    - If Live streaming is in scope, click `Start`, wait for `Connected` / `Pause`, and verify populated rows.
 
-SDK/API support examples:
+Support-only SDK/API examples:
 
 - Create a disposable Stripe test customer/subscription only to isolate the seeded user from destructive tests.
 - Use metadata such as `codex_billing_state_test=active_cancel_restore`, `restore_customer_id=<original customer id>`, and `neon_user_id=<Neon user id>` on disposable objects.
 - Verify canonical state after Browser actions when app UI does not expose enough detail.
 - Force terminal canceled state only after the Browser cancellation flow has already been tested and only on a disposable test subscription.
 - Restore Neon and Stripe test fixtures before final response.
+- Never use these SDK/API examples as a replacement for Browser proof that the user can perform the corresponding billing action.
 
 Minimum evidence to report:
 
@@ -226,7 +293,7 @@ Minimum evidence to report:
 | Browser payment/add-card flow | App CTA clicked, Stripe-hosted test flow reached/completed, return URL or app billing success state, premium access result |
 | Browser change-card flow | Portal/payment-method UI action performed, returned app state, canonical default/payment-method proof when app UI lacks card metadata |
 | Browser cancel flow | Portal subscription-cancel action performed, returned app scheduled-cancel or canceled copy, premium access result |
-| SDK-supported terminal state | If used, explain the UI limitation, disposable subscription id, status transition, and Browser proof after mutation |
+| Support-only SDK terminal-state verification | If used, explain the UI limitation, disposable subscription id, status transition, linked Browser cancel-flow evidence, and Browser proof after mutation |
 | Restore state | Neon pointer restored to original customer id, original subscription status, no attached payment methods |
 | Live data | Connected/Pause state plus non-empty sampled rows when streaming is in scope |
 
@@ -234,6 +301,7 @@ Failure recovery:
 
 - If any SDK/API step fails after the Neon pointer changes, restore the pointer to the original customer id before investigating further.
 - If the Browser payment or portal flow cannot be completed, report the visible blocker and do not replace that missing Browser evidence with SDK mutation.
+- If Stripe Elements card fields are visible but the in-app Browser cannot click or type into the cross-origin iframe, record the Stripe test portal URL and visible form as Browser evidence, then stop for user approval before using `@Chrome` or SDK support. If SDK support is approved, use Stripe test tokens such as `tok_visa` instead of sending raw card numbers to the API.
 - If a disposable customer cannot be deleted, detach its test payment methods, leave the original user restored, and report the disposable customer id for cleanup.
 - If Browser still shows stale billing after Stripe/Neon changes, wait for billing refetch, reload `/app/billing`, and verify the canonical state from Stripe/Neon before filing a UI bug.
 - If Stripe's API shape lacks top-level `current_period_end`, inspect subscription item `current_period_end` and `cancel_at`; do not assume `N/A` is acceptable billing copy.
@@ -243,6 +311,7 @@ Failure recovery:
 1. Read and follow the Browser plugin skill before browser work. The required plugin is `plugin://browser@openai-bundled`.
 2. Use the in-app Browser. Keep it hidden unless the user explicitly wants to watch.
 3. Do not fall back to Chrome, standalone Playwright, Computer Use, or web search for local app testing unless `@Browser` is unavailable and the user approves the fallback.
+   - Exception: when registration testing needs an email verification code, user-approved `@Chrome` may be used only to visit Gmail and retrieve the OTP. Continue using `@Browser` for the TradingFlow app itself.
 4. Before each interaction, know the current visible state. After each click, type, navigation, filter apply, modal action, or viewport switch, collect the cheapest verification signal:
    - DOM/state snapshot for labels, roles, enabled state, route, modal open/closed.
    - Screenshot only when visual layout, overlap, chart rendering, table density, or mobile fit matters.
@@ -258,7 +327,9 @@ Write a short scope block before opening the UI:
 
 - Surface(s) and routes.
 - Personas: guest, active, canceled, trial, or user-specified.
+- Registration scope: whether to create a fresh disposable account, which alias pattern to use, and which approved Gmail path will retrieve the OTP.
 - Premium-guard scope: list the gated controls or data surfaces to compare across account states. If any paid control is in scope, include guest, active, and canceled at minimum; include both trial states when the user asks about Stripe/subscription status or trial UX.
+- Billing-capability scope: if payment lifecycle behavior is in scope, list the exact user capabilities to prove in Browser, such as make payment, add payment method, change payment method, change payment status, schedule cancellation, immediate canceled-state handling, restore seeded state, and streaming/access after billing change.
 - Viewports: desktop default and mobile if the surface has responsive controls.
 - Explicit non-goals.
 - Whether this is review-only or user-approved implementation follow-up.
@@ -292,7 +363,7 @@ For each persona and route in scope:
 1. Navigate from the route a real user would use, not only a deep link.
 2. Verify the initial state: title, nav location, loading state, data presence or empty state, account state, and visible gates.
 3. Exercise the journey actions in Browser:
-   - Auth: login, logout, gate redirects, billing/account/profile flows, subscription copy, guest-to-signed-in recovery.
+   - Auth and billing: login, registration with disposable email and OTP, logout, gate redirects, billing/account/profile flows, subscription copy, guest-to-signed-in recovery, and explicitly authorized test-mode payment/add-card/change-card/cancel journeys through the app and Stripe-hosted UI.
    - Option Trades: Historical/Live modes, filters, date/time controls, chips, Watchlist/symbol scope, saved filter behavior, column layout, sorting, pagination, export affordance, Live status/empty/error states.
    - Contract-level analysis: Rank shell tabs, preview vs paid snapshot, filters/sort/pagination, symbol/watchlist scope, KPI/brief, row inspect, drawer tabs, exact-contract Option Trades handoff.
    - Symbol-level analysis: Rank shell tabs, symbol filters/sort, drawer tabs, Watchlist/symbol lookup, Option Trades handoff, premium gates.
@@ -337,7 +408,7 @@ For each gated control:
    - Canceled accounts: the control should show paywall or upgrade copy, and the underlying premium result must not silently apply. Confirm table rows, active filters, live status, drawer content, and export state did not change as if entitled.
    - Guest accounts: the control should show login or redirect to sign-in, and the underlying premium result must not silently apply.
 4. Compare the same control across at least guest, active, and canceled. If trial states are in scope, compare both trial states against active for access and against each other for billing/payment-method copy.
-5. If a gate opens Stripe test checkout or the customer portal, record only the safe navigation evidence and return to the app. Do not complete checkout, add payment methods, or change subscriptions.
+5. If a gate opens Stripe test checkout or the customer portal during a normal product review, record only the safe navigation evidence and return to the app. Do not complete checkout, add payment methods, or change subscriptions. If the user explicitly authorized a payment-capability test, continue under `Authorized Browser Payment Capability Test` and record the completed Browser user flow in `BillingLifecycleMatrix`.
 
 Do not mark premium-guard coverage complete when:
 
@@ -404,6 +475,22 @@ Do not file a product bug for missing account data, market-closed live states, e
 | `status` | `pass`, `fail`, `blocked`, or `not-in-scope` |
 | `evidence` | URL, state/copy observed, screenshot label, console/network note |
 
+### RegistrationFlowMatrix
+
+Required when auth, signup, registration, onboarding, or guest-to-user conversion is in scope.
+
+| Field | Meaning |
+| --- | --- |
+| `step` | `signed_out_start`, `open_auth_modal`, `switch_to_register`, `submit_email`, `captcha_or_protection`, `otp_sent`, `otp_retrieved`, `otp_submitted`, `post_register_identity`, `post_register_access_state`, or user-specified |
+| `route` | Route and modal/surface where the step was exercised |
+| `emailAlias` | Disposable alias used, such as `evanzhousyforward+0619codex1552@gmail.com`; do not include passwords or OTP values |
+| `browserAction` | Browser action performed in the TradingFlow app |
+| `supportTool` | `gmail_connector`, `chrome_gmail`, `user_provided_otp`, `none`, or `blocked` |
+| `visibleResult` | Settled UI state, modal copy, identity proof, account menu copy, billing/access banner, or return-path result |
+| `expectedBehavior` | What the auth/platform contract requires |
+| `status` | `pass`, `fail`, `blocked`, or `not-in-scope` |
+| `evidence` | URL, visible copy, approved Gmail path note, screenshot label, console/network note; never print OTP values unless explicitly requested |
+
 ### AccessTierGuardMatrix
 
 Required when premium guard, auth, billing, subscription, trial state, or any gated data/action is in scope.
@@ -423,15 +510,17 @@ Required when premium guard, auth, billing, subscription, trial state, or any ga
 
 ### BillingLifecycleMatrix
 
-Required when the user explicitly asks to test payment, add-payment-method, change-payment-method, cancellation, or billing lifecycle behavior. SDK/API evidence can support this matrix, but each user capability must have Browser evidence or be marked `blocked`/`fail`.
+Required when the user explicitly asks to test payment, add-payment-method, change-payment-method, payment-status change, cancellation, or billing-access behavior. Keep the existing matrix name for continuity, but treat it as a user payment-capability evidence matrix. SDK/API evidence can support this matrix, but each user capability must have Browser evidence or be marked `blocked`/`fail`.
+
+Do not produce a passed row when the `browserAction` is only "mutated Stripe status", "updated subscription with SDK", "changed Neon row", or any other backend-only fixture action. Those actions belong in `sdkSupportUsed`; the pass/fail claim belongs to what the user actually did and saw in Browser.
 
 | Field | Meaning |
 | --- | --- |
-| `capability` | `make_payment`, `add_payment_method`, `change_payment_method`, `schedule_cancel`, `terminal_canceled`, `restore_seeded_state`, or user-specified |
+| `capability` | User-facing capability such as `make_payment`, `add_payment_method`, `change_payment_method`, `change_payment_status`, `schedule_cancel`, `terminal_canceled_state_visible_in_app`, `restore_seeded_state`, or user-specified |
 | `startingState` | Account email, visible billing state, Stripe/Neon baseline when used |
-| `browserAction` | The app and Stripe-hosted UI actions actually performed in Browser |
+| `browserAction` | The app and Stripe-hosted UI actions actually performed in Browser; never use SDK/API mutation as this value |
 | `browserResult` | Visible settled state after returning to the app |
-| `sdkSupportUsed` | `none`, `precondition`, `canonical_verify`, `terminal_state`, or `cleanup_restore`; include safe object IDs only |
+| `sdkSupportUsed` | `none`, `precondition`, `canonical_verify`, `terminal_state`, or `cleanup_restore`; include safe object IDs only and explain how the SDK/API action supported the Browser journey |
 | `expectedBehavior` | What the billing/access contract requires |
 | `status` | `pass`, `fail`, `blocked`, or `not-in-scope` |
 | `evidence` | URL, visible copy, safe Stripe destination note, safe object IDs/statuses, or console/network note |
@@ -481,15 +570,16 @@ Use concise ratings or notes for:
 1. Scope and environment.
 2. Browser procedure summary: routes, personas, viewports, and whether Browser was hidden or visible.
 3. BrowserJourneyCoverage table.
-4. AccessTierGuardMatrix when premium guard/auth/billing is in scope.
-5. BillingLifecycleMatrix when payment/add-card/change-card/cancel behavior is in scope.
-6. Ranked ProductReviewFinding table.
-7. ElementActionMatrix.
-8. TraderScorecard.
-9. Evidence index: screenshot labels/descriptions, URLs, notable console/network observations.
-10. Blockers and uncertainty.
-11. Prompt/runbook maintenance suggestion.
-12. Explicit statement: `Repository Playwright E2E scripts were not run`.
+4. RegistrationFlowMatrix when auth/signup/registration is in scope.
+5. AccessTierGuardMatrix when premium guard/auth/billing is in scope.
+6. BillingLifecycleMatrix when payment/add-card/change-card/cancel behavior is in scope.
+7. Ranked ProductReviewFinding table.
+8. ElementActionMatrix.
+9. TraderScorecard.
+10. Evidence index: screenshot labels/descriptions, URLs, notable console/network observations.
+11. Blockers and uncertainty.
+12. Prompt/runbook maintenance suggestion.
+13. Explicit statement: `Repository Playwright E2E scripts were not run`.
 
 ## Severity Guide
 
@@ -503,6 +593,8 @@ Use concise ratings or notes for:
 ## Troubleshooting
 
 - If login hits CAPTCHA, MFA, or account protection, stop and ask the user to complete or approve the step. Do not bypass it.
+- If registration reaches OTP entry and the Gmail connector is unavailable, use the user-approved `@Chrome` Gmail path if available. If neither Gmail path is available, ask the user for the OTP and mark OTP retrieval blocked until provided.
+- If the OTP email does not arrive for a plus-address, verify the alias shown in the modal, search the base Gmail mailbox for recent TradingFlow/Clerk verification messages, wait for the resend timer, then resend once. If it still fails, retry with a fresh alias and record the first alias as blocked.
 - If active/canceled/trial seeded accounts do not work, report the exact login step, URL, visible copy, and whether the OTP was accepted.
 - If account switching leaves the previous avatar/email, billing banner, or entitlement state visible, sign out, clear the Browser context or Clerk cookies, and retry once. If it still persists, stop counting premium-guard coverage and file a blocker with evidence.
 - If the local app is not running, start it with `PATH=/opt/homebrew/bin:$PATH pnpm dev` from the app repo and retry the route.

@@ -26,11 +26,15 @@ Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Bro
 
 ## Agent Handoff
 
-Last updated: 2026-06-19
+Last updated: 2026-06-21
 
-Last run found a durable Stripe-hosted UI limitation: the in-app Browser can verify app -> Stripe test portal handoff, but may be unable to type into Stripe Elements' cross-origin card iframe. If that happens, mark add-card/payment completion as Browser-blocked unless the user approves Chrome or SDK support. SDK support remains support-only evidence, not Browser proof of the hosted card form.
+2026-06-21 billing lifecycle handoff: `trialing+clerk_test@example.com` was exercised from `/app/billing` through Stripe test portal and restored. Browser completed `Add Payment Method` with Stripe test card data in the hosted card iframe, returned to the app, and verified `Trial Active - Payment Method Confirmed`. SDK support, guarded by a local `sk_test_` key, ended the trial to create an active precondition; Browser then verified `/app/billing` showed `Subscription active`. Browser opened `Manage Subscription`, used Stripe portal `Cancel subscription`, and returned to the app showing `SUBSCRIPTION SET TO CANCEL` with `2026-07-20`, matching Stripe's July 20, 2026 portal copy. SDK support then forced terminal `canceled`; Browser verified `/app/billing` showed `SUBSCRIPTION CANCELED` and `/app/option-trades/live` kept Live Mode at `Premium required` while opening upgrade/paywall feedback. Cleanup restored the seeded customer `cus_UCYiFPXSi5JJgb` to trial/no-payment-method state with current subscription `sub_1TkUCWDVsC6tSD27TiYHcPtM`; Browser verified `TRIAL EXPIRES IN 7 DAYS` and Stripe/Neon probe returned `primarySubscriptionStatus: trialing`.
 
-No open handoff items.
+Streaming blocker from the same run: premium access was available while scheduled to cancel, but the Live `Start` button was disabled because the app reported `Market closed` on Saturday, June 20, 2026 in NY time. Do not mark live streaming connected until a run occurs during market hours or the user approves an explicit market-clock/test-fixture override.
+
+Stripe-hosted UI note: in this run the in-app Browser could type into Stripe Elements' cross-origin card iframe. If a future run cannot click or type in that iframe, mark add-card/payment completion as Browser-blocked unless the user approves Chrome or SDK support. SDK support remains support-only evidence, not Browser proof of the hosted card form.
+
+2026-06-21 Browser registration handoff: fresh registration with a disposable Gmail alias can fail before OTP when Clerk invokes a hidden Cloudflare Turnstile challenge. Evidence from the run: registration returned to the email step with `Request timed out. Please try again.`, console logs included `challenges.cloudflare.com/.../turnstile/...` and `[Cloudflare Turnstile] Cannot find Widget ...`, and Gmail had no message for the submitted alias. Treat this as a registration blocker, not as Gmail retrieval failure, unless a retry advances to OTP or the user intervenes with the challenge.
 
 ## Goal
 
@@ -85,11 +89,11 @@ cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack
 Read in this order:
 
 1. `AGENTS.md`
-2. `doc/knowledge/glossary.md`
-3. Relevant invariant docs:
-   - Auth, billing, access, Watchlist, app shell: `doc/domain-knowledge/domain-invariants/platform.md`
-   - Option Trades: `doc/domain-knowledge/domain-invariants/data-apps/option-trades.md`
-   - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/domain-invariants/data-apps/rank.md`
+2. Glossary when present. The current checkout may not have `doc/knowledge/glossary.md`; do not block the run on that missing file.
+3. Relevant domain docs in the current checkout:
+   - Shared auth, billing, access, Watchlist, and app shell context: `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md`
+   - Option Trades: `doc/domain-knowledge/option-trades/domain-invariants.md` and `doc/domain-knowledge/option-trades/functionality.md`
+   - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
 4. Shared product review contract: `doc/automation/product-review/README.md`
 5. Shared E2E policy: `doc/automation/e2e-test/e2e-update-skills.md`
 6. The module-specific product-review prompt when present:
@@ -98,16 +102,16 @@ Read in this order:
    - Contract-level analysis: `doc/automation/product-review/contract-rank-goal-driven-prompt.md`
 7. The module-specific E2E prompt and spec as read-only journey maps.
 
-Path drift note: older product-review prompts may still mention `contract-rank.md` or standalone `/app/contract-rank`. If the current checkout has the unified Rank invariant in `rank.md`, use `rank.md` as source of truth and record prompt drift in `Prompt maintenance suggestion`.
+Path drift note: older product-review prompts may still mention `doc/knowledge/glossary.md`, `platform.md`, `option-trades.md`, `rank.md`, `contract-rank.md`, or standalone `/app/contract-rank`. Prefer the current checkout's `doc/domain-knowledge/{shared,option-trades,rank}/...` files as source of truth and record prompt drift in `Prompt maintenance suggestion`.
 
 ## Module Map
 
 | Surface | Primary routes | Domain truth | Read-only journey maps |
 | --- | --- | --- | --- |
-| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `platform.md` | `doc/automation/product-review/auth-goal-driven-prompt.md`, `doc/automation/e2e-test/auth-goal-driven-prompt.md`, `tests/e2e/specs/auth/` |
-| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades.md`, plus `platform.md` for Watchlist/access | `doc/automation/product-review/option-trades-goal-driven-prompt.md`, `doc/automation/e2e-test/option-trades-goal-driven-prompt.md`, `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
-| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank.md`, plus `platform.md` for Watchlist/access | `doc/automation/product-review/contract-rank-goal-driven-prompt.md`, `doc/automation/e2e-test/contract-rank-goal-driven-prompt.md`, `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
-| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank.md`, plus `platform.md` for Watchlist/access | `doc/automation/e2e-test/market-rank-goal-driven-prompt.md`, `tests/e2e/specs/market-rank/market-rank.spec.ts`; if product-review prompt is missing, use `product-review/README.md` + `rank.md` |
+| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `shared/domain-invariants.md`, `shared/functionality.md` | `doc/automation/product-review/auth-goal-driven-prompt.md`, `doc/automation/e2e-test/auth-goal-driven-prompt.md`, `tests/e2e/specs/auth/` |
+| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/option-trades-goal-driven-prompt.md`, `doc/automation/e2e-test/option-trades-goal-driven-prompt.md`, `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
+| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/contract-rank-goal-driven-prompt.md`, `doc/automation/e2e-test/contract-rank-goal-driven-prompt.md`, `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
+| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/e2e-test/market-rank-goal-driven-prompt.md`, `tests/e2e/specs/market-rank/market-rank.spec.ts`; if product-review prompt is missing, use `product-review/README.md` + rank domain docs |
 
 ## Runtime Setup
 
@@ -230,7 +234,7 @@ Required safety gates before any payment-capability test:
 5. Verify the target Clerk/Neon user and current Stripe customer before the run. For the seeded trial-no-payment account, expected baseline is:
    - Email: `trialing+clerk_test@example.com`
    - Original Stripe customer: `cus_UCYiFPXSi5JJgb`
-   - Original subscription: `sub_1TE9bNDVsC6tSD27iGuCP46M`
+   - Current restored subscription: currently `sub_1TkUCWDVsC6tSD27TiYHcPtM` in the local test environment; verify live before mutating because seeded Stripe IDs can drift after lifecycle tests.
    - Expected baseline state: `trialing`, `cancel_at_period_end=false`, no `default_payment_method`, no attached card payment methods.
 6. Prefer disposable test customers/subscriptions for destructive or hard-to-restore states. If the seeded user's Neon `stripe_customer_id` is repointed to a disposable customer, restore it before final response.
 7. Print only safe object IDs and statuses. Do not print API keys, raw env files, Clerk secrets, full card details, or full payment method payloads.
@@ -266,7 +270,7 @@ Browser capability pattern:
    - Restore the seeded user to the original trial/no-payment-method baseline before final response.
 7. Restore the seeded user:
    - Update Neon `users.stripe_customer_id` back to the original customer id if it was changed.
-   - Ensure the original subscription is still `trialing` and not set to cancel.
+   - Ensure the seeded customer has exactly one current access subscription that is `trialing` and not set to cancel.
    - Ensure the original customer has no default payment method and no attached card payment methods when restoring `trialing+clerk_test@example.com`.
    - Detach payment methods from disposable customers when possible.
    - Delete disposable customers when possible.
@@ -593,6 +597,7 @@ Use concise ratings or notes for:
 ## Troubleshooting
 
 - If login hits CAPTCHA, MFA, or account protection, stop and ask the user to complete or approve the step. Do not bypass it.
+- If registration submission returns `Request timed out. Please try again.` before OTP and console logs mention Cloudflare Turnstile, search Gmail for the alias to prove no OTP was sent, retry the visible registration submit once, then record the registration as CAPTCHA/challenge blocked unless the retry reaches OTP. Do not bypass the challenge or call Gmail retrieval failed when no email was sent.
 - If registration reaches OTP entry and the Gmail connector is unavailable, use the user-approved `@Chrome` Gmail path if available. If neither Gmail path is available, ask the user for the OTP and mark OTP retrieval blocked until provided.
 - If the OTP email does not arrive for a plus-address, verify the alias shown in the modal, search the base Gmail mailbox for recent TradingFlow/Clerk verification messages, wait for the resend timer, then resend once. If it still fails, retry with a fresh alias and record the first alias as blocked.
 - If active/canceled/trial seeded accounts do not work, report the exact login step, URL, visible copy, and whether the OTP was accepted.

@@ -1,6 +1,6 @@
 ---
 name: update-tutorial-series
-description: Creates and updates the bilingual TradingFlow tutorial SERIES under content/series/tradingflow-docs (page-based how-to chapters for non-technical webapp users, with annotated screenshots, Mermaid diagrams, cross-links, AND branded tutorial videos). Covers series structure (flat NN-slug.mdx + .zh.mdx + index posts array), the critical series image-path rule, screenshot reuse/annotation, content sourcing from the webapp domain-knowledge docs, build/image verification, deploy, AND the video pipeline: HyperFrames compositions with the TradingFlow logo, local Kokoro voiceover, burned-in bilingual (EN+中文) subtitles, embedding videos in posts, and hosting them on Cloudflare R2. Use when reorganizing or adding tutorial chapters, wiring screenshots/diagrams/videos into the series, fixing broken series images, or producing/uploading tutorial videos. NOT for content/posts/** blog posts or the changelog — use update-blog-posts-and-changelog.md for those.
+description: Creates and updates the bilingual TradingFlow tutorial SERIES under content/series/tradingflow-docs (page-based how-to chapters for non-technical webapp users, with annotated screenshots, Mermaid diagrams, cross-links, AND branded tutorial videos). Covers series structure (flat clean-slug .mdx + .zh.mdx + index posts array), the critical series image-path rule, screenshot reuse/annotation, content sourcing from this ops repo's knowledge docs plus the webapp domain-knowledge docs, financial-university-teacher review for freshman/newbie readers, build/image verification, deploy, AND the video pipeline: HyperFrames compositions with the TradingFlow logo, local Kokoro voiceover, burned-in bilingual (EN+中文) subtitles, embedding videos in posts, and hosting them on Cloudflare R2. Use when reorganizing or adding tutorial chapters, wiring screenshots/diagrams/videos into the series, fixing broken series images, or producing/uploading tutorial videos. NOT for content/posts/** blog posts or the changelog — use update-blog-posts-and-changelog.md for those.
 ---
 
 # Update the TradingFlow Tutorial Series (landing)
@@ -13,21 +13,22 @@ This runbook maintains the **tutorial series** at `content/series/tradingflow-do
 
 Use `/goal` for create/reorganize/refresh runs:
 
-- Objective: produce or update the requested tutorial chapter(s) — bilingual (EN + zh), with annotated screenshots, Mermaid diagrams, and cross-links — matching the current webapp surfaces.
-- Success criteria: worktrees checked before edits; chapters use the **absolute** series image path rule; `index.mdx`/`index.zh.mdx` `posts:` order is correct; EN/zh parity holds; cross-links resolve to real slugs; a **full** `bun run build` confirms every chapter image resolves to a file that exists in `out/`.
+- Objective: produce or update the requested tutorial chapter(s) — bilingual (EN + zh), with annotated screenshots, Mermaid diagrams, and cross-links — matching the current webapp surfaces and teaching TradingFlow functionality plus TradingFlow methodology for freshman/newbie finance readers.
+- Success criteria: worktrees checked before edits; `knowledge/*.md` and relevant webapp `doc/domain-knowledge/**` files read; chapters use the **absolute** series image path rule; `index.mdx`/`index.zh.mdx` `posts:` order is correct; EN/zh parity holds; cross-links resolve to real slugs; the **Financial University Teacher Review** checklist passes; a **full** `bun run build` confirms every chapter image resolves to a file that exists in `out/`.
 - Stop condition: all requested chapters pass verification, or a blocker names the exact missing repo access, login, screenshot, locale, or build failure.
 
 Keep the run read-only with respect to production: do **not** run `bun run deploy` unless the user explicitly authorizes the publish.
 
 ## Agent Handoff
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 The series is **10 page-based chapters** (Getting Started, Why TradingFlow, The Data Feed, Option Trades, Rank: Contracts, Rank: Symbols, Watchlists & Filters, then concept chapters Options & Flow / Greeks & GEX / Option Chain & OI). EN + zh each, plus bilingual `index`. **Served at `/learn/<slug>`** (clean slugs; content dir still `content/series/tradingflow-docs/`).
 
 Durable lessons encoded below:
 - **URL scheme `/learn`** — chapters moved off `/series/tradingflow-docs/NN-slug` to `/learn/<slug>` via `series.routeBases` + dedicated `src/app/learn/*` routes; old paths 301 in `nginx.conf.example` + `netlify.toml`. See **URL scheme & routing**.
 - **Relative `./images/...` does NOT work in flat series chapters** — they 404 in production. Use the absolute `/blogs/tradingflow-docs/images/<file>.png` form. Annotation script: `scripts/annotate-series-screenshots.ts` (idempotent).
+- **Pedagogy/source pass** — when refreshing tutorial copy, read this ops repo's `knowledge/*.md` first for product-facing concepts/data vocabulary, then the sibling webapp `doc/domain-knowledge/**` files for current UI contracts. Review like a financial-university teacher writing for freshman/newbie students: define terms before use, avoid assumed market knowledge, separate evidence from interpretation, and teach a repeatable discover → inspect → validate → freshness-check research method.
 - **Tutorial videos** — all 11 (overview + 10 chapters) carry TradingFlow logo + English voiceover + burned-in **bilingual (EN+中文) subtitles**, show the `/learn` URL in the CTA, are embedded in every post (`<video>` → `/videos/tutorials/<NN-slug>.mp4`), and are uploaded to R2 bucket `tradingflow-media`. See **Tutorial videos** + **Cloudflare R2**.
 
 Open handoff items: (1) **Deploy:** `bun run deploy` (operator) — and apply the `nginx.conf.example` 301s to the LIVE server in the same deploy, or old `/series/*` URLs 404. (2) **R2 public access** NOT yet enabled — when the owner flips it on and gives a base URL, rewrite post `<video src>`/`poster` to `https://<base>/videos/tutorials/...` and delete `public/videos/`.
@@ -54,7 +55,18 @@ Target checkout: `../tradingflow-web-landingpage` when opened from `awesome-ai-c
 - **Asset copy:** `scripts/copy-assets.ts` `processSeries()` copies the shared `images/` folder to `public/<postsBasePath>/<chapter-slug>/images/` for every chapter file **and** to `public/<postsBasePath>/<series-slug>/images/` for `index.*`. `postsBasePath` = `site.config.ts` `posts.basePath` (currently `blogs`); series slug = `tradingflow-docs`.
 - **Screenshot capture:** `scripts/capture-blog-ui-screenshots.ts` (Playwright vs the sibling webapp dev server) — writes into `content/posts/<feature>/images/`. See the blog runbook for the full capture workflow, login fixtures, readiness gates, and crop/clip rules. Current routes captured: `/app/option-trades`, `/app/rank/contracts`, `/app/rank/symbols`.
 - **Series annotation:** `scripts/annotate-series-screenshots.ts` — bakes numbered callouts onto series images (see Annotation below).
-- **Content source of truth (sibling webapp):** `tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md` (what each surface does) and `.../domain-invariants.md` (the rules, e.g. freemium boundaries) for `option-trades`, `rank`, `shared`; plus `doc/knowledge/glossary.md` for canonical names. These are already at non-technical altitude — quote/condense them; do not paste engineering internals.
+- **Content source of truth:** start with this ops repo's `knowledge/*.md` for product-facing concepts, metric definitions, data freshness, schema vocabulary, and methodology vocabulary. Then read `tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md` (what each surface does) and `.../domain-invariants.md` (the rules, e.g. freemium boundaries) for `option-trades`, `rank`, `shared`; plus `doc/knowledge/glossary.md` if present for canonical names. These sources are already at useful altitude — quote/condense them; do not paste engineering internals.
+
+### Financial University Teacher Review
+
+Before finalizing tutorial copy, review it as if you are a finance professor preparing a first lab for freshman students who know little or nothing about options flow:
+
+- **No assumed basics:** define calls, puts, bid, ask, side, sentiment, OI, IV, Delta, DEX, DEI, GEX, and Vol/OI before relying on them, or link directly to the concept chapter before using the term.
+- **Functionality plus methodology:** every page tutorial should teach both where the UI control lives and why a trader would use it in the TradingFlow research workflow.
+- **Evidence vs interpretation:** distinguish what the platform observes (prints, side, premium, OI, IV, rank) from what a trader may infer (possible bullishness, hedging, opening, conviction).
+- **Freshness discipline:** call out when data is live flow, latest snapshot, or next-day confirmation; do not imply OI, GEX, IV, or structure fields are tick-by-tick trade facts.
+- **Intuitive and comprehensive:** prefer short definitions, simple examples, tables, checklists, and Mermaid flows over dense prose; include caveats where a beginner might overread one metric.
+- **Bilingual parity:** the zh version must teach the same concept, caution, workflow step, and link target as the English version; do not make zh a looser summary.
 
 ### Current webapp surfaces the series covers
 - **Option Trades:** `https://app.tradingflow.com/app/option-trades` (Live + Historical tabs).
@@ -96,13 +108,14 @@ perl -pi -e 's{\]\(\./images/}{](/blogs/tradingflow-docs/images/}g' content/seri
 
 ## Workflow
 
-1. **Preflight** — run the worktree status checks above; read the webapp `doc/domain-knowledge` + glossary for the surfaces in scope.
+1. **Preflight** — run the worktree status checks above; read this ops repo's `knowledge/*.md`, then the webapp `doc/domain-knowledge` + glossary for the surfaces in scope. Keep the **Financial University Teacher Review** checklist open before writing.
 2. **Plan structure** — decide the chapter set and order. Keep page tutorials and concept chapters separate; have page chapters **link** to concept chapters instead of redefining DEX/GEX/OI/Greeks/sentiment. Update `index.mdx` + `index.zh.mdx` `posts: [...]` to the exact slug order. Categories used: `Getting Started`, `Using TradingFlow`, `Concepts` (localize in the `.zh` file).
 3. **Screenshots** — prefer **reusing** current screenshots already produced by the capture script under `content/posts/<feature>/images/` (option-trades, contract-rank = Rank Contracts, market-rank = Rank Symbols). Copy the ones you need into `content/series/tradingflow-docs/images/` with clean names. Re-capture only if images are stale or show loading frames — that requires the local webapp + the capture pipeline in the blog runbook (browser MCP cannot write files into the repo; `chrome-devtools` needs Chrome started with remote-debugging, so the Playwright `capture-blog-ui` script is the reliable path). Verify currency by spot-checking a screenshot against the live app.
 4. **Annotate** — bake numbered callouts with `scripts/annotate-series-screenshots.ts`. It is **idempotent**: each entry re-copies its raw `src` then composites an SVG overlay, so you can re-run after tweaking coordinates without double-annotating. Each callout is `{ label, labelBox{x,y,w,h}, target{x,y,w,h} }` in image pixels (heroes are 1600×900). Run `bun scripts/annotate-series-screenshots.ts`, then **view each output** and adjust coordinates. The numbered legend you write in the MDX **must match the baked callout order** top-to-bottom; if you reorder one, reorder the other.
-5. **Write chapters (bilingual)** — for each chapter write `NN-slug.mdx` and `NN-slug.zh.mdx`:
+5. **Write chapters (bilingual)** — for each chapter write clean-slug files `slug.mdx` and `slug.zh.mdx` (for example, `option-trades.mdx`; order comes from `posts: [...]`, not filename prefixes):
    - Frontmatter: `title`, `date` (today), `excerpt`, `category`, `tags`, `authors: ["TradingFlow Team"]` (localize title/excerpt/category in `.zh`).
-   - Non-technical voice; embed annotated screenshots (absolute path rule) each with an italic caption and, for annotated images, a numbered legend.
+   - Non-technical teaching voice for new traders/freshman students; apply the **Financial University Teacher Review** checklist, define terms before use, distinguish evidence from interpretation, and include practical research checklists where helpful.
+   - Embed annotated screenshots (absolute path rule) each with an italic caption and, for annotated images, a numbered legend.
    - Add Mermaid diagrams as fenced ```mermaid blocks (decision trees like "which tool/mode when", row anatomy, discovery→inspect→handoff journeys). Prefer a diagram over a wall of text.
    - Cross-link siblings as `/learn/<slug>`; link the live app as full `https://app.tradingflow.com/app/...`. State freemium boundaries plainly ("this is a paid feature").
    - Keep `.zh` a faithful translation mirroring structure, images, links, and diagrams.
@@ -132,6 +145,8 @@ ls out/blogs/tradingflow-docs/images/ot-live.png
 ```
 
 Also confirm: every `![](...)` in the chapters resolves (no remaining `./images/`); each EN chapter has a `.zh` sibling; cross-links use real slugs from the `posts:` array; Mermaid blocks are well-formed (they render client-side, so the build won't catch syntax errors — eyeball them). The zh content reuses the same absolute image paths, so it resolves once EN does.
+
+Content verification is part of verification: spot-check the changed chapters against **Financial University Teacher Review**. If a changed chapter introduces a term before defining/linking it, presents a metric as a signal without caveat, or teaches UI functionality without the TradingFlow methodology behind it, keep editing before calling the run complete.
 
 ## Deploy
 
@@ -252,6 +267,7 @@ The narrated videos add ~50 MB to `public/` (and the rsync deploy). Hosting them
 - Verifying images with `build:dev` only (skips optimization — false green).
 - Deploying without explicit authorization.
 - Re-explaining DEX/GEX/OI/Greeks in every chapter instead of linking the concept chapter.
+- Marketing-only "smart money" copy that does not teach the reader how to classify, validate, and caveat the evidence.
 - Engineering detail (file paths, code, SQL, internals) in user-facing tutorials.
 - EN updated without the matching `.zh` (or vice versa).
 - Documenting retired standalone tools as if they were still separate pages.
@@ -268,6 +284,7 @@ The narrated videos add ~50 MB to `public/` (and the rsync deploy). Hosting them
 This runbook is part of the workflow; update it in the same pass when a real run finds drift.
 
 - Promote durable lessons (path rules, commands, verification, anti-patterns) into the relevant section; keep transient next-run state in `Agent Handoff` and one-off decisions in the final report.
+- Update source-material and chapter-naming instructions when the ops `knowledge/` folder, webapp domain docs, route scheme, or clean-slug filename contract changes.
 - Update the image-path rule if `posts.basePath`, the series slug, or the renderer/copy-assets behavior changes.
 - Keep the screenshot capture/login details in the blog runbook and reference them here; do not fork a second copy.
 - Keep the video/TTS/R2 lessons here (logo choice, caption-burn-via-composition, `wrangler` no-`--remote`, immutable cache, disk-before-render, audio/template-in-project). Update them if the HyperFrames TTS/render pipeline, the renderer's `video:` component, or the R2 setup changes. Generic HyperFrames mechanics stay in the `hyperframes`/`hyperframes-media` skills.
@@ -276,16 +293,22 @@ This runbook is part of the workflow; update it in the same pass when a real run
 ## Pasteable agent instruction
 ```text
 You are creating/updating TradingFlow's tutorial SERIES at content/series/tradingflow-docs/
-(audience: non-technical webapp traders). Follow ops/landingpage/update-tutorial-series.md.
+(audience: non-technical webapp traders and freshman finance students). Follow
+ops/landingpage/update-tutorial-series.md.
 
 Before editing:
 - git status the landing + webapp worktrees; don't revert unrelated changes.
-- Read the source of truth in tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/
-  functionality.md + domain-invariants.md (option-trades, rank, shared) and doc/knowledge/glossary.md.
+- Read this ops repo's knowledge/*.md for product-facing concepts, metric definitions, and data freshness.
+- Then read tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md +
+  domain-invariants.md (option-trades, rank, shared) and doc/knowledge/glossary.md if present.
 
 Structure:
-- Flat chapters NN-slug.mdx + NN-slug.zh.mdx; order via index.mdx/index.zh.mdx `posts: [...]`.
+- Flat clean-slug chapters slug.mdx + slug.zh.mdx; order via index.mdx/index.zh.mdx `posts: [...]`.
 - Page tutorials link to concept chapters; don't redefine DEX/GEX/OI/Greeks/sentiment.
+- Use a teaching voice: define terms before use, separate evidence from interpretation, and teach
+  a repeatable discover -> inspect -> validate -> freshness-check research method.
+- Review like a financial-university teacher for freshman/newbie readers: clear, intuitive,
+  comprehensive, no assumed options-flow basics, and no metric presented as a standalone trade signal.
 
 CRITICAL image rule: in series chapters embed images as ABSOLUTE
   ![alt](/blogs/tradingflow-docs/images/<file>.png)

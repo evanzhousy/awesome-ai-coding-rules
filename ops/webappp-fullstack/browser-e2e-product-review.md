@@ -26,7 +26,9 @@ Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Bro
 
 ## Agent Handoff
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
+
+2026-06-23 continuation note: current Browser pass still has unresolved coverage, but several blockers are now proven. Active account proof completed for `active+clerk_test@example.com`: `/app/billing` showed `Subscription active`, management buttons enabled after refresh, Option Trades premium controls unlocked, and Live attempted but ended `Connection failed`. The expected trial-with-payment persona `trialingwithpayment+clerk_test@example.com` is fixture-drifted in the current environment: `/app/billing` and Option Trades both show `SUBSCRIPTION CANCELED`, so do not count it as trial-with-payment coverage until restored or replaced. Rank guest coverage is blocked for result matching because both `/app/rank/contracts` and `/app/rank/symbols` settle into `Failed to load contract-level analysis` with the ClickHouse `There is no supertype for types UInt64, UInt32, Float64 ... In scope symbol_context AS sc` error; only gate behavior can be counted there. Registration retry with `evanzhousyforward+0623codex1301@gmail.com` stayed on the create-account email step, Gmail had no OTP email, and the modal removed the `Continue` button after submit, leaving only email plus `Close`. Mobile viewport override was verified at `390x844`; `viewport.reset()` did not restore desktop dimensions in this run, so an explicit `1280x720` viewport set was needed before continuing desktop checks. Current checkout also may not contain the older `doc/automation/product-review/*` or `doc/automation/e2e-test/*` prompt files; use the current domain docs and `tests/e2e` specs as read-only journey maps when those prompt files are absent.
 
 2026-06-21 billing lifecycle handoff: `trialing+clerk_test@example.com` was exercised from `/app/billing` through Stripe test portal and restored. Browser completed `Add Payment Method` with Stripe test card data in the hosted card iframe, returned to the app, and verified `Trial Active - Payment Method Confirmed`. SDK support, guarded by a local `sk_test_` key, ended the trial to create an active precondition; Browser then verified `/app/billing` showed `Subscription active`. Browser opened `Manage Subscription`, used Stripe portal `Cancel subscription`, and returned to the app showing `SUBSCRIPTION SET TO CANCEL` with `2026-07-20`, matching Stripe's July 20, 2026 portal copy. SDK support then forced terminal `canceled`; Browser verified `/app/billing` showed `SUBSCRIPTION CANCELED` and `/app/option-trades/live` kept Live Mode at `Premium required` while opening upgrade/paywall feedback. Cleanup restored the seeded customer `cus_UCYiFPXSi5JJgb` to trial/no-payment-method state with current subscription `sub_1TkUCWDVsC6tSD27TiYHcPtM`; Browser verified `TRIAL EXPIRES IN 7 DAYS` and Stripe/Neon probe returned `primarySubscriptionStatus: trialing`.
 
@@ -94,15 +96,15 @@ Read in this order:
    - Shared auth, billing, access, Watchlist, and app shell context: `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md`
    - Option Trades: `doc/domain-knowledge/option-trades/domain-invariants.md` and `doc/domain-knowledge/option-trades/functionality.md`
    - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
-4. Shared product review contract: `doc/automation/product-review/README.md`
-5. Shared E2E policy: `doc/automation/e2e-test/e2e-update-skills.md`
+4. Shared product review contract when present: `doc/automation/product-review/README.md`
+5. Shared E2E policy when present: `doc/automation/e2e-test/e2e-update-skills.md`
 6. The module-specific product-review prompt when present:
    - Auth: `doc/automation/product-review/auth-goal-driven-prompt.md`
    - Option Trades: `doc/automation/product-review/option-trades-goal-driven-prompt.md`
    - Contract-level analysis: `doc/automation/product-review/contract-rank-goal-driven-prompt.md`
 7. The module-specific E2E prompt and spec as read-only journey maps.
 
-Path drift note: older product-review prompts may still mention `doc/knowledge/glossary.md`, `platform.md`, `option-trades.md`, `rank.md`, `contract-rank.md`, or standalone `/app/contract-rank`. Prefer the current checkout's `doc/domain-knowledge/{shared,option-trades,rank}/...` files as source of truth and record prompt drift in `Prompt maintenance suggestion`.
+Path drift note: older product-review prompts may still mention `doc/knowledge/glossary.md`, `platform.md`, `option-trades.md`, `rank.md`, `contract-rank.md`, or standalone `/app/contract-rank`. Some checkouts may also lack the older `doc/automation/product-review/*` and `doc/automation/e2e-test/*` prompt files. Prefer the current checkout's `doc/domain-knowledge/{shared,option-trades,rank}/...` files as source of truth, use existing `tests/e2e` specs only as journey maps when prompt docs are absent, and record prompt drift in `Prompt maintenance suggestion`.
 
 ## Module Map
 
@@ -374,6 +376,7 @@ For each persona and route in scope:
 4. For each action, record the visible outcome and whether it matches the domain invariant.
 5. For each account state, record the billing/access proof before recording premium-control results. A premium-control result without account-state proof is not valid evidence.
 6. Switch to mobile viewport for any surface with sheets, drawers, tabs, dense tables, or modal controls. Check for overlap, clipped text, scroll traps, unusable tap targets, and lost state.
+   - After setting a Browser viewport override, verify `window.innerWidth` and `window.innerHeight` changed before counting mobile coverage. If the Browser still reports desktop dimensions, mark mobile verification as Browser-capability blocked for this run instead of claiming a mobile pass from desktop layout.
 
 ### 3A. Exhaustive Control Matrix
 
@@ -607,6 +610,7 @@ Use concise ratings or notes for:
 - If the in-app Browser cannot observe a CSV or file download artifact, record export button/gate coverage and mark artifact verification blocked by Browser capability; do not switch to repository Playwright scripts unless the user changes scope.
 - If a TradingView widget is blank only on this Mac, verify local proxy/Shadowrocket routing for `www.tradingview-widget.com` before treating it as a product defect.
 - If product-review docs reference missing paths, use the current checkout's `AGENTS.md`, glossary, and invariant docs, then record doc drift in the final maintenance suggestion.
+- If Browser viewport override does not change `window.innerWidth` / `window.innerHeight` after reload, retry once, reset the viewport before finishing, and mark mobile coverage blocked by Browser capability if it still reports desktop dimensions. If `viewport.reset()` leaves the Browser at the mobile dimensions, explicitly set a desktop fallback such as `1280x720` before continuing desktop checks, then record the reset drift in the handoff.
 
 ## When To Switch Runbooks
 

@@ -32,10 +32,11 @@ Use `/goal` for production status checks:
 
 ## Agent Handoff
 
-Last updated: 2026-06-19
+Last updated: 2026-06-22
 
 ### Look First
-- [ ] Re-check the production UW ingest queue backlog/write timeouts before declaring contract-rank serving stale. The latest RTH run showed the Worker connected and contract-rank snapshot refreshes completing, but `/uw-ingestion/status` had `ingestDeliveryMode:"queue"` with a rising `ingestQueuePendingTradeCount`, Better Stack showed queue send/write timeouts, and ClickHouse `AggregatedOptionTrades` / `mv_contract_rank_flow` were behind the live session trade time. Verify `/uw-ingestion/status`, Better Stack `event`/message patterns, and ClickHouse latest trade time; if still behind, hand off to the cf-service queue consumer / ClickHouse writer fix.
+- [ ] Verify whether production cf-service UW ingest is intentionally disabled. During the 2026-06-22 RTH run, `/uw-ingestion/status` returned `enabled:false`, `connected:false`, `ingestQueueEnabled:false`, and `ingestDeliveryMode:"durable_object"` while ClickHouse `AggregatedOptionTrades` / `mv_contract_rank_flow` and contract-rank snapshots were current for the session. Before restoring UW streaming, confirm the intended ingest owner for current-day ClickHouse writes.
+- [ ] Review the contract-rank snapshot payload-size guardrail. The 2026-06-22 snapshot served 32.7 MB (`payloadBytes` 31.16 MiB in Better Stack) and Better Stack showed 48.74 MiB on 2026-06-18; chunking keeps DO entries under limit, but the payload is well above the runbook's "few MB" expectation and should be watched for isolate/client latency risk.
 
 ## Runbook Self-Maintenance
 
@@ -383,6 +384,7 @@ Outside market hours, contract-rank `asOf`/`effectiveDate` and UW `lastTradeAtMs
 | contract-rank `MISS`/404, everything else OK | DO storage empty/reset → `force` rebuild |
 | contract-rank `effectiveDate` stuck mid-RTH, UW healthy, ClickHouse current | Scheduled **rebuild** stalled — Better Stack `contract_rank_snapshot_refresh_failed` (§5), cron, DO reset loop (§6) |
 | contract-rank `effectiveDate` and `asOf` current, but UI `Last trade` is old and ClickHouse `max(time)` is old | Source ingest/mart lag, usually UW queue consumer / ClickHouse writer backlog — check `ingestQueuePendingTradeCount` and queue timeout logs |
+| UW status shows `enabled:false` / `connected:false` during RTH, but ClickHouse source and contract-rank snapshots are current | cf-service UW ingest is not the current writer or was intentionally disabled; identify the active ingest owner before treating it as a serving-layer freshness failure |
 | `effective` shows yesterday after 09:30 ET | Reference-data cron stalled, OR ClickHouse has no today rows yet (step 4). Pre-09:30 ET it's correct. |
 | symbol-meta date old / `symbolMetaCount` low | Nightly sync failed or DO meta refresh failing → downstream market_cap/DEI zeros (data-integrity) |
 | UW `connected:false` during RTH | Zombie UW socket / reconnect → restore-streaming |

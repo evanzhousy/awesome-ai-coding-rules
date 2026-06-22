@@ -15,7 +15,7 @@ This runbook is **browser-first**. A green `bun run build` / `bun run lint` is a
 Use `/goal` for a full run:
 
 - Objective: run a browser-driven E2E walkthrough of the requested landing-site surface(s), verifying that pages render, navigation/i18n/search work, images and videos load and play, internal/external links resolve, SEO artifacts are correct, old URLs redirect, and the visitor/SEO UX is sound.
-- Success criteria: browser automation is used for the walkthrough; the dev server (or built `out/`) is running; scoped routes are exercised in **EN and 中文** and on **desktop + mobile**; every embedded image and tutorial video is confirmed to load/play (no 404s, no broken `<img>`, poster + playback verified); internal links resolve with no 404s and external app links point to the right host; SEO artifacts (canonical, hreflang, JSON-LD, OpenGraph, `sitemap.xml`, configured feed endpoint(s), single semantic H1, no stray `noindex`) are verified from the DOM/network; `/series/*` → `/learn/*` redirects are checked (server-level — see notes); console/network is clean of errors and asset failures; findings use the required tables; and this runbook is maintained if reusable friction is found.
+- Success criteria: browser automation is used for the walkthrough; the dev server (or built `out/`) is running; scoped routes are exercised in **EN and 中文** and on **desktop + mobile**; i18n checks wait for the hydrated language control, verify `html[lang]`, active-only `data-locale` visibility, reload/navigation persistence, localized body/chrome/footer/adjacent navigation/search states, and document title/meta behavior; mobile view is explicitly verified at a narrow phone width such as **375px or 390px** for no horizontal document overflow, isolated hamburger menu behavior, 44px-class tap targets for primary controls, and a single visible footer; every embedded image and tutorial video is confirmed to load/play (no 404s, no broken `<img>`, poster + playback verified); internal links resolve with no 404s and external app links point to the right host; SEO artifacts (canonical, hreflang only for real crawlable alternates, JSON-LD, OpenGraph, `sitemap.xml`, configured feed endpoint(s), one total semantic H1, title/description quality, no stray `noindex`) are verified from the DOM/network; sitemap URLs match rendered canonical URLs and do not rely on redirects; `/series/*` → `/learn/*` redirects are checked (server-level — see notes); console/network is clean of errors and asset failures; findings use the required tables; and this runbook is maintained if reusable friction is found.
 - Stop condition: scoped routes are complete in both locales and both viewports, a real blocker is documented with evidence, or the user redirects scope.
 
 Pasteable objective:
@@ -24,10 +24,15 @@ Pasteable objective:
 Use ops/landingpage/browser-e2e-test.md as the runbook. Use the browser automation tools to walk the requested
 tradingflow-web-landingpage routes like a visitor and a crawler. Do NOT treat a successful build/lint as the test.
 Start the dev server (bun run dev) or serve the built out/ dir. For each scoped route, verify in EN and 中文 and on
-desktop + mobile: the page renders without error; nav + language switch + search work; every image loads (no 404 /
+desktop + mobile: the page renders without error; nav + hydrated language switch + search work; `html[lang]`,
+visible-only locale content, adjacent nav cards, footer, search result titles/snippets, and reload/navigation persistence
+match the active locale; mobile 375/390px has no
+document-level horizontal overflow, the hamburger menu opens as an opaque isolated panel with its own scroll,
+primary controls meet 44px-class tap-target sizing, and there is exactly one visible footer; every image loads (no 404 /
 broken img); every tutorial video shows its poster and plays with audio; internal links resolve (no 404) and external
-app links use https://app.tradingflow.com; SEO artifacts are correct (canonical, hreflang en/zh/x-default, JSON-LD,
-OpenGraph, sitemap.xml, the feed endpoint(s) configured in site.config.ts, one semantic H1, no stray noindex); old /series/* paths 301 to /learn/*
+app links use https://app.tradingflow.com; SEO artifacts are correct (canonical, hreflang only for real distinct
+crawlable locale URLs, JSON-LD, OpenGraph, sitemap.xml URL parity with canonicals, page title/meta behavior, the feed endpoint(s) configured
+in site.config.ts, one total semantic H1, useful title/meta description lengths, no stray noindex); old /series/* paths 301 to /learn/*
 (server-level — verify on the deployed/preview site or note as not-testable on next dev). Capture console + network
 errors. Produce RouteCoverage, I18nMatrix, MediaIntegrityMatrix, LinkIntegrityMatrix, SeoArtifactMatrix,
 VisitorReviewFinding rows, ElementActionMatrix, VisitorScorecard, evidence index, blockers, and a runbook
@@ -36,7 +41,7 @@ maintenance note. State explicitly that no findings/screenshots were committed.
 
 ## Agent Handoff
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 - **`/learn` URL migration (2026-06-20):** tutorials moved from `/series/tradingflow-docs/NN-slug` to **`/learn/<slug>`** (clean slugs). Old paths 301 to `/learn` via `nginx.conf.example` + `netlify.toml`. These redirects are **server-level**: on `next dev` and on a plain static server, `/series/tradingflow-docs/*` may 404 or throw a Next `output: export` static-param 500 instead of redirecting — that is not proof of a production redirect failure; verify redirects only on the deployed/preview site or behind nginx. The nav now has a single **Learn → /learn** item (no `/series`, no dropdown).
 - **Tutorial videos:** each `/learn` chapter and the `/learn` hub embed a `<video>` (`/videos/tutorials/<NN-slug>.mp4` + poster). Files keep the `NN-` prefix even though the page slug dropped it. One bilingual (EN VO + EN/中文 burned subtitles) video serves both locales. R2 public hosting is pending — currently served from `public/videos/`.
@@ -101,6 +106,7 @@ Read for context (read-only), as scope requires:
    - `update-blog-posts-and-changelog.md` — blog/changelog structure.
 4. Content source of truth for accuracy spot-checks (sibling webapp): `tradingflow-webapp-fullstack/doc/domain-knowledge/{shared,option-trades,rank}/functionality.md` + the glossary.
 5. SEO/structured-data helpers: `src/lib/seo.ts`, `src/lib/json-ld.ts`, `src/app/sitemap.ts`, the feed route(s).
+6. Locale/search helpers when i18n is in scope: `src/components/LanguageProvider.tsx`, `src/components/LanguageSwitch.tsx`, `src/components/LocaleSwitch.tsx`, `src/components/LocaleText.tsx`, `src/components/Search.tsx`, `src/i18n/translations.ts`, and `src/app/search.json/route.ts`.
 
 ## Route Map
 
@@ -113,7 +119,7 @@ Read for context (read-only), as scope requires:
 | Changelog / Roadmap | `/changelog`, `/roadmap` | Entries render, dates, ordering | |
 | Static pages | `/about` (content `[slug]`), `/privacy`, `/terms` (coded routes) | Render, links | |
 | Taxonomy | `/tags`, `/tags/<tag>`, `/authors/<author>`, `/archive` | Listing pages resolve, counts, links back to posts | |
-| Search | search box (Pagefind) | Query returns results that navigate correctly | **Needs a build** — see Runtime |
+| Search | search box (Pagefind) | EN and 中文 queries return useful results, labels match active locale, result titles/snippets are not mixed-language unless intentionally inherited from English metadata | **Needs a build** — see Runtime |
 | Knowledge graph / notes / books / flows | `/graph`, `/notes`, `/books`, `/flow`, `/flows` | Render if enabled (some are feature-gated in `site.config`) | Check `features` flags first |
 | Machine endpoints | `/sitemap.xml`, `/feed.xml` and `/feed.atom` according to `siteConfig.feed.format`, `/search.json`, `/robots.txt` | Valid XML/JSON, correct URLs (now `/learn`, not `/series`), no stale entries | Crawler-facing |
 
@@ -130,6 +136,7 @@ Default URL: `http://localhost:3000` (Next default; confirm the port printed in 
 
 Caveats of `next dev`:
 - **Search (Pagefind) needs a build first** — the index is generated into `public/pagefind` by `bun run build:dev`. Run that once if search is in scope, then `bun run dev`.
+- Pagefind indexes the rendered export; `/search.json` is a separate machine endpoint built from source data. If i18n search is in scope, verify the visible Pagefind modal and `/search.json` separately instead of assuming one proves the other.
 - `next dev` does **not** apply `output: export` exactly and does **not** run nginx/Netlify redirects → `/series/*` may 404 or show a static-param 500 locally. That is expected for redirect testing; verify redirects on the deployed/preview site.
 
 **Option B — static-export fidelity (closest to production, minus nginx):**
@@ -163,8 +170,9 @@ Minimum cross-cut for any scoped route: **EN + 中文 × desktop + mobile**, plu
 2. **Know the visible state before and after every action.** After each navigate/click/type/locale-switch/viewport-change, collect the cheapest signal: a DOM/state read for labels/links/headings; a screenshot only when layout/overlap/chart/video framing matters; console + network when a blank/broken/dead state is suspected.
 3. **Check console + network on every route.** Flag JS errors, failed asset loads (404/500), mixed content, and CORS failures. For images/videos specifically, confirm the network request is **200**, not a 404 swallowed by a broken-image icon.
 4. **Use a fresh/clean context for first-impression checks** (no stale localStorage locale/theme).
-5. **Avoid dialogs.** Do not trigger `alert`/`confirm`/`beforeunload`; do not click destructive/outbound actions (form submit, external "buy"/"contact send") without approval.
-6. Reload after a build only if implementation scope was added; review-only sessions do not modify code.
+5. **Wait for client hydration before failing i18n.** The default export renders English first, then the language provider applies saved locale after hydration. Wait for the real language control (not the SSR placeholder) and a settled `document.documentElement.lang` before judging persistence or localized visibility.
+6. **Avoid dialogs.** Do not trigger `alert`/`confirm`/`beforeunload`; do not click destructive/outbound actions (form submit, external "buy"/"contact send") without approval.
+7. Reload after a build only if implementation scope was added; review-only sessions do not modify code.
 
 ## Workflow
 
@@ -194,9 +202,9 @@ Before opening a route, state: the visitor's primary job, the ideal first-screen
 1. Navigate the way a real visitor would (from `/` or nav, not only deep links).
 2. Verify initial state: title, nav location, content present (not blank/spinner), no error boundary.
 3. Exercise the route's controls (see 3A).
-4. **Locale pass:** toggle the language switch; verify the **whole page** localizes (nav, headings, body, CTAs, dates, footer) and that images/videos still render. Reload and confirm the locale persists if the site claims it does. Note: this theme renders both locales in the DOM (`data-locale`) and toggles visibility client-side — confirm the *hidden* locale isn't shown and the active one is complete.
+4. **Locale pass:** toggle the language switch after hydration; verify the **whole page** localizes (nav, visible H1, body, CTAs, dates, footer, TOC, related/prev-next cards, search labels/results) and that images/videos still render. Reload and navigate to another route, then confirm the locale persists once hydration settles. Note: this theme renders both locales in the DOM (`data-locale`) and toggles visibility client-side — confirm the *hidden* locale isn't visible, the active one is complete, and `document.documentElement.lang` matches the active language. If the browser title/meta/share/search result title remains English in 中文, record whether that is an intentional client-side-i18n limitation or a product gap.
 5. **Media pass:** for every `<img>`, confirm a 200 and a non-zero rendered box (no broken-image glyph); for every `<video>`, confirm the poster shows, then play and confirm it advances with audio and controls work. Tutorial images on `/learn/*` are the known 404 risk — check each.
-6. **Mobile pass:** switch to a mobile viewport; verify hamburger nav opens/closes, no overflow/clipping/scroll-trap, tables/code/video fit, tap targets usable, language switch reachable.
+6. **Mobile pass:** switch to a narrow mobile viewport (use at least one of 375px or 390px wide, plus any user-requested size). Verify hamburger nav opens/closes as an opaque isolated panel below the fixed header, has its own scroll, does not leave the underlying page visually interactive, closes on Escape/backdrop/nav action where applicable, and keeps the language switch/search reachable. Confirm no document-level horizontal overflow (`documentElement.scrollWidth <= clientWidth`), no clipped or overlapping text, no scroll trap, exactly one visible footer, and 44px-class tap targets for the hamburger, search, theme toggle, language switch, primary CTAs, and footer legal/language links. Tables, code blocks, screenshots, and videos must fit the viewport or expose intentional internal scrolling.
 
 ### 3A. Control / element matrix
 
@@ -212,19 +220,20 @@ Exercise each at least once; record the settled visible result and whether it ma
 For each scoped page, enumerate links and verify destinations resolve:
 - **Internal links** → 200 and the expected page (no 404, no redirect loop). Pay special attention to `/learn/*` cross-links (post-migration) and any lingering `/series/*` links in content (should be none).
 - **External links** → correct host (e.g. `https://app.tradingflow.com/app/...`), open without error; check `target=_blank` uses `rel="noopener"`.
-- **Machine endpoints** → `/sitemap.xml`, the configured feed endpoint(s) (`/feed.xml` for `rss`, `/feed.atom` for `atom`, both for `both`), and `/search.json` are valid and contain current URLs; `/robots.txt` allows indexing and points to the sitemap.
+- **Machine endpoints** → `/sitemap.xml`, the configured feed endpoint(s) (`/feed.xml` for `rss`, `/feed.atom` for `atom`, both for `both`), and `/search.json` are valid and contain current URLs; `/robots.txt` allows indexing and points to the sitemap. Compare several sitemap `<loc>` values against their rendered canonical tags; sitemap URLs should already be canonical and should not require 301/308 trailing-slash normalization. If 中文 search is in scope, note whether `/search.json` is English-only while Pagefind indexes rendered 中文 content.
 Support tools allowed: `curl -sI <url>` for status, `curl -s <url> | grep` for sitemap/canonical content — as backup to the browser.
 
 ### 3C. SEO artifact verification
 
 For representative pages (home, a blog post, a `/learn` chapter, the `/learn` hub), verify from the DOM/network:
-- Exactly **one semantic `<h1>`** per logical page. Nuance: this theme renders both locales in the DOM, so a page may legitimately contain an EN `<h1>` and a 中文 `<h1>` (one hidden). Two H1s *for the same locale* is a defect; one-per-locale is by design — state which you saw.
+- Exactly **one semantic `<h1>`** per logical page in the full DOM, not just one visible H1. Locale switching should localize text inside the single heading; hidden alternate locale blocks must not introduce extra hidden `<h1>` elements.
 - `<link rel="canonical">` present, absolute, self-referential, and using the **current** URL (`/learn/...`, trailing slash per `trailingSlash: true`).
-- `hreflang` alternates for `en`, `zh`, and `x-default`.
+- `hreflang` only advertises real, distinct, crawlable locale URLs. For the current client-side locale switch, expect `en` and `x-default`; do not accept `zh` mapped to the same URL unless path-based `/zh/...` routes exist.
 - JSON-LD present and valid for the page type (`BlogPosting` on posts, `BreadcrumbList` + `CollectionPage`/`ItemList` on `/learn`, `Organization`/`WebSite` sitewide). Validate via `chrome-devtools` or by eye.
 - OpenGraph + Twitter card tags with a resolvable image.
 - No stray `noindex`/`nofollow` on pages that should be indexed.
-- Title + meta description are present, unique, and descriptive.
+- Title + meta description are present, unique, descriptive, and unlikely to truncate badly (rough checks: titles around 50-60 characters when practical, descriptions around 120-160 characters when practical).
+- Client-side 中文 does **not** create separate crawlable zh metadata by itself. Treat EN-only crawler metadata as expected for the current architecture, but still report visitor-facing gaps when the active 中文 page leaves browser titles, share titles, search result titles, or adjacent-card titles in English.
 
 ### 3D. Redirect verification (server-level)
 
@@ -240,8 +249,10 @@ Look specifically for:
 - Blank route, error boundary, hydration error, infinite spinner, or blank chart/diagram/video.
 - 404 image (broken-image glyph), unplayable/missing video, missing poster.
 - Dead link/click, broken nav dropdown, language switch that only partially localizes, search that returns nothing or wrong results.
-- Layout: text overflow, clipped labels, overlapping sticky header, horizontal scroll hiding content, unusable mobile tap targets, code blocks/tables/videos overflowing on mobile.
+- i18n: `html[lang]` mismatch, hidden locale visible, saved locale lost after settled reload/navigation, adjacent/related navigation titles stuck in the wrong language, browser title/meta/share/search result title not matching active locale when the visitor-facing experience claims full localization.
+- Layout: text overflow, clipped labels, overlapping sticky header, duplicate visible footers, hamburger/menu overlays that leave underlying content visually active, horizontal scroll hiding content, unusable mobile tap targets, code blocks/tables/videos overflowing on mobile.
 - Stale/wrong copy: old `/series` naming, retired product names, implementation jargon, copy contradicting the glossary or the webapp's freemium reality.
+- SEO: sitemap/canonical mismatch, sitemap URLs that immediately redirect, same-URL hreflang alternates for different languages, hidden duplicate semantic headings, overlong or generic SERP titles/descriptions.
 - Broken route state on reload; trailing-slash inconsistency; query-param leakage.
 - Console errors correlated with visible breakage; network 404/500 for assets or data.
 - Mermaid/diagram blocks that fail to render (they render client-side — the build won't catch syntax errors).
@@ -290,8 +301,13 @@ Required when i18n / the language switch is in scope.
 | `switchAction` | How the locale was toggled |
 | `enState` | Key EN content observed (title/CTA/nav sample) |
 | `zhState` | Matching 中文 content observed |
-| `parity` | `complete`, `partial`, `missing` — note any untranslated/leaking strings |
-| `persistence` | Does the locale survive reload/navigation as claimed? |
+| `htmlLang` | `document.documentElement.lang` in EN and 中文 after hydration |
+| `visibleLocale` | Active `data-locale` visible only? Hidden locale leaked? |
+| `bodyParity` | `complete`, `partial`, `missing` for nav, visible H1, body, CTAs, dates, footer |
+| `adjacentNavParity` | TOC, breadcrumbs, series/sidebar, prev/next, related cards localized? |
+| `searchParity` | Search button/modal labels, EN query, 中文 query, result titles/snippets, result navigation |
+| `titleMetaParity` | Browser title/meta/share/search result titles match active locale, or intentionally EN-only? |
+| `persistence` | Does the locale survive settled reload/navigation as claimed? |
 | `status` | `pass`, `fail`, `blocked`, `not-in-scope` |
 | `evidence` | URLs, visible copy, screenshot label |
 
@@ -328,10 +344,10 @@ Required when SEO/crawlability is in scope.
 | --- | --- |
 | `route` | URL |
 | `canonical` | Value + self-referential? trailing slash? `/learn` (not `/series`)? |
-| `hreflang` | `en`/`zh`/`x-default` present? |
+| `hreflang` | Real crawlable alternates only; no same-URL language alternates |
 | `jsonLd` | Types present + valid? |
 | `og` | OpenGraph/Twitter present + image resolves? |
-| `h1` | Count + locale note (one-per-locale is OK) |
+| `h1` | Total DOM count + visible count; expect one total semantic H1 |
 | `indexable` | No stray `noindex`; in `sitemap.xml` |
 | `status` | `pass`, `fail`, `blocked`, `not-in-scope` |
 | `evidence` | DOM snippet, sitemap/feed note |
@@ -396,6 +412,8 @@ Concise ratings/notes for: `clarity`, `scanability`, `conversion`, `contentTrust
 ## Troubleshooting
 
 - **Search returns nothing** → Pagefind index missing. Run `bun run build:dev` (outputs `public/pagefind`), then re-test; on `next dev` without a build, mark search `blocked`.
+- **中文 Pagefind results appear but titles are English** → distinguish result discovery from result presentation. Pagefind may index hidden rendered 中文 content while page metadata stays English because there are no path-based zh routes. Record it as `searchParity` / `titleMetaParity`, not as "search broken" unless results are missing or navigate wrong.
+- **Locale looks English immediately after navigation/reload** → wait for hydration and the real language control before failing persistence. The exported HTML starts in the default locale, then `LanguageProvider` applies the saved locale on the client.
 - **`/series/*` 404 or 500 locally** → expected on `next dev`/`serve out` when redirects are nginx/Netlify-owned. Next dev may throw `missing param ... generateStaticParams()` for old export-only paths. Verify on the deployed/preview site; record `not-testable-locally`.
 - **Tag/author paths 500 only on `next dev`** → with `output: "export"`, dynamic routes that exist in `out/` or production can still throw static-param 500s in dev when the encoded slug is not in `generateStaticParams()`. Re-check with `bunx serve out` or the deployed site before filing a public dead-link defect.
 - **Broken tutorial image** → almost always the relative-vs-absolute path bug. Confirm the `<img src>` resolves to `/blogs/tradingflow-docs/images/.../*.WEBP` (200) and that the source used the absolute path; see [`update-tutorial-series.md`](./update-tutorial-series.md). On `next dev`, optimized `.WEBP` variants may differ from `out/` — re-check against `serve out` before filing.
@@ -425,6 +443,9 @@ At the end of each run:
 Update this runbook when:
 
 - Routes, nav, locales, `routeBases`, the video/image pipeline, search, or SEO output drift.
+- I18n verification exposes a reusable missing gate, especially hydrated locale timing, `html[lang]`, hidden locale visibility, adjacent-navigation titles, search result localization, `/search.json` vs Pagefind differences, or title/meta behavior under client-side 中文.
+- Mobile verification exposes a reusable layout gate that is missing here, especially menu isolation, footer duplication, 44px tap targets, sticky-header overlap, or document-level horizontal overflow.
+- SEO verification exposes a reusable crawlability gate that is missing here, especially sitemap/canonical parity, hidden duplicate headings, same-URL hreflang alternates, feed advertisement drift, or stale app-route links in content.
 - A repeated walkthrough blocker needs a standard recovery step.
 - A verification gate was too weak, too broad, or missing.
 

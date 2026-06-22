@@ -1,6 +1,6 @@
 ---
 name: optiondata-browser-e2e-product-review
-description: Browser-driven OptionData portal product E2E walkthrough runbook. Uses the Browser plugin to manually exercise real user journeys — Clerk email-OTP auth, the survey gate, billing/trial, API-key issuance, and the three data products (realtime WebSocket, historical SQL, option chain) — to find UI defects and produce PM / quant-data-consumer UX findings without running repository Playwright scripts.
+description: Browser-driven OptionData portal product E2E walkthrough runbook. Uses the Browser plugin to manually exercise real user journeys — Clerk email-OTP auth, the survey gate, billing/trial, API-key issuance, the three data products (realtime WebSocket, historical SQL, option chain), SEO metadata, i18n/localized copy, and mobile views — to find UI defects and produce PM / quant-data-consumer UX findings without running repository Playwright scripts.
 disable-model-invocation: true
 ---
 
@@ -17,18 +17,20 @@ This runbook is intentionally **browser-first**. Do not run the repository Playw
 Use `/goal` for a full review:
 
 - Objective: run a Browser-driven product E2E walkthrough of the requested OptionData portal surface, finding UI defects and PM/data-consumer UX issues without executing repository E2E scripts.
-- Success criteria: Browser is used for every app interaction; required product/domain context is read; scoped journeys are exercised for the relevant personas and viewports; **identity rule — use a Clerk test user (`<label>+clerk_test@optiondata.io`, fixed code `424242`) for the major/bulk walkthrough, and a fresh real disposable Gmail alias (`evanzhousyforward+<run-id>@gmail.com`) with a real OTP ONLY to test the genuine registration flow itself**; when the survey/access gate is in scope, the `/survey` qualification flow and its trial side-effect are exercised; when entitlement is in scope, the realtime-subscription guard is checked across guest / signed-in-no-survey / trialing / active / no-sub states; **when the API key or any data API is in scope, the key shown in `/api_key` is proven against live non-`test_mode` endpoints — trialing/active live HTTP 200 and realtime WS 101, no-sub live HTTP 403, never 401 for a valid key**; explicitly-authorized billing-capability tests prove the user can go app → Stripe-hosted UI → app and see the correct billing/access result; any Stripe/Clerk fixture mutations are restored; findings use the required output tables; and this runbook is maintained if reusable friction is found.
+- Success criteria: Browser is used for every app interaction; required product/domain context is read; scoped journeys are exercised for the relevant personas and viewports; SEO metadata, i18n/localized copy, and mobile responsive behavior are reviewed for each in-scope surface; **identity rule — use a Clerk test user (`<label>+clerk_test@optiondata.io`, fixed code `424242`) for the major/bulk walkthrough, and a fresh real disposable Gmail alias (`evanzhousyforward+<run-id>@gmail.com`) with a real OTP ONLY to test the genuine registration flow itself**; when the survey/access gate is in scope, the `/survey` qualification flow and its trial side-effect are exercised; when entitlement is in scope, the realtime-subscription guard is checked across guest / signed-in-no-survey / trialing / active / no-sub states; **when the API key or any data API is in scope, the key shown in `/api_key` is proven against live non-`test_mode` endpoints — trialing/active live HTTP 200 and realtime WS 101, no-sub live HTTP 403, never 401 for a valid key**; explicitly-authorized billing-capability tests prove the user can go app → Stripe-hosted UI → app and see the correct billing/access result; any Stripe/Clerk fixture mutations are restored; findings use the required output tables; and this runbook is maintained if reusable friction is found.
 - Stop condition: scoped journeys are complete, a real browser/auth/data/local-env blocker is documented with evidence, or the user redirects scope.
 
 Pasteable objective:
 
 ```text
-Use ops/optiondata/optiondata-browser-e2e-product-review.md as the runbook. Use the Browser plugin to walk the requested OptionData portal journeys in the browser. Do not run repository Playwright scripts; use specs only as read-only journey maps. Identity rule: use a Clerk test user (<label>+clerk_test@optiondata.io, fixed code 424242) for the major/bulk test process, and a fresh real disposable evanzhousyforward+<run-id>@gmail.com alias with a real OTP only to test the registration flow itself. When the access gate is in scope, complete /survey (invitation code OPDAP; redistribute=No, non-professional=Yes) and verify the 14-day realtime trial appears in /billing. When entitlement is in scope, check the realtime-subscription guard across guest, signed-in-no-survey, trialing, active, and no-realtime-sub states. When the API key or any data API (realtime WS, historical SQL, option chain) is in scope, prove the apikey_ shown in /api_key actually works against live non-test endpoints: trialing/active live HTTP 200 and WS 101, no-sub live HTTP 403, and never 401 for a valid key; record sample/test-mode 200s separately. Use Stripe/Clerk SDK mutation only to set up, verify, force, or restore fixtures, never as proof of a user capability or of key validity. Produce UI defect findings, ProductReviewFinding rows, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, ApiKeyDataApiMatrix when data/key is in scope, BillingLifecycleMatrix when applicable, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and a runbook maintenance note.
+Use ops/optiondata/optiondata-browser-e2e-product-review.md as the runbook. Use the Browser plugin to walk the requested OptionData portal journeys in the browser. Do not run repository Playwright scripts; use specs only as read-only journey maps. Review SEO metadata, i18n/localized copy, and mobile view behavior for every in-scope surface. Identity rule: use a Clerk test user (<label>+clerk_test@optiondata.io, fixed code 424242) for the major/bulk test process, and a fresh real disposable evanzhousyforward+<run-id>@gmail.com alias with a real OTP only to test the registration flow itself. When the access gate is in scope, complete /survey (invitation code OPDAP; redistribute=No, non-professional=Yes) and verify the 14-day realtime trial appears in /billing. When entitlement is in scope, check the realtime-subscription guard across guest, signed-in-no-survey, trialing, active, and no-realtime-sub states. When the API key or any data API (realtime WS, historical SQL, option chain) is in scope, prove the apikey_ shown in /api_key actually works against live non-test endpoints: trialing/active live HTTP 200 and WS 101, no-sub live HTTP 403, and never 401 for a valid key; record sample/test-mode 200s separately. Use Stripe/Clerk SDK mutation only to set up, verify, force, or restore fixtures, never as proof of a user capability or of key validity. Produce UI defect findings, ProductReviewFinding rows, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, ApiKeyDataApiMatrix when data/key is in scope, BillingLifecycleMatrix when applicable, SeoI18nMobileMatrix, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and a runbook maintenance note.
 ```
 
 ## Agent Handoff
 
 Last updated: 2026-06-22
+
+Maintenance-only update on 2026-06-22: no Browser/product checks were executed; the runbook now explicitly requires SEO, i18n/localized copy, and mobile view coverage for each in-scope product surface.
 
 Latest Browser walkthrough used local dev on `http://localhost:3722` with TEST Clerk/Stripe. Trialing/no-sub personas, real Gmail OTP registration, historical SQL, option-chain, realtime test mode, and live API probes were exercised; repository Playwright E2E scripts were not run.
 
@@ -54,6 +56,9 @@ Produce an evidence-backed Browser walkthrough report that answers:
 6. **Does the API key the portal shows the user actually authenticate against the live HTTP API and realtime WS?** Do the docs accurately describe the request/response schema?
 7. When billing is in scope, can the user complete the test-mode trial/payment/cancel journeys app → Stripe-hosted UI → app with the correct billing/access result?
 8. When auth is in scope, can a new user create an account via email OTP and land in the expected post-signup state?
+9. Do the in-scope pages have correct SEO metadata for their role (title, description, canonical/open-graph where applicable) without stale or misleading product claims?
+10. Are English/Chinese localized strings complete, user-facing, and consistent with the data-API contract, with no raw translation keys, mixed-language fragments, or clipped localized copy?
+11. Does the mobile view work for the in-scope journeys without horizontal page scroll, overlapping UI, inaccessible drawers/dialogs, tiny touch targets, or unusable dense tables?
 
 ## Non-Negotiables
 
@@ -100,11 +105,12 @@ Read in this order:
    - `wiki/knowledge/historical-option-trades-api.md`
    - `wiki/knowledge/realtime-option-trades-api.md`
 3. Auth/entitlement source as needed: `src/server/realtime-entitlement.ts`, `src/server/clerk.ts`, `src/components/RouteGuard.tsx`, `src/domain/policies/SurveyPolicy.ts`.
-4. The route, page, and component files for the surface under review:
+4. SEO and i18n source for the surface under review: `src/lib/seo.ts`, `src/components/seo/*`, route `head`/metadata definitions, `src/i18n/messages.ts`, `src/i18n/LocaleProvider.tsx`, and `src/i18n/locales.ts`.
+5. The route, page, and component files for the surface under review:
    - TanStack route file: `src/routes/<route>.tsx`.
    - Compatibility page component: `src/app/(dashboard)/<name>/page.tsx` (leftover Next.js folder layout reused as plain component files; there is no Next.js runtime).
    - Surface components: `src/components/<area>/*`.
-5. API route/server handlers as needed: `src/routes/api/historical/sql.ts`, `src/routes/api/option-chain.ts`, `src/server/option-chain-handler.ts`, `src/server/option-chain.ts`, `src/server/realtime-entitlement.ts`, `src/utils/apiKeyGenerator.ts`.
+6. API route/server handlers as needed: `src/routes/api/historical/sql.ts`, `src/routes/api/option-chain.ts`, `src/server/option-chain-handler.ts`, `src/server/option-chain.ts`, `src/server/realtime-entitlement.ts`, `src/utils/apiKeyGenerator.ts`.
 
 ## Module Map
 
@@ -279,16 +285,16 @@ Each user capability needs Browser evidence or is `blocked`/`fail`; SDK/API work
 ## Workflow
 
 ### 0. Scope The Run
-Write a short scope block: surface(s)/routes; personas; the identity plan (`+clerk_test` users for the bulk process; a real `evanzhousyforward+<run-id>@gmail.com` alias only if the registration flow itself is in scope); whether the survey is in scope; entitlement-guard scope; **API-key/data-API scope (and whether to do the live end-to-end key check)**; billing-capability scope; viewports (desktop + mobile if responsive); explicit non-goals; review-only vs. authorized implementation/billing follow-up.
+Write a short scope block: surface(s)/routes; personas; the identity plan (`+clerk_test` users for the bulk process; a real `evanzhousyforward+<run-id>@gmail.com` alias only if the registration flow itself is in scope); whether the survey is in scope; entitlement-guard scope; **API-key/data-API scope (and whether to do the live end-to-end key check)**; billing-capability scope; SEO/i18n review scope; viewports (**desktop + mobile are required for product surfaces unless explicitly out of scope**); explicit non-goals; review-only vs. authorized implementation/billing follow-up.
 
 ### 1. Build The Journey Map
-Turn any read-only E2E specs + the knowledge docs into user-language journeys (sign up → survey → key → query). Merge duplicates into a `BrowserJourneyCoverage` checklist. Add exploratory checks scripts miss: copy clarity, empty/loading/error/market-closed states, mobile fit, cross-route continuity (e.g. survey → home → api_key → data page).
+Turn any read-only E2E specs + the knowledge docs into user-language journeys (sign up → survey → key → query). Merge duplicates into a `BrowserJourneyCoverage` checklist. Add exploratory checks scripts miss: SEO title/description correctness, localized EN/ZH copy, empty/loading/error/market-closed states, mobile fit, cross-route continuity (e.g. survey → home → api_key → data page).
 
 ### 2. Pass 0: Greenfield Model
 Before opening the route, state the primary user job (e.g. "a quant evaluating whether to buy this data feed wants to get a key and pull a sample within minutes"), the ideal flow if the product didn't exist, the one-sentence promise, and the clearest path to a useful data pull / conversion.
 
 ### 3. Browser Walkthrough
-For each persona + route: navigate from a real entry point; verify initial state (title, nav, loading, data/empty, account/entitlement state, gates); exercise journey actions (auth/OTP, survey, billing CTAs, key issuance/regeneration, each data query, realtime connect, aggregation toggle, test-mode); record the visible outcome vs. the knowledge-doc contract; record entitlement proof before recording data-access results; switch to mobile for any surface with sheets/drawers/dense tables.
+For each persona + route: navigate from a real entry point; verify initial state (title, nav, loading, data/empty, account/entitlement state, gates); inspect SEO/head metadata for the route; switch locale and verify localized copy for the main user-facing states; exercise journey actions (auth/OTP, survey, billing CTAs, key issuance/regeneration, each data query, realtime connect, aggregation toggle, test-mode); record the visible outcome vs. the knowledge-doc contract; record entitlement proof before recording data-access results; switch to mobile for every product surface, and especially any surface with sheets/drawers/dense tables.
 
 ### 3A. Exhaustive Control Matrix
 Build and execute an `ElementActionMatrix` for every actionable element in scope (query editor, run/cancel, symbol/date/put-call/strike filters, include_flow toggle, aggregation_mode, connect/pause, copy/show key, regenerate, billing CTAs, plan toggles). Exercise each; after every filter/query, verify the result table reflects the input; record disabled controls and whether the UI explains why; wait for the settled state before judging; if a page can't load rows (e.g. ClickHouse 500), record the exact blocker and don't claim coverage.
@@ -300,10 +306,17 @@ Build an `AccessTierGuardMatrix` covering every gated route/control. For each: c
 Run the `API Key + Data API Verification` section and fill `ApiKeyDataApiMatrix`. Always include the live end-to-end key check (HTTP API 200 for trialing/active, 403 for no-sub, and WS 101 for trialing/active) when the key or any data API is in scope; sample/test-mode 200s are useful UX evidence but are not proof of live entitlement or key validity.
 
 ### 4. UI Defect Sweep
-Look for: crash/error boundary/blank route/blank widget/infinite spinner; dead click, unexplained disabled control, wrong modal, action with no feedback; "API key not available" blocking a key the user should have; data query that spins or 500s with no explanation; option-chain field labels that contradict the docs (`close`/`mark`); text overflow/clipped labels/hidden buttons/mobile traps; conflicting/stale copy or implementation terms leaking to users; broken route/state on reload; loading/empty/market-closed/streaming/error states that don't explain what to do; console errors correlated with visible breakage; network failures that leave a misleading success state.
+Look for: crash/error boundary/blank route/blank widget/infinite spinner; dead click, unexplained disabled control, wrong modal, action with no feedback; "API key not available" blocking a key the user should have; data query that spins or 500s with no explanation; option-chain field labels that contradict the docs (`close`/`mark`); SEO title/description/canonical/OG metadata that is missing, duplicated, stale, or misleading; raw i18n keys, mixed-language UI, missing translations, clipped Chinese/English copy, or localized copy that contradicts the data contract; text overflow/clipped labels/hidden buttons/mobile traps; horizontal page scroll, overlapping sticky/floating controls, sub-44px touch targets, inaccessible drawers/dialogs, and tables that cannot be scanned on mobile; conflicting/stale copy or implementation terms leaking to users; broken route/state on reload; loading/empty/market-closed/streaming/error states that don't explain what to do; console errors correlated with visible breakage; network failures that leave a misleading success state.
 
 ### 5. Product + Data-Consumer Review
 Judge with: `speedToInsight` (sign-up → first data pull), `scanability` (compare contracts/rows/strikes), `decisionConfidence` (freshness, delay vs realtime, metric labels, units), `dataTrust` (delayed/intraday/historical/live states explicit; schema docs accurate; beta clearly flagged), `apiKeyDx` (is getting/using/rotating a key obvious; do code samples match the real schema; does the shown key actually work), `controlErgonomics`, `statePersistence`, `crossRouteHandoff`, `accessConversion`. Prioritize the data-consumer workflow (get key → understand schema → pull correct data) over visual polish.
+
+### 5A. SEO / I18n / Mobile Review
+For each in-scope route, fill `SeoI18nMobileMatrix`:
+
+1. SEO: inspect `document.title`, meta description, canonical/Open Graph where relevant, and route metadata source. Confirm the page's search/social promise matches the actual product state and does not overclaim live access, pricing, beta status, or schema fields.
+2. I18n: toggle English and Chinese. Verify primary nav, CTAs, auth/survey/billing states, data errors, empty/loading states, field labels, schema docs, and table/card labels. Flag raw keys, untranslated fragments, mixed language, copy that no longer matches the data contract, and localized text that clips or overlaps.
+3. Mobile: test at least one narrow viewport around `390x844` plus any user-requested device. Check navigation drawer, auth/survey dialogs, billing CTAs, API-key controls, realtime filters, historical SQL editor/results, option-chain filters/results, footer, and floating widgets. Record horizontal scroll, overlap, hidden controls, table/card scanability, and touch targets under 44px.
 
 ### 6. Synthesize Findings
 A finding is real when it has persona, route+viewport, visible evidence, expected behavior (from CLAUDE.md/knowledge docs or a clear job), consequence, and an acceptance signal. Don't file bugs for missing local ClickHouse creds, market-closed live states, or local network issues unless the UI fails to explain/recover.
@@ -401,6 +414,18 @@ Required when payment/add-card/change-card/cancel/billing-access is explicitly i
 | `expectedImpact` | Expected improvement |
 | `riskTradeoff` | What could get worse / needs a product decision |
 
+### SeoI18nMobileMatrix
+Required for every product-review run unless explicitly out of scope.
+| Field | Meaning |
+| --- | --- |
+| `surface` | Route/page/modal under review |
+| `seoCheck` | Title, meta description, canonical/OG status, and whether the promise matches the page |
+| `i18nCheck` | EN/ZH coverage, missing/raw keys, mixed language, contract-copy accuracy |
+| `mobileViewport` | Device size(s), e.g. `390x844`, `430x932`, desktop comparison if useful |
+| `mobileResult` | Horizontal scroll, overlap, touch target, drawer/dialog, table/card scanability result |
+| `status` | `pass`, `fail`, `blocked`, `not-in-scope` |
+| `evidence` | URL, DOM/head observation, screenshot label, visible copy, console/network note |
+
 ### TraderScorecard
 Concise ratings/notes for: `speedToInsight`, `scanability`, `decisionConfidence`, `dataTrust`, `apiKeyDx`, `controlErgonomics`, `statePersistence`, `crossRouteHandoff`, `accessConversion` (when auth/paywall in scope).
 
@@ -414,19 +439,20 @@ Concise ratings/notes for: `speedToInsight`, `scanability`, `decisionConfidence`
 7. BillingLifecycleMatrix when payment/cancel is in scope.
 8. Ranked ProductReviewFinding table.
 9. ElementActionMatrix.
-10. TraderScorecard.
-11. Evidence index: screenshot labels, URLs, notable console/network/HTTP/WS observations.
-12. Blockers and uncertainty.
-13. Runbook maintenance suggestion.
-14. Explicit statement: `Repository Playwright E2E scripts were not run`.
+10. SeoI18nMobileMatrix.
+11. TraderScorecard.
+12. Evidence index: screenshot labels, URLs, notable console/network/HTTP/WS observations.
+13. Blockers and uncertainty.
+14. Runbook maintenance suggestion.
+15. Explicit statement: `Repository Playwright E2E scripts were not run`.
 
 ## Severity Guide
 | Severity | Use when |
 | --- | --- |
 | `Critical` | Core flow unusable; user misled into wrong access/billing state; **the API key the product issues does not authenticate (data product is dead for that user)**; wrong/dangerous data returned. |
-| `High` | Major workflow blocked; data-trust failure; schema docs contradict actual responses; broken survey→trial→key→data handoff; unusable mobile path for a core flow; high-friction conversion blocker. |
-| `Medium` | Meaningful friction; confusing copy; weak empty/loading/error/market-closed state; hard-to-use control; scanability issue. |
-| `Low` | Polish, minor copy, localized layout, or coverage gap that doesn't block the journey. |
+| `High` | Major workflow blocked; data-trust failure; schema docs contradict actual responses; broken survey→trial→key→data handoff; unusable mobile path for a core flow; SEO/social metadata that materially misrepresents the product; high-friction conversion blocker. |
+| `Medium` | Meaningful friction; confusing copy; weak empty/loading/error/market-closed state; hard-to-use control; scanability issue; missing/incorrect localized copy on important user states; mobile layout issue that slows but does not block the journey. |
+| `Low` | Polish, minor copy, localized layout, metadata polish, or coverage gap that doesn't block the journey. |
 
 ## Troubleshooting
 - **Data API returns `500: CLICKHOUSE_URL is not configured`**: copy ClickHouse creds into `.env.local` from a sibling project and restart `pnpm dev` (see Runtime Setup). Not a product bug.
@@ -458,4 +484,4 @@ At the end of each run:
 4. If the pass was documentation maintenance only, say so in Agent Handoff and in the final report.
 5. If no durable rule changed, state `Runbook maintenance: no change`.
 
-Update this runbook when: routes/pages, test-account or survey behavior, the data-API auth model, the WS host/env, knowledge-doc paths, the option-chain beta status, or output formats drift; a repeated blocker needs a standard recovery; or a verification gate was too weak/broad/missing. Do not update it for one-off findings, raw screenshot lists, temporary local data gaps, or speculative ideas.
+Update this runbook when: routes/pages, test-account or survey behavior, the data-API auth model, the WS host/env, knowledge-doc paths, SEO/i18n source paths, mobile baseline expectations, the option-chain beta status, or output formats drift; a repeated blocker needs a standard recovery; or a verification gate was too weak/broad/missing. Do not update it for one-off findings, raw screenshot lists, temporary local data gaps, or speculative ideas.

@@ -19,16 +19,15 @@ Use `/goal` for each full audit:
 
 ## Agent Handoff
 
-Last updated: 2026-06-19
+Last updated: 2026-06-23
 
-Latest production run executed for `DATE=2026-06-18` ET with `BASELINE=2026-06-10`.
+Latest production run executed for `DATE=2026-06-22` ET with `BASELINE=2026-06-10`.
 
 ### Look First
 
-- [ ] Fix the 2026-06-18 UW ingest queue backlog: Better Stack showed about `5.98M` trades enqueued to `uw-option-trades-ingest-*`, while consumer drain was about `95k-135k` trades/hour and ClickHouse had only about `1.94M` aggregate rows when rechecked. Code inspection found `processUwIngestQueueBatch` loops Cloudflare batch messages and calls `processUwIngestMessage()` per message, so production effectively drained one `~25`-trade message per logged write path.
-- [ ] Tune or redesign the ingest queue consumer path before trusting queue mode for full-volume production: production config is `high max_concurrency=8/max_batch_size=20`, `normal max_concurrency=4/max_batch_size=50`, `UW_MAX_INSERT_ATTEMPTS=1`, but the implementation did not combine queue messages into larger ClickHouse insert batches and also saw `26,212` consumer failures/retries from insert timeouts.
-- [ ] Investigate recurring strict DEI breach around `SPCX`: 2026-06-18 had `zero_dei_with_dex_share=0.0232`, with top actionable symbols `SPCX` (`2,825`) and `SOXS` (`389`) for `dei=0 AND dex>10`.
-- [ ] Track contract-rank/Greeks soft drift separately from ingest loss: next-day Massive live checks produced no hard identity failures after excluding same-day expired contracts, but still high quote/volume/Greek soft drift.
+- [ ] Deploy the process-service strike/DEI gate fix before the next option-chain ingest. The 2026-06-22 ClickHouse rows were repaired manually under repair id `repair_strike_20260622_1782220529063`.
+- [ ] Keep contract-rank quote drifts separate from identity/chain correctness: the 2026-06-22 sample had many Massive `last_quote` zeros while local flow carried intraday bid/ask values. Treat quote drift as soft unless OI/identity/Greeks also drift.
+- [ ] CF Worker production should stay fanout-only unless intentionally rolled forward again: `/uw-ingestion/status` showed `enabled=false`, `ingestQueueEnabled=false`, `spilloverEnabled=false`, and `connected=false` during the 2026-06-22 audit.
 
 ## Local workspace project map
 
@@ -91,21 +90,32 @@ Keep this file as the canonical operator entrypoint for this check:
 - Treat a strict failure as a triage trigger, not an automatic outage verdict. Drill down by symptom: row ratio and small-trade coverage for ingest loss, DEI/market-cap top symbols for metadata gaps, and Better Stack/Queue telemetry for write-buffer or spillover pressure.
 - For contract-rank correctness, sample random symbols from `mv_contract_rank_flow` and compare their contract rows against Massive option-chain snapshots by normalized OCC `option_symbol`. Do not rely only on aggregate row counts to prove synced contract-rank fields.
 - Do not query `mv_contract_day_flow`; it is retired. If a script or older note still references Phase B against `mv_contract_day_flow`, skip that phase and update the runbook or script owner. Use `mv_contract_rank_flow` for contract-rank correctness and `OptionChainTable` for chain/Greeks parity.
+- Before writing ad hoc SQL probes, run `DESCRIBE TABLE` against the live table if the query is not copied from a current script. Active schema notes: `updated_timestamp` is the ingest timestamp field, `RawOptionTrades` does not store OCC `option_symbol`, and `mv_contract_rank_flow` is aggregate-state based and does not have `_version`. Avoid aliasing `toString(date) AS date` in ClickHouse probes; alias substitution can break `WHERE date = toDate(...)`.
 - Do not update durable procedure for one-off counts, temporary vendor incidents, raw logs, or current-run-only findings.
 
 ### Latest run note
 
-2026-06-19 Asia/Shanghai / 2026-06-18 ET:
+2026-06-23 Asia/Shanghai / 2026-06-22 ET:
 
-- Target: `DATE=2026-06-18`, `BASELINE=2026-06-10`. Latest-date SQL showed rows still arriving during the run; the final probe had `1,836,039` aggregate rows, `2,216,177` aggregate fills, `last_time_et=2026-06-18 16:59:15`, max aggregate `updated_at_utc=2026-06-19 06:54:15`, `6,096` `SymbolMetaData` rows, `1,988,094` option-chain rows, and `1,988,135` `mv_contract_rank_flow` contracts.
-- `bun scripts/check-data-integrity.ts --date 2026-06-18 --baseline-date 2026-06-10 --strict` exited `1`: `agg_row_ratio=0.2961` and `zero_dei_with_dex_share=0.0232` breached. `<25k premium share=0.9555` and `zero_market_cap_stock_share=0.0001` were healthy.
-- `bun scripts/verify-producer-freshness.ts 2026-06-18` exited `0` but showed a severe backlog: open p50 `53s`, p95 about `626s`, p99 `886s`, `1,729,989` rows with `>10m` lag, and full-session extent `09:30:00` to `16:59:15`. Rows persisted hourly from `2026-06-18 13:00Z` through `2026-06-19 06:00Z`.
-- `bun scripts/audit-small-trade-coverage.ts 2026-06-18` and `--compare 2026-06-10,2026-06-17,2026-06-18` exited `0`. Raw-vs-aggregate hourly ratios were about `0.9999-1.0002`; raw premium mix was `66.68% <1k`, `26.03% 1k-10k`, `3.26% 10k-25k`, and `4.03% >=25k`. This was not a low-priority filtering signature.
-- DEI drill-down: non-index `dei=0 AND dex>0` was `37,579 / 1,618,265 = 0.0232`; top `dex>10` symbols were `SPCX` (`2,825`), `SOXS` (`389`), and `XDB` (`16`). Coverage-gate missing symbols were `MXEF` (`19`) and `XDB` (`16`).
-- Duplicate fingerprint smoke using live schema and `uniqExact(tuple(...))` showed `0` exact full-row aggregate duplicates across about `1.82M` rows.
-- Better Stack `uw_ingest_queue_*` telemetry for `2026-06-18 13:25Z` to `2026-06-19 07:00Z`: `uw_ingest_queue_enqueue_batch` logged about `5.98M` trade-attempts, enqueue failures logged `668` failed send attempts / `66,382` trade-attempts, and drain logs covered about `1.78M` trade-attempts / `1.66M` raw rows / `1.37M` aggregate rows. Active `uw_websocket_health` reports had `0` write-buffer drops and `0` spillover messages. Wrangler confirmed `uw-option-trades-ingest-high`, `uw-option-trades-ingest-normal`, and `uw-option-trades-spillover` each have one producer and one consumer.
-- Contract-rank Massive sample (`VIXW,LOFF,FUBO,ASTS,DOCN`, excluding contracts expiring on `2026-06-18`) had `0` hard identity failures and `86` soft drifts across `40` sampled contracts. The unfiltered sample produced same-day-expiry presence misses after Massive live rolled, so do not treat those as hard sync failures.
-- `bun scripts/check-greeks-parity.ts --date 2026-06-18 --phase a --strict` exited `1`: `40` sampled contracts, `22` compared, `18` breached, failing all default symbols (`AAPL,NVDA,QQQ,SPY,TSLA`). Treat as chain/provider EOD parity drift, not the direct cause of UW row loss.
+- Target: `DATE=2026-06-22`, `BASELINE=2026-06-10`. New York time was already `2026-06-23 02:16 EDT`, so `2026-06-22` was the most recent fully closed ET session.
+- `bun scripts/check-data-integrity.ts --date 2026-06-22 --baseline-date 2026-06-10 --strict` exited `0` after the DEI gate was changed to exclude expected five-decimal rounding-to-zero cases: `total=6,842,399`, `agg_row_ratio=1.1149`, `<25k premium share=0.9705`, `zero_market_cap_stock_share=0.00016`, actionable `zero_dei_with_dex_share=0.00062`, raw `raw_zero_dei_with_dex_share=0.02385`, and `rounded_zero_dei_with_dex_share=0.02323`.
+- `bun scripts/verify-producer-freshness.ts 2026-06-22` and `--compare 2026-06-10,2026-06-22` exited `0`: open p50 `0s`, p95 `14s`, p99 `31s`, `2,145` rows `>30s`, `0` open rows `>5m`, day-wide `664` rows `>5m`, `0` rows `>10m`, and full-session extent `09:30:00` to `16:59:58`. Compared with 2026-06-10, open p95 improved from `161s` to `14s`.
+- `bun scripts/audit-small-trade-coverage.ts 2026-06-22` and `--compare 2026-06-10,2026-06-22` exited `0`: raw rows were `11,452,071`, aggregate fills were `11,452,049`, hourly raw-vs-aggregate ratios were `~1.0`, and raw RTH premium mix was `69.28% <1k`, `26.17% 1k-10k`, `2.83% 10k-25k`, `1.72% >=25k`.
+- Table population checks: `OptionChainTable` had `1,910,291` rows / `1,905,884` contracts / `6,004` symbols; `SymbolMetaData` had `6,105` symbols; `mv_contract_rank_flow` had `2,865,668` aggregate-state rows / `1,857,979` contracts / `6,018` symbols / `11,452,049` merged trades; all max dates were `2026-06-22`.
+- CF Worker status was fanout-only: `/uw-ingestion/status` returned `enabled=false`, `connected=false`, `ingestQueueEnabled=false`, `ingestDirectConsumerEnabled=false`, `spilloverEnabled=false`, and ClickHouse configured. Contract-rank snapshot metadata was current: `effectiveDate=2026-06-22`, `rowCount=367,492`, `asOf=2026-06-22T21:36:52.305Z`.
+- Duplicate smoke: aggregate bucket duplicate query (`time, option_symbol, price, size, exchange, trade_count`) returned no rows; raw-vs-aggregate parity also showed no systemic duplicate inflation. A full exact-row aggregation over all aggregate columns exceeded ClickHouse memory and should not be used as a routine probe.
+- DEI drill-down: raw `dei=0 AND dex>0 AND non-index` was `145,770 / 6,111,188 = 0.02385`, but `141,971` rows were expected to round to zero at five-decimal DEI precision. The actionable numerator was `3,799 / 6,111,188 = 0.00062`, below the `0.02` threshold.
+- Contract-rank Massive sample (`QSR,URNM,NEBX,UAL,SCHW`, excluding contracts expiring on `2026-06-22`) compared `40` contracts: `2` hard strike failures and `68` soft drifts. The hard failures were adjusted NEBX `00026670` strikes: `OptionChainTable` and `mv_contract_rank_flow` store `26.7`, while Massive/OCC and `AggregatedOptionTrades` imply `26.67`. Soft drifts were mostly Massive `last_quote` bid/ask zeros while local flow carried intraday bid/ask values.
+- `bun scripts/check-greeks-parity.ts --date 2026-06-22 --phase a --symbols SPY,QQQ,AAPL,TSLA,NVDA --strict` exited `0`: `40` sampled / `40` compared, `2` TSLA IV breaches, one failing symbol, below strict failure threshold.
+- Verdict: ingest volume and latency are healthy after moving ClickHouse writes back to process-service. Data quality is **Degraded** only by the adjusted-strike precision issue in rows written before the process-service mapper fix; Greeks parity and actionable DEI are **Good**.
+
+Repair follow-up on 2026-06-23:
+
+- Process-service mapper fix now derives option-chain strike from OCC `option_symbol` with provider strike as fallback, and `check-data-integrity.ts` now treats zero DEI as actionable only when the expected five-decimal DEI should be positive or average volume is missing.
+- `2026-06-22` live ClickHouse repair id: `repair_strike_20260622_1782220529063`. Backup tables retained: `repair_strike_20260622_1782220529063_affected` (`10,174` rows), `repair_strike_20260622_1782220529063_chain_backup` (`10,174` rows), and `repair_strike_20260622_1782220529063_mart_backup` (`12,241` rows).
+- Repair scope: `10,174` rounded-strike `OptionChainTable` contracts across `90` symbols. `ALTER TABLE OptionChainTable UPDATE strike = OCC-derived strike` completed with mutation `0000000496`, `is_done=1`, no failure reason. The affected `mv_contract_rank_flow` keys were deleted and rebuilt from `AggregatedOptionTrades` plus corrected `OptionChainTable` structure states.
+- Verification after repair: `OptionChainTable` strike mismatches `0`; affected mart strike mismatches `0` (`max_abs_diff=0.0000293`, Float32 noise); full mart trade count still `11,452,049`; `NEBX260717[CP]00026670` now reads `26.67` in chain and `26.670000076293945` in mart and matches Massive `26.67`.
+- Worker snapshot hard refresh: `POST https://ws.optiondata.io/api/v1/contract-rank/latest-snapshot/refresh?rebuild=force` returned `REBUILT`, `effectiveDate=2026-06-22`, `rowCount=367,492`; latest metadata `asOf=2026-06-23T13:16:35.316Z`.
 
 ---
 
@@ -128,6 +138,7 @@ Many zeros are **by design** for indexes.
 - `underlying_type != 'INDEX'` for DEI thresholds.
 - Never flag INDEX rows for `market_cap=0` or `dei=0`.
 - `expiry_days=0` on high-volume names is usually **0DTE**, not missing data.
+- A strict `dei = 0 AND dex > 0` breach is not automatically metadata loss. First split by premium, delta, and average-stock-volume availability. Current normalization rounds DEX to whole shares and DEI to five decimals, so tiny-premium / very-low-delta trades can create `dex > 0` while DEI rounds to zero.
 
 Sanity breakdown:
 
@@ -324,7 +335,7 @@ const DEFAULT_THRESHOLDS = {
 | --- | --- | --- | --- |
 | `premium_under_25k_share` | ~0.95–0.98+ | < 0.90 | Local CF Worker write-buffer starvation (high-value trades only got through) |
 | `zero_market_cap_stock_share` (STOCK only) | < 0.001 (post-sync) | > 0.005 | Missing `SymbolMetaData`, `EXCLUDED_SYMBOLS`, or alias bug (BRKB etc.) |
-| `zero_dei_with_dex_share` (non-INDEX) | < 0.02 | > 0.02 | Missing `average_stock_volume` in meta, or tiny dex rounding |
+| `zero_dei_with_dex_share` (non-INDEX, actionable) | < 0.02 | > 0.02 | Missing `average_stock_volume` in meta, or stored zero when expected rounded DEI is positive |
 | `agg_row_ratio` vs baseline | ~0.85–1.05 | < 0.70 | Missing writes, buffer drops, shortened session, or upstream gap |
 
 Good verdict: all pass, total rows within ~15% of baseline, no dominant symbol with thousands of zeros in drill-down.
@@ -569,6 +580,8 @@ Run this after `OptionChainTable` ingest when the user asks whether contract-ran
 | `put_call`, `strike`, `expiration_date` mismatch | Yes | OCC parsing or mart structure fill is wrong |
 | `oi`, `daily_volume`, `bid`, `ask`, `iv`, `delta`, `gamma`, `theta`, `vega` drift | Investigate by tolerance and timing | Same-day sync drift, mapper/model difference, or live Massive snapshot moved |
 | Only high-flow `latest_trade_price` differs from Massive close/last trade | Usually not hard failure | Flow mart can carry latest execution print while Massive chain is an EOD/current chain snapshot |
+
+Adjusted-contract strike precision needs a separate attribution step. If the OCC `option_symbol` encodes a fractional strike (for example `00026670`) and the mart/chain shows a rounded strike (for example `26.7` vs Massive/OCC `26.67`), compare `OptionChainTable`, `mv_contract_rank_flow`, and `AggregatedOptionTrades` for the same contract. If trades store the exact strike but chain/mart store the rounded value, treat it as an option-chain normalization precision issue, not a UW ingest loss.
 
 ### Random sample workflow
 

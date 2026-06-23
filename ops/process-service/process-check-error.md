@@ -8,12 +8,24 @@ disable-model-invocation: true
 
 Agent runbook for **recent production errors** of the backend service **`tradingflow-process-service-ec2`** (the EC2 Node/Express process that runs the Unusual Whales ingestion client, the option-chain and symbol-meta cron jobs, the CF-service watchdog, and maintenance jobs). Default window is the **past 24 hours**.
 
+## Agent Handoff
+
+Last updated: 2026-06-23
+
+### Look First
+- [ ] Re-check whether `UnusualWhalesClient` P0 rows recurred after `2026-06-22 19:53 UTC`; the latest run saw `missing_symbol_metadata_for_dei` and one `index_quote_refresh_total_failure`, but no later P0s in the checked `-24h` window.
+- [ ] Confirm the old `SyncUwClickHouseHeartbeat` token (`3QB5...YnZV`) stays absent; the latest run saw stale-token `404` rows ending at `2026-06-22 19:05 UTC`, while the live heartbeat list only exposed `Process Service Heartbeats` (`461787`).
+- [ ] If `CheckCFServiceDataController` no-data alerts recur, compare cf-worker `/uw-ingestion/status` and `cf-service` Better Stack logs before assigning the outage to this EC2 process.
+
+### Blocked / Needs Decision
+- [ ] Any code fix, Better Stack monitor recreation, or heartbeat-token change needs a separate explicit user request; this runbook remains investigate-only.
+
 This service has **no PostHog and no Sentry-backed Better Stack "Errors" application**. Its observability is:
 
 - **Better Stack Telemetry logs** (Logtail source `Process Service[Production]`) — every `logErrorHandler` / `syncUwLogError` writes a row with `level="error"`. **This is the primary error source for this runbook.**
 - **Discord** — the same errors fan out to a Discord error webhook (info summaries to a Discord info webhook). Not queryable by MCP; use only as a human cross-check.
 - **Sentry.io** — the same errors also go to Sentry (`captureProcessServiceError`). Separate product; out of scope here unless the user asks.
-- **Better Stack Uptime heartbeats** — two liveness monitors (process heartbeat + Sync UW ClickHouse ingest heartbeat). Separate from logs; checked via the Uptime MCP tools.
+- **Better Stack Uptime** — one **push** heartbeat (Sync UW ClickHouse **ingest** health, `SyncUwClickHouseHeartbeat`) plus a **pull** monitor on the `/canary` HTTP endpoint for "is the server running?". Separate from logs; checked via the Uptime MCP tools.
 
 Because errors live in the **logs** collection (not an Errors application), **do not** use `telemetry_list_errors_tool` / `telemetry_get_errors_query_instructions_tool` for this service. Use the **logs** query path (`telemetry_get_query_instructions_tool` → `telemetry_query`).
 
@@ -151,8 +163,8 @@ Every error row has `level="error"`, `service="tradingflow-process-service-ec2"`
 | `SyncSymbolMetaService` | Nightly symbol-meta job (7:00 PM ET) | `[P1]` Alpaca-history / Polygon-aggregates provider fallbacks, empty-map / threshold breaches |
 | `FetchOptionChainDataService` | Option-chain job (6:30 AM ET) | provider storms, empty HV map, threshold breaches, fatal service errors |
 | `CheckCFServiceDataController` | CF-worker watchdog (30s ping / 5m watchdog / 60m no-data) | ping timeout, socket errors, "No data received from CF WebSocket for ~N minutes" |
-| `BetterStackHeartbeat` | Process-liveness heartbeat (every 5m) | `heartbeat request failed` (HTTP error on the Uptime POST) |
-| `SyncUwClickHouseHeartbeat` | Ingest-health heartbeat (every 5m when eligible) | `heartbeat request failed` (often 404 = stale URL token) |
+| `SyncUwClickHouseHeartbeat` | The only **push** heartbeat (every 5m): ingest-health ping when market open, process-alive ping when closed | `heartbeat request failed` (HTTP error on the Uptime POST) |
+| `BetterStackHeartbeat` | **Removed 2026-06-23** (process-liveness push heartbeat); server liveness is now the `/canary` pull monitor | historical rows only — may still appear in older windows |
 | maintenance (`deleteOldData`, `cleanupLogs`) | scheduled cleanup | delete-task / unlink / dir-read failures |
 
 ### Severity tags (rank order)
@@ -188,8 +200,8 @@ Call these out explicitly; do **not** rank them as P0 defects by default:
 
 Separate from logs. Two monitors are pinged by this service (URLs in `src/utils/betterstack-heartbeat.ts`):
 
-- **Process liveness** — `BetterStackHeartbeat`, posts every 5 min (token `hBWssf343Zvr6KeQBtW8et64`). Last observed monitor: **`Process Service Heartbeats`** (`461787`).
-- **Sync UW ClickHouse ingest** — `SyncUwClickHouseHeartbeat`, posts every 5 min **only when ingest is healthy** (recent nonzero raw **and** aggregate ClickHouse write during an open/extended session). As of 2026-06-22 it shares the **same** monitor/token as the process heartbeat above (`hBWssf343Zvr6KeQBtW8et64`, monitor `461787`) — the old dedicated ingest monitor (`3QB5QMqs8TeZgmoKEb4uYnZV`) was deleted and 404-spamming. Because both heartbeats now ping one monitor, the monitor is effectively a **process-liveness** signal; it is **not** an independent ingest-health alarm until a separate ingest monitor is recreated. Missed pings are otherwise **intentional** when the session is closed, the socket is not open, or no full write happened in the last ~6 min.
+- **Server liveness (`/canary`)** — the `GET /canary` HTTP endpoint (`src/controllers/quant/canary.ts`, wired in `src/routes/index.ts`), checked by a Better Stack **pull** monitor. There is **no** process-liveness *push* heartbeat (removed 2026-06-23). Inspect it via `uptime_list_monitors_tool`, not the heartbeat list.
+- **Sync UW ClickHouse ingest** — `SyncUwClickHouseHeartbeat`, the **only push heartbeat**, posts every 5 min to monitor **`461787`** (token `hBWssf343Zvr6KeQBtW8et64`), gated by `SyncUwClickHouseHeartbeatGate`: during an **open/extended** session it pings **only when ingest is healthy** (recent nonzero raw **and** aggregate ClickHouse write); when the market is **closed** (overnight/weekend/holiday) it pings as a **process-alive** signal. So the monitor going **Down** means **the market is open and ingestion has stalled** (or the process is dead) — a true ingestion alarm with no off-hours false-trips. NOTE: monitor `461787` is still named "Process Service Heartbeats" but now tracks **ingest health** — rename on Better Stack if confusing. Target config: **period 10m / grace 5m** (catches an intraday stall in ~15 min). Server-is-running liveness is the separate `/canary` pull monitor (`uptime_list_monitors_tool`).
 
 Check with `uptime_list_heartbeats_tool`; map by name; report `up`/`down`/`pending`. Cross-check a `Down`/failing heartbeat against the `heartbeat request failed` error logs ([D](#d-heartbeat-request-failures)). A POST returning **404** means the heartbeat URL token no longer exists on Better Stack (monitor deleted/recreated) → the code is pinging a dead URL → **update the token in `betterstack-heartbeat.ts`** (or recreate the monitor). This is a monitoring-config bug, distinct from an actual ingestion failure.
 
@@ -250,6 +262,18 @@ Skimmable in under ~3 minutes:
 9. **Fix plan** — smallest safe change first; name files/areas (point at the wiki Send Map row); for UW issues read `sync-uw-data.md` first.
 10. **Verification signals** — the exact pattern / message / `jobName`+severity that should drop after the fix, and the query to re-run.
 11. **Blockers** — MCP down, missing token, region/host ambiguity (EC2 vs cf-worker), etc.
+
+## Runbook Self-Maintenance
+
+At the end of each run:
+
+1. Decide whether live evidence revealed a reusable runbook lesson or only current incident state.
+2. Promote durable lessons into prerequisites, workflow phases, query templates, interpretation rules, or troubleshooting notes.
+3. Keep transient state in `Agent Handoff` only, and prune stale bullets before adding new ones.
+4. If source names, IDs, collection names, heartbeat names, field paths, or validation checks drift, update this runbook before finalizing.
+5. If no durable rule changed, state `Runbook maintenance: no procedural change` in the final report.
+
+Do not update this runbook for raw log dumps, one-off counts, completed progress, or speculative fixes that were not supported by the run.
 
 ## Boundaries (mandatory)
 
@@ -394,12 +418,12 @@ ORDER BY hour DESC
 
 From a `-24h` run on **2026-06-22** (use as a sanity reference for "normal", not as ground truth):
 
-- **`SyncUwClickHouseHeartbeat heartbeat request failed: ... status code 404` ×38** — **RESOLVED 2026-06-22**: the ingest heartbeat token (`3QB5QMqs8TeZgmoKEb4uYnZV`) was stale (its monitor was deleted on Better Stack). Repointed `SYNC_UW_CLICKHOUSE_HEARTBEAT_URL` in `src/utils/betterstack-heartbeat.ts` to the live shared monitor `hBWssf343Zvr6KeQBtW8et64`. These 404s should drop to zero after deploy — re-run [query D](#d-heartbeat-request-failures) to confirm. (Follow-up: independent ingest-health alerting needs its own monitor.)
+- **`SyncUwClickHouseHeartbeat heartbeat request failed: ... status code 404` ×38** — **RESOLVED 2026-06-23**: the ingest heartbeat token (`3QB5QMqs8TeZgmoKEb4uYnZV`) was stale (its monitor was deleted on Better Stack). Repointed `SYNC_UW_CLICKHOUSE_HEARTBEAT_URL` to the live monitor `hBWssf343Zvr6KeQBtW8et64` (`461787`) **and removed the redundant process-liveness push heartbeat** (`sendBetterStackHeartbeat` + its `*/5` cron) — server liveness is now the `/canary` pull monitor — so `461787` is a dedicated ingest-health alarm fed only by the ingest heartbeat. 404s should drop to zero after deploy — re-run [query D](#d-heartbeat-request-failures) to confirm.
 - **`UnusualWhalesClient high late-trade drop rate` ×9** — watch; ingestion lag/backpressure when it recurs.
 - **`first option_trades message not received within 60000ms after restart` ×3** — reconnect/subscribe timing.
 - **`[P0 Error] symbol metadata unavailable for non-index <SYM>; dei forced to 0` (MOGA/BFA/HEIA/THYP)** — real P0 symbol-meta gaps; track distinct symbols/day.
 - **`SyncSymbolMetaService [P1]/[P1 Error]` Alpaca-history 403 / Polygon empty-bars (many distinct symbols, ~10:30 AM ET)** — **expected** nightly provider-fallback chatter; escalate only if the job summary reports failure or the threshold trips.
-- Heartbeat monitors observed: only `Process Service Heartbeats` (`461787`, Up) remains; the earlier `cf-service uwstreaming heartbeat` (`463212`) was deleted. Both code heartbeats (process + ingest) now ping `461787`.
+- Heartbeat monitors observed: only `Process Service Heartbeats` (`461787`, Up) remains (the earlier `cf-service uwstreaming heartbeat` `463212` was deleted). After 2026-06-23 it is pinged **only** by the ingest heartbeat. Server liveness is the separate `/canary` pull monitor (`uptime_list_monitors_tool`).
 
 ### Manual fallback (MCP unavailable)
 

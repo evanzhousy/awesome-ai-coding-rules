@@ -73,7 +73,7 @@ Secondary projects named by ops, such as `api-service-lambda`, `cron-service-lam
 
 Read these first:
 
-1. `ops/start-here.md` for current runbook routing and tool safety rules.
+1. `ops/tradingflow-ceo-daily-review.md` for current runbook routing and tool safety rules.
 2. The `Agent Handoff`, scope, and local project map sections of every in-scope ops runbook.
 3. Each in-scope project's top-level instructions: `AGENTS.md`, `CLAUDE.md`, `README*`, package manifests, deployment config, and domain docs.
 4. Architecture-relevant docs under `doc/`, `docs/`, `wiki/`, `knowledge/`, `src/**/README*`, and runbooks referenced by the project itself.
@@ -348,9 +348,7 @@ If verification is expensive or unavailable, mark the item `defer` and state the
 
 ## When To Switch Runbooks
 
-- Production Worker DO/KV/API serving health: use `ops/cf-service/check-durability-object-status.md`.
-- ClickHouse data integrity, latency, contract-rank correctness, or Greeks parity: use `ops/cf-service/data-quality.md`.
-- CF/process producer error healing: use `ops/cf-service/cf-check-error.md`.
+- TradingFlow data-pipeline production checks, including Worker DO/KV/API serving health, ClickHouse integrity/latency, contract-rank correctness, Greeks parity, and CF/process producer errors: use `ops/process-service/datapipeline-error-check.md`.
 - Webapp production error correlation: use `ops/webappp-fullstack/webapp-check-error.md`.
 - Webapp Browser product review: use `ops/webappp-fullstack/browser-e2e-product-review.md`.
 - Landing Browser review: use `ops/landingpage/browser-e2e-test.md`.
@@ -362,7 +360,7 @@ If verification is expensive or unavailable, mark the item `defer` and state the
 At the end of each run:
 
 1. Decide whether this review revealed reusable routing, project-map, output-format, or simplification guidance.
-2. Promote durable lessons into this runbook or `ops/start-here.md`.
+2. Promote durable lessons into this runbook or `ops/tradingflow-ceo-daily-review.md`.
 3. Keep transient review state in `Agent Handoff` only.
 4. Prune completed or obsolete handoff items before adding new ones.
 5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.

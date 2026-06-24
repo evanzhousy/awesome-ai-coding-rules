@@ -17,17 +17,9 @@ Use `/goal` for live or post-incident runs:
 
 ## Agent Handoff
 
-Last updated: 2026-06-19
+Last updated: 2026-06-24
 
-### Look First
-
-- [ ] Decide and implement the queue retry budget for queue-mode ingest. The 2026-06-19 run saw delayed high-queue backlog still draining off-session with sustained `uw_ingest_queue_consumer_failed` and `uw_ingest_queue_message_retry`; in the last 2 hours, high had 2,568 consumer failures versus normal's 47, while both queues continued draining.
-- [ ] Quantify 2026-06-18 data completeness after queue catch-up. `bun scripts/verify-producer-freshness.ts 2026-06-18` showed full-session rows from 09:30:00 to 16:59:15 ET (`total_rows=1,818,462`) but high lag (`p95=626s`, `rows_gt_5min_day=1,769,478`); compare against recent baselines and missing-minute ranges before declaring no data loss.
-- [ ] Document or remediate the 2026-06-17 opening gap. A 2026-06-19 rerun confirmed `row_count=0` for 09:30-09:35 ET and first row `09:39:12` ET despite full-day `total_rows=6,533,446`.
-
-### Blocked / Needs Decision
-
-- [ ] Choose the loss-vs-catch-up policy for high and normal queues. Production currently has `UW_INGEST_QUEUE_ENABLED=true`, `UW_MAX_INSERT_ATTEMPTS=1`, and Cloudflare queue `max_retries=3`; current evidence supports reducing normal retries to 0 and high to at most 1 if throughput/cascade avoidance is preferred over best-effort replay.
+No open producer-health handoff items after the latest run. The 2026-06-24 run was pre-open at 01:56 ET, so same-day rows were not expected yet; the latest completed session, 2026-06-23, had full ClickHouse coverage and no producer timeout/drop pattern. The previous queue-retry handoff is obsolete because production Worker UW ingest is disabled and `cf-service` showed no UW ingest queue events in the last two days.
 
 ## Runbook Self-Maintenance
 

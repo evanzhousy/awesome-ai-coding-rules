@@ -1,6 +1,6 @@
 ---
 name: check-durability-object-status
-description: Production health/status runbook for the TradingFlow cf-service Cloudflare Worker Durable Objects (ContractRankSnapshotDO, UwIngestionDO, CFWorkerService) and the KV reference-data layer. Verifies the DO/KV data model is populated, the public API returns the expected shape, the served data is fresh (not stale) vs the latest trading session, and the stored/served data size stays within Cloudflare limits. Checks via three channels — public HTTP (curl), the Cloudflare wrangler CLI, and the Better Stack MCP (log cross-verify). Use when the user asks to check DO status/health, whether contract-rank / option-flow / available-dates / symbol-meta endpoints are up, whether the snapshot is stale, whether ingestion is live, whether DO/KV storage is near its limit, "is the worker serving current data", post-deploy smoke, or empty-cache / MISS / 503 reports. Serving-layer companion to data-quality.md (ClickHouse source) and betterstack-error-healing.md (producer logs).
+description: Production health/status runbook for the TradingFlow cf-service Cloudflare Worker Durable Objects (ContractRankSnapshotDO, UwIngestionDO, CFWorkerService) and the KV reference-data layer. Verifies the DO/KV data model is populated, the public API returns the expected shape, the served data is fresh (not stale) vs the latest trading session, and the stored/served data size stays within Cloudflare limits. Checks via three channels — public HTTP (curl), the Cloudflare wrangler CLI, and the Better Stack MCP (log cross-verify). Use when the user asks to check DO status/health, whether contract-rank / option-flow / available-dates / symbol-meta endpoints are up, whether the snapshot is stale, whether ingestion is live, whether DO/KV storage is near its limit, "is the worker serving current data", post-deploy smoke, or empty-cache / MISS / 503 reports. Serving-layer companion to data-quality.md (ClickHouse source) and cf-check-error.md (producer logs).
 ---
 
 # CF-Service Durable Object & API Status Check (TradingFlow) — Production
@@ -16,7 +16,7 @@ Runbook for an AI agent to assess the **production serving layer** of `tradingfl
 
 This is the **serving-layer** companion to:
 - `ops/cf-service/data-quality.md` — audits the **ClickHouse source** (trades/metadata/contract-rank/Greeks). When a freshness check here fails, the source may still be healthy (a refresh/cron problem) — cross-check it before blaming upstream.
-- `ops/cf-service/betterstack-error-healing.md` — the **process-service/EC2 producer** Better Stack source. This runbook uses the **separate cf-worker** Better Stack source (see §5).
+- `ops/cf-service/cf-check-error.md` — the **process-service/EC2 producer** Better Stack source. This runbook uses the **separate cf-worker** Better Stack source (see §5).
 
 > **Read-only.** Per the cf-service deploy rules, **do not mutate production**. Every check below is a `GET` / `wrangler tail|kv get|deployments list` / Better Stack query. The only write is the sanctioned `POST .../refresh` escape hatch (Remediation). Never `wrangler deploy`, `wrangler kv key put/delete`, or curl a mutation — those are the deploy pipeline, not a status check.
 
@@ -289,7 +289,7 @@ Before declaring the DO/KV "stale", confirm the source has newer data. If ClickH
 
 ### 5. Cross-verify with Better Stack (MCP) — the historical record
 
-curl/wrangler show *now*; Better Stack shows *what happened* (refresh successes/failures, `payloadBytes` over time, ingest health intervals). Production P0/P1 telemetry ships to a **cf-worker** source (`BETTERSTACK_CFWORKER_TOKEN` → `s2442821.eu-fsn-3.betterstackdata.com`), **separate** from the process-service/EC2 source used by `betterstack-error-healing.md`.
+curl/wrangler show *now*; Better Stack shows *what happened* (refresh successes/failures, `payloadBytes` over time, ingest health intervals). Production P0/P1 telemetry ships to a **cf-worker** source (`BETTERSTACK_CFWORKER_TOKEN` → `s2442821.eu-fsn-3.betterstackdata.com`), **separate** from the process-service/EC2 source used by `cf-check-error.md`.
 
 **Access (MCP server `user-betterstack`):**
 1. `telemetry_list_sources_tool` → match the **cf-service / cfworker production** source by name (resolve at runtime; do **not** hardcode a stale `source_id`). Pick the cf-worker one, not "Process Service[Production]".
@@ -317,7 +317,7 @@ Decision pairing:
 - Fresh `lastTradeAtMs` (§3) **+** growing `ingestQueuePendingTradeCount` / queue write timeouts **+** ClickHouse latest trade time behind the clock → queue consumer or ClickHouse writer backlog; the snapshot DO may still refresh, but it can only serve the delayed mart state.
 - `payloadBytes` trending up sharply across `refresh_completed` events → size review (§6).
 
-(For producer-side ClickHouse ingest incidents — write-buffer drops, insert timeouts — that telemetry is on the EC2 source: use `betterstack-error-healing.md`.)
+(For producer-side ClickHouse ingest incidents — write-buffer drops, insert timeouts — that telemetry is on the EC2 source: use `cf-check-error.md`.)
 
 ---
 
@@ -455,7 +455,7 @@ After any `force` rebuild or deploy, re-run steps 0–6 and confirm `asOf` advan
 | `wrangler.jsonc` (worker name, KV namespace ids, DO backends, prod vars) | `tradingflow-cfworker-service` |
 | `wiki/operation.md`, `wiki/uw-ingestion-do.md`, `wiki/runbook/human/restore-streaming.md` | `tradingflow-cfworker-service` |
 | ClickHouse source audit (the upstream this layer serves) | `ops/cf-service/data-quality.md` |
-| Better Stack **producer/EC2** triage (separate source) | `ops/cf-service/betterstack-error-healing.md` |
+| Better Stack **producer/EC2** triage (separate source) | `ops/cf-service/cf-check-error.md` |
 | Cloudflare limits reference | DO: developers.cloudflare.com/durable-objects/platform/limits · KV: developers.cloudflare.com/kv/platform/limits |
 
 **Serving-layer vs source.** A green run here means the Worker is *serving populated, correctly-shaped, current, size-safe* data from DO storage + KV. It does **not** prove the underlying ClickHouse data is correct — pair with `data-quality.md` for the full picture.

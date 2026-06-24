@@ -19,15 +19,15 @@ Use `/goal` for each full audit:
 
 ## Agent Handoff
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
-Latest production run executed for `DATE=2026-06-22` ET with `BASELINE=2026-06-10`.
+Latest production run executed for `DATE=2026-06-23` ET with `BASELINE=2026-06-22` (`2026-06-10` also checked for continuity).
 
 ### Look First
 
-- [ ] Deploy the process-service strike/DEI gate fix before the next option-chain ingest. The 2026-06-22 ClickHouse rows were repaired manually under repair id `repair_strike_20260622_1782220529063`.
-- [ ] Keep contract-rank quote drifts separate from identity/chain correctness: the 2026-06-22 sample had many Massive `last_quote` zeros while local flow carried intraday bid/ask values. Treat quote drift as soft unless OI/identity/Greeks also drift.
-- [ ] CF Worker production should stay fanout-only unless intentionally rolled forward again: `/uw-ingestion/status` showed `enabled=false`, `ingestQueueEnabled=false`, `spilloverEnabled=false`, and `connected=false` during the 2026-06-22 audit.
+- [ ] Investigate only if IV-only Greeks strict failures repeat or widen: 2026-06-23 `check-greeks-parity --strict` failed with 5 IV breaches across `QQQ,SPY,TSLA`, while identity, row health, and contract-rank hard checks were clean.
+- [ ] Watch the late-first-seen aggregate gate counter: Better Stack showed `10` `droppedLateFirstSeenSinceSummary` on 2026-06-23 with raw/aggregate parity still `~1.0`; confirm gate intent if this grows beyond trace noise.
+- [ ] Keep contract-rank quote drifts separate from identity/chain correctness: the latest Massive sample again had many Massive `last_quote` bid/ask zeros while local flow carried intraday bid/ask values. Treat quote drift as soft unless OI/identity/Greeks also drift.
 
 ## Local workspace project map
 
@@ -89,33 +89,27 @@ Keep this file as the canonical operator entrypoint for this check:
 - Pick `BASELINE` from a recent healthy full session with normal row volume and no known disconnect or backfill artifact. Do not use the target date as its own baseline. If the investigation asks for an April-average comparison, run the explicit April-average SQL instead of forcing the single-date script to answer that question.
 - Treat a strict failure as a triage trigger, not an automatic outage verdict. Drill down by symptom: row ratio and small-trade coverage for ingest loss, DEI/market-cap top symbols for metadata gaps, and Better Stack/Queue telemetry for write-buffer or spillover pressure.
 - For contract-rank correctness, sample random symbols from `mv_contract_rank_flow` and compare their contract rows against Massive option-chain snapshots by normalized OCC `option_symbol`. Do not rely only on aggregate row counts to prove synced contract-rank fields.
+- Worker contract-rank snapshot payloads are compact JSON. For `latest-snapshot` or `snapshots/<date>`, read `d` as `effectiveDate`, `rc` as `rowCount`, `as` as `asOf`, `cv` as `contentVersion`, and `r.length` as returned rows. The meta endpoints return verbose names.
 - Do not query `mv_contract_day_flow`; it is retired. If a script or older note still references Phase B against `mv_contract_day_flow`, skip that phase and update the runbook or script owner. Use `mv_contract_rank_flow` for contract-rank correctness and `OptionChainTable` for chain/Greeks parity.
-- Before writing ad hoc SQL probes, run `DESCRIBE TABLE` against the live table if the query is not copied from a current script. Active schema notes: `updated_timestamp` is the ingest timestamp field, `RawOptionTrades` does not store OCC `option_symbol`, and `mv_contract_rank_flow` is aggregate-state based and does not have `_version`. Avoid aliasing `toString(date) AS date` in ClickHouse probes; alias substitution can break `WHERE date = toDate(...)`.
+- Before writing ad hoc SQL probes, run `DESCRIBE TABLE` against the live table if the query is not copied from a current script. Active schema notes: `updated_timestamp` is the ingest timestamp field, `RawOptionTrades` does not store OCC `option_symbol`, and `mv_contract_rank_flow` is aggregate-state based and does not have `_version`. Avoid aliases that reuse live column names in ClickHouse probes; alias substitution can break filters and `Merge` calls, such as `toString(date) AS date`, `anyMerge(symbol) AS symbol`, or `toString(anyMerge(expiration_date)) AS expiration_date` in a query that later filters on those names.
 - Do not update durable procedure for one-off counts, temporary vendor incidents, raw logs, or current-run-only findings.
 
 ### Latest run note
 
-2026-06-23 Asia/Shanghai / 2026-06-22 ET:
+2026-06-24 Asia/Shanghai / 2026-06-23 ET:
 
-- Target: `DATE=2026-06-22`, `BASELINE=2026-06-10`. New York time was already `2026-06-23 02:16 EDT`, so `2026-06-22` was the most recent fully closed ET session.
-- `bun scripts/check-data-integrity.ts --date 2026-06-22 --baseline-date 2026-06-10 --strict` exited `0` after the DEI gate was changed to exclude expected five-decimal rounding-to-zero cases: `total=6,842,399`, `agg_row_ratio=1.1149`, `<25k premium share=0.9705`, `zero_market_cap_stock_share=0.00016`, actionable `zero_dei_with_dex_share=0.00062`, raw `raw_zero_dei_with_dex_share=0.02385`, and `rounded_zero_dei_with_dex_share=0.02323`.
-- `bun scripts/verify-producer-freshness.ts 2026-06-22` and `--compare 2026-06-10,2026-06-22` exited `0`: open p50 `0s`, p95 `14s`, p99 `31s`, `2,145` rows `>30s`, `0` open rows `>5m`, day-wide `664` rows `>5m`, `0` rows `>10m`, and full-session extent `09:30:00` to `16:59:58`. Compared with 2026-06-10, open p95 improved from `161s` to `14s`.
-- `bun scripts/audit-small-trade-coverage.ts 2026-06-22` and `--compare 2026-06-10,2026-06-22` exited `0`: raw rows were `11,452,071`, aggregate fills were `11,452,049`, hourly raw-vs-aggregate ratios were `~1.0`, and raw RTH premium mix was `69.28% <1k`, `26.17% 1k-10k`, `2.83% 10k-25k`, `1.72% >=25k`.
-- Table population checks: `OptionChainTable` had `1,910,291` rows / `1,905,884` contracts / `6,004` symbols; `SymbolMetaData` had `6,105` symbols; `mv_contract_rank_flow` had `2,865,668` aggregate-state rows / `1,857,979` contracts / `6,018` symbols / `11,452,049` merged trades; all max dates were `2026-06-22`.
-- CF Worker status was fanout-only: `/uw-ingestion/status` returned `enabled=false`, `connected=false`, `ingestQueueEnabled=false`, `ingestDirectConsumerEnabled=false`, `spilloverEnabled=false`, and ClickHouse configured. Contract-rank snapshot metadata was current: `effectiveDate=2026-06-22`, `rowCount=367,492`, `asOf=2026-06-22T21:36:52.305Z`.
-- Duplicate smoke: aggregate bucket duplicate query (`time, option_symbol, price, size, exchange, trade_count`) returned no rows; raw-vs-aggregate parity also showed no systemic duplicate inflation. A full exact-row aggregation over all aggregate columns exceeded ClickHouse memory and should not be used as a routine probe.
-- DEI drill-down: raw `dei=0 AND dex>0 AND non-index` was `145,770 / 6,111,188 = 0.02385`, but `141,971` rows were expected to round to zero at five-decimal DEI precision. The actionable numerator was `3,799 / 6,111,188 = 0.00062`, below the `0.02` threshold.
-- Contract-rank Massive sample (`QSR,URNM,NEBX,UAL,SCHW`, excluding contracts expiring on `2026-06-22`) compared `40` contracts: `2` hard strike failures and `68` soft drifts. The hard failures were adjusted NEBX `00026670` strikes: `OptionChainTable` and `mv_contract_rank_flow` store `26.7`, while Massive/OCC and `AggregatedOptionTrades` imply `26.67`. Soft drifts were mostly Massive `last_quote` bid/ask zeros while local flow carried intraday bid/ask values.
-- `bun scripts/check-greeks-parity.ts --date 2026-06-22 --phase a --symbols SPY,QQQ,AAPL,TSLA,NVDA --strict` exited `0`: `40` sampled / `40` compared, `2` TSLA IV breaches, one failing symbol, below strict failure threshold.
-- Verdict: ingest volume and latency are healthy after moving ClickHouse writes back to process-service. Data quality is **Degraded** only by the adjusted-strike precision issue in rows written before the process-service mapper fix; Greeks parity and actionable DEI are **Good**.
-
-Repair follow-up on 2026-06-23:
-
-- Process-service mapper fix now derives option-chain strike from OCC `option_symbol` with provider strike as fallback, and `check-data-integrity.ts` now treats zero DEI as actionable only when the expected five-decimal DEI should be positive or average volume is missing.
-- `2026-06-22` live ClickHouse repair id: `repair_strike_20260622_1782220529063`. Backup tables retained: `repair_strike_20260622_1782220529063_affected` (`10,174` rows), `repair_strike_20260622_1782220529063_chain_backup` (`10,174` rows), and `repair_strike_20260622_1782220529063_mart_backup` (`12,241` rows).
-- Repair scope: `10,174` rounded-strike `OptionChainTable` contracts across `90` symbols. `ALTER TABLE OptionChainTable UPDATE strike = OCC-derived strike` completed with mutation `0000000496`, `is_done=1`, no failure reason. The affected `mv_contract_rank_flow` keys were deleted and rebuilt from `AggregatedOptionTrades` plus corrected `OptionChainTable` structure states.
-- Verification after repair: `OptionChainTable` strike mismatches `0`; affected mart strike mismatches `0` (`max_abs_diff=0.0000293`, Float32 noise); full mart trade count still `11,452,049`; `NEBX260717[CP]00026670` now reads `26.67` in chain and `26.670000076293945` in mart and matches Massive `26.67`.
-- Worker snapshot hard refresh: `POST https://ws.optiondata.io/api/v1/contract-rank/latest-snapshot/refresh?rebuild=force` returned `REBUILT`, `effectiveDate=2026-06-22`, `rowCount=367,492`; latest metadata `asOf=2026-06-23T13:16:35.316Z`.
+- Target: `DATE=2026-06-23`. New York time was `2026-06-24 01:50 EDT`, and ClickHouse showed a complete 2026-06-23 RTH session: `6,488,264` aggregate rows from `09:30:00` to `16:59:59`. Baseline: `2026-06-22` as the nearest repaired healthy session; `2026-06-10` also checked for continuity.
+- `bun scripts/check-data-integrity.ts --date 2026-06-23 --baseline-date 2026-06-22 --strict` exited `0`: `total=6,488,264`, `agg_row_ratio=0.9482`, `<25k premium share=0.9675`, `zero_market_cap_stock_share=0.000087`, actionable `zero_dei_with_dex_share=0.000362`, raw `raw_zero_dei_with_dex_share=0.02687`, and `rounded_zero_dei_with_dex_share=0.02650`. The same command against `--baseline-date 2026-06-10` also exited `0` with `agg_row_ratio=1.0572`.
+- `bun scripts/verify-producer-freshness.ts 2026-06-23` and `--compare 2026-06-10,2026-06-22,2026-06-23` exited `0`: open p50 `0s`, p95 `14s`, p99 `40s`, `5,045` rows `>30s`, `0` rows `>5m`, `0` rows `>10m`, and full-session extent `09:30:00` to `16:59:59`.
+- `bun scripts/audit-small-trade-coverage.ts 2026-06-23` and `--compare 2026-06-10,2026-06-22,2026-06-23` exited `0`: hourly raw-vs-aggregate ratios were `~1.0`; raw RTH premium mix was `66.39% <1k`, `28.61% 1k-10k`, `3.14% 10k-25k`, and `1.86% >=25k`.
+- Table population checks: `OptionChainTable` had `1,919,697` rows / `1,915,290` contracts / `6,014` symbols; `SymbolMetaData` had `6,115` symbols; `AggregatedOptionTrades` had `6,488,264` rows / `349,795` contracts / `4,544` symbols; `mv_contract_rank_flow` had `2,835,667` aggregate-state rows / `1,907,012` contracts / `6,021` symbol states / `10,876,968` merged trades. All max dates were `2026-06-23`.
+- CF Worker status was fanout-only: `/uw-ingestion/status` returned `enabled=false`, `connected=false`, `ingestQueueEnabled=false`, `ingestDirectConsumerEnabled=false`, `spilloverEnabled=false`, and ClickHouse configured. Contract-rank latest and dated snapshots served compact payloads for `2026-06-23` with `349,795` rows and `asOf=2026-06-23T21:36:30.477Z`.
+- Duplicate and strike smoke: aggregate bucket duplicate query (`time, option_symbol, price, size, exchange, trade_count`) returned `0`; `OptionChainTable` OCC strike mismatches returned `0` (`max_abs_diff=0.0000293`, Float32 noise).
+- Metadata drill-down: coverage gate found only `MXEF` with `40` trades missing same-day `SymbolMetaData`; top actionable zero-DEI symbol was `SPCX` (`1,990`). Both strict shares stayed far below thresholds.
+- Better Stack corroboration for 2026-06-23 RTH: 461 `runtime_summary` rows; `drainFailures=0`, `drainTimeouts=0`, `writeBufferDrops=0`, `writeBufferHighDrops=0`, `writeBufferLowDrops=0`, `writeBufferDroppedRawRows=0`, max buffer depth `19,887`, max low-priority lag `8,863ms`, max aggregate insert p99 `7,622ms`, max raw insert p99 `3,804ms`. `droppedLateFirstSeenSinceSummary` totaled `10` with no raw/aggregate parity impact.
+- Contract-rank Massive sample (`RCL,CHYM,AXSM,KBH,RUN`, excluding contracts expiring on `2026-06-23`) compared `40` contracts: `0` hard identity failures and `58` soft drifts. Soft drift was mostly Massive `last_quote` bid/ask `0` while local flow carried intraday quotes; only `1` IV and `1` theta drift appeared in the sample.
+- `bun scripts/check-greeks-parity.ts --date 2026-06-23 --phase a --symbols SPY,QQQ,AAPL,TSLA,NVDA --strict` exited `1`: `40` sampled / `40` compared, `5` IV breaches, `breach_share=0.125`, failing symbols `QQQ,SPY,TSLA`. Breaches were IV-only; no hard identity failures were observed in contract-rank sampling.
+- Verdict: trade ingest, latency, small-trade coverage, metadata strict gates, duplicates, strike precision, Worker fanout snapshot, and contract-rank identity are **Good**. Greeks parity is **Degraded** due to a small set of IV-only strict breaches, likely model/snapshot drift unless it repeats or widens.
 
 ---
 
@@ -600,18 +594,21 @@ Use this ClickHouse SQL if you only need the sampled symbols:
 WITH flow AS (
   SELECT
     option_symbol,
-    anyMerge(symbol) AS symbol,
-    sumMerge(trade_count) AS trade_count
+    anyMerge(symbol) AS root_symbol,
+    toDate(anyMerge(expiration_date)) AS exp_date,
+    sumMerge(trade_count) AS tc
   FROM mv_contract_rank_flow
   WHERE date = toDate('YYYY-MM-DD')
   GROUP BY option_symbol
-  HAVING trade_count > 0
+  HAVING tc > 0
+    -- If Massive live has rolled past DATE, also add:
+    -- AND exp_date > toDate('YYYY-MM-DD')
 )
 SELECT
-  symbol,
+  root_symbol AS symbol,
   count() AS active_contracts
 FROM flow
-GROUP BY symbol
+GROUP BY root_symbol
 HAVING active_contracts >= 20
 ORDER BY rand()
 LIMIT 5;
@@ -619,9 +616,10 @@ LIMIT 5;
 
 Then run a bounded Massive comparison. This is intentionally an operator snippet, not a durable script; if the check becomes routine, extract it into `scripts/check-contract-rank-massive-parity.ts`.
 
-If the target date is already in the past and Massive live has rolled forward, add `toDate(anyMerge(expiration_date)) > toDate('${DATE}')` to the `HAVING` clauses before treating Massive `presence` misses as hard failures. Same-day-expiring contracts can disappear from the live snapshot after the target date.
+If the target date is already in the past and Massive live has rolled forward, add `exp_date > toDate('${DATE}')` to the aggregate-state subqueries before treating Massive `presence` misses as hard failures. Same-day-expiring contracts can disappear from the live snapshot after the target date. Use alias-safe names such as `root_symbol`, `exp_date`, and `tc`; reusing live column names like `symbol` or `expiration_date` can make ClickHouse substitute aliases into later `Merge` calls.
 
 ```bash
+set -a; source .env; set +a
 bun run - <<'TS'
 import axios from "axios";
 import { clickhouseClient } from "./src/shared-clients/clickhouse/client";
@@ -682,16 +680,18 @@ const symbols = await ch<{ symbol: string; active_contracts: string }>(`
 WITH flow AS (
   SELECT
     option_symbol,
-    anyMerge(symbol) AS symbol,
-    sumMerge(trade_count) AS trade_count
+    anyMerge(symbol) AS root_symbol,
+    toDate(anyMerge(expiration_date)) AS exp_date,
+    sumMerge(trade_count) AS tc
   FROM mv_contract_rank_flow
   WHERE date = toDate('${DATE}')
   GROUP BY option_symbol
-  HAVING trade_count > 0
+  HAVING tc > 0
+    AND exp_date > toDate('${DATE}')
 )
-SELECT symbol, count() AS active_contracts
+SELECT root_symbol AS symbol, count() AS active_contracts
 FROM flow
-GROUP BY symbol
+GROUP BY root_symbol
 HAVING active_contracts >= 20
 ORDER BY rand()
 LIMIT ${SYMBOL_LIMIT}
@@ -705,29 +705,31 @@ const flowRows = await ch<Row>(`
 WITH flow AS (
   SELECT
     option_symbol,
-    anyMerge(symbol) AS symbol,
-    anyMerge(put_call) AS put_call,
-    toString(anyMerge(strike)) AS strike,
-    toString(anyMerge(expiration_date)) AS expiration_date,
-    sumMerge(trade_count) AS trade_count,
-    toString(argMaxMerge(oi)) AS oi,
-    toString(argMaxMerge(daily_volume)) AS daily_volume,
-    toString(argMaxMerge(bid)) AS bid,
-    toString(argMaxMerge(ask)) AS ask,
-    toString(argMaxMerge(latest_trade_price)) AS latest_trade_price,
-    toString(argMaxMerge(iv)) AS iv,
-    toString(argMaxMerge(delta)) AS delta,
-    toString(argMaxMerge(gamma)) AS gamma,
-    toString(argMaxMerge(theta)) AS theta,
-    toString(argMaxMerge(vega)) AS vega
+    anyMerge(symbol) AS root_symbol,
+    anyMerge(put_call) AS put_call_value,
+    toString(anyMerge(strike)) AS strike_value,
+    toString(anyMerge(expiration_date)) AS exp_date_string,
+    toDate(anyMerge(expiration_date)) AS exp_date,
+    sumMerge(trade_count) AS tc,
+    toString(argMaxMerge(oi)) AS oi_value,
+    toString(argMaxMerge(daily_volume)) AS daily_volume_value,
+    toString(argMaxMerge(bid)) AS bid_value,
+    toString(argMaxMerge(ask)) AS ask_value,
+    toString(argMaxMerge(latest_trade_price)) AS latest_trade_price_value,
+    toString(argMaxMerge(iv)) AS iv_value,
+    toString(argMaxMerge(delta)) AS delta_value,
+    toString(argMaxMerge(gamma)) AS gamma_value,
+    toString(argMaxMerge(theta)) AS theta_value,
+    toString(argMaxMerge(vega)) AS vega_value
   FROM mv_contract_rank_flow
   WHERE date = toDate('${DATE}')
   GROUP BY option_symbol
-  HAVING trade_count > 0
+  HAVING tc > 0
+    AND exp_date > toDate('${DATE}')
 )
 SELECT *
 FROM flow
-WHERE symbol IN (${quotedSymbols})
+WHERE root_symbol IN (${quotedSymbols})
 ORDER BY rand()
 LIMIT ${symbolList.length * CONTRACTS_PER_SYMBOL}
 `);
@@ -739,40 +741,40 @@ for (const symbol of symbolList) {
 
 const findings: Row[] = [];
 for (const row of flowRows) {
-  const massive = massiveBySymbol.get(row.symbol)?.get(row.option_symbol);
+  const massive = massiveBySymbol.get(row.root_symbol)?.get(row.option_symbol);
   if (!massive) {
-    findings.push({ level: "hard", symbol: row.symbol, option_symbol: row.option_symbol, field: "presence", flow: "present", massive: "missing" });
+    findings.push({ level: "hard", symbol: row.root_symbol, option_symbol: row.option_symbol, field: "presence", flow: "present", massive: "missing" });
     continue;
   }
 
   const contractType = String(massive.details?.contract_type || "").toUpperCase() === "PUT" ? "PUT" : "CALL";
   const identityChecks = [
-    ["put_call", row.put_call, contractType],
-    ["strike", n(row.strike), n(massive.details?.strike_price)],
-    ["expiration_date", row.expiration_date, massive.details?.expiration_date],
+    ["put_call", row.put_call_value, contractType],
+    ["strike", n(row.strike_value), n(massive.details?.strike_price)],
+    ["expiration_date", row.exp_date_string, massive.details?.expiration_date],
   ];
   for (const [field, flow, ref] of identityChecks) {
-    if (String(flow) !== String(ref)) {
-      findings.push({ level: "hard", symbol: row.symbol, option_symbol: row.option_symbol, field, flow, massive: ref });
+    if (field === "strike" ? Math.abs(n(flow) - n(ref)) > 0.0001 : String(flow) !== String(ref)) {
+      findings.push({ level: "hard", symbol: row.root_symbol, option_symbol: row.option_symbol, field, flow, massive: ref });
     }
   }
 
   const softChecks = [
-    ["oi", n(row.oi), n(massive.open_interest), 0, 0],
-    ["daily_volume", n(row.daily_volume), n(massive.day?.volume), 1, 0.05],
-    ["bid", n(row.bid), n(massive.last_quote?.bid), 0.02, 0.03],
-    ["ask", n(row.ask), n(massive.last_quote?.ask), 0.02, 0.03],
-    ["iv", n(row.iv), n(massive.implied_volatility), 0.08, 0.15],
-    ["delta", n(row.delta), n(massive.greeks?.delta), 0.12, 0.2],
-    ["gamma", n(row.gamma), n(massive.greeks?.gamma), 0.02, 0.3],
-    ["theta", n(row.theta), n(massive.greeks?.theta), 0.05, 0.3],
-    ["vega", n(row.vega), n(massive.greeks?.vega), 0.05, 0.3],
+    ["oi", n(row.oi_value), n(massive.open_interest), 0, 0],
+    ["daily_volume", n(row.daily_volume_value), n(massive.day?.volume), 1, 0.05],
+    ["bid", n(row.bid_value), n(massive.last_quote?.bid), 0.02, 0.03],
+    ["ask", n(row.ask_value), n(massive.last_quote?.ask), 0.02, 0.03],
+    ["iv", n(row.iv_value), n(massive.implied_volatility), 0.08, 0.15],
+    ["delta", n(row.delta_value), n(massive.greeks?.delta), 0.12, 0.2],
+    ["gamma", n(row.gamma_value), n(massive.greeks?.gamma), 0.02, 0.3],
+    ["theta", n(row.theta_value), n(massive.greeks?.theta), 0.05, 0.3],
+    ["vega", n(row.vega_value), n(massive.greeks?.vega), 0.05, 0.3],
   ] as const;
 
   for (const [field, flow, ref, absTol, relTol] of softChecks) {
     if (flow === 0 && ref === 0) continue;
     if (changed(flow, ref, absTol, relTol)) {
-      findings.push({ level: "soft", symbol: row.symbol, option_symbol: row.option_symbol, field, flow, massive: ref });
+      findings.push({ level: "soft", symbol: row.root_symbol, option_symbol: row.option_symbol, field, flow, massive: ref });
     }
   }
 }

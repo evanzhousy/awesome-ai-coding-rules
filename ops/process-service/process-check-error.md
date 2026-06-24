@@ -10,12 +10,12 @@ Agent runbook for **recent production errors** of the backend service **`trading
 
 ## Agent Handoff
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 ### Look First
-- [ ] Re-check whether `UnusualWhalesClient` P0 rows recurred after `2026-06-22 19:53 UTC`; the latest run saw `missing_symbol_metadata_for_dei` and one `index_quote_refresh_total_failure`, but no later P0s in the checked `-24h` window.
-- [ ] Confirm the old `SyncUwClickHouseHeartbeat` token (`3QB5...YnZV`) stays absent; the latest run saw stale-token `404` rows ending at `2026-06-22 19:05 UTC`, while the live heartbeat list only exposed `Process Service Heartbeats` (`461787`).
-- [ ] If `CheckCFServiceDataController` no-data alerts recur, compare cf-worker `/uw-ingestion/status` and `cf-service` Better Stack logs before assigning the outage to this EC2 process.
+- [ ] Re-check whether `UnusualWhalesClient` P0 rows recurred after `2026-06-23 20:05 UTC`; the latest run saw 12 `missing_symbol_metadata_for_dei` rows across 10 symbols and 2 `index_quote_refresh_total_failure` rows before that point, then zero P0 / DEI metadata / index-total-failure rows after it in the checked `-24h` window.
+- [ ] Confirm heartbeat health with both Uptime surfaces: `Process Service SyncUw Ingestion Heartbeats` (`461787`, 10m/5m) via `uptime_list_heartbeats_tool` and `ProcessServiceCanary` (`4445109`) via `uptime_list_monitors_tool`. The latest run saw both Up and zero `heartbeat request failed` rows.
+- [ ] If `CheckCFServiceDataController` no-data alerts recur, compare cf-worker `/canary`, `/uw-ingestion/status`, and `cf-service` Better Stack logs before assigning the outage to this EC2 process. The latest run saw cf-worker `/canary` return `Success` while `/uw-ingestion/status` reported worker ingest disabled/disconnected.
 
 ### Blocked / Needs Decision
 - [ ] Any code fix, Better Stack monitor recreation, or heartbeat-token change needs a separate explicit user request; this runbook remains investigate-only.
@@ -78,7 +78,7 @@ The **source of truth** for this service's logging/alerting contract lives in th
 3. **[Error taxonomy & interpretation](#error-taxonomy--interpretation)** (below) — how to read `jobName`, the `[P0 Error]` / `[P1 Error]` tags, and the message prefixes.
 4. **[Appendix: Better Stack logs MCP runbook](#appendix-better-stack-logs-mcp-runbook)** (below) — runtime source resolution, query instructions, and copy-paste SQL.
 
-> **Important caveat from the wiki:** production live UW → ClickHouse ingestion runs in a separate Cloudflare worker service (`tradingflow-cfworker-service`), with `SYNC_UW_DATA_ENABLED=false` on this EC2 process. So some `UnusualWhalesClient` lifecycle errors may originate from local/dev runs, and the `SyncUwClickHouseHeartbeat` behavior on EC2 may differ from the worker. Confirm `environment` and host before assuming an EC2 ingestion outage.
+> **Important caveat from the wiki:** production live UW → ClickHouse ingestion currently runs in this `tradingflow-process-service-ec2` module (`SYNC_UW_DATA_ENABLED=true`). The Cloudflare worker service is the customer fanout layer and can report `/uw-ingestion/status` as disabled/disconnected without proving the EC2 writer is down. Confirm `environment`, host, and the relevant CF-service logs before assigning a fanout watchdog alert to the writer.
 
 ## Default scope
 
@@ -89,7 +89,7 @@ Unless the user overrides:
 | Time window | Last **24 hours** (`dt > now() - INTERVAL 24 HOUR`) |
 | Service | `service = 'tradingflow-process-service-ec2'`, `environment = 'production'` |
 | Better Stack logs source | **Resolve at runtime** via `telemetry_list_sources_tool` (filter name `process`). Last observed: name **`Process Service[Production]`**, **`source_id = 533318`**, table **`t203847.process_service`**, data region `eu-fsn-3`. IDs can drift — report the one you actually used. |
-| Better Stack Uptime | **Resolve at runtime** via `uptime_list_heartbeats_tool`. Last observed: **`Process Service Heartbeats`** (`461787`) and an ingest/streaming heartbeat (`463212`, last seen **Down**). Map by name; do not hardcode. |
+| Better Stack Uptime | **Resolve at runtime** via `uptime_list_heartbeats_tool` and `uptime_list_monitors_tool`. Last observed: push heartbeat **`Process Service SyncUw Ingestion Heartbeats`** (`461787`, Up, 10m/5m) and pull monitor **`ProcessServiceCanary`** (`4445109`, Up). Map by name; do not hardcode. |
 | Errors application | **None.** `telemetry_list_applications_tool` returns no application for this service; errors are `level="error"` rows in the logs source. |
 
 ## MCP contract

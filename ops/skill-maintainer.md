@@ -18,23 +18,26 @@ Distinguish a real runbook execution from a maintenance-only sweep. If no operat
 Use `/goal` when maintaining multiple runbooks or skills:
 
 - Objective: update the requested runbook/skill files so the next agent can execute them with clearer instructions, bounded handoff state, pruned completed progress, and explicit self-maintenance rules.
-- Success criteria: each target has a clear objective, `/goal` guidance when useful, durable lessons in the body, a self-maintenance guide, transient next-run state in a bounded handoff/backlog/watchlist, and no stale completed todos.
-- Stop condition: all target files are updated and validated by re-read/diff checks, or a blocker identifies the file or product evidence that must be resolved first.
+- Success criteria: each target has a clear objective, `/goal` guidance when useful, durable lessons in the body, a self-maintenance guide, transient next-run state in a bounded handoff/backlog/watchlist, canonical index/routing references when applicable, and no stale completed todos.
+- Stop condition: all target files are updated and validated by re-read/diff/link checks, or a blocker identifies the file or product evidence that must be resolved first.
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-24
 
-No open handoff items after the latest maintenance sweep. This file is itself an ops runbook copy of the `runbook-maintainer` skill guidance; keep future changes aligned with the installed skill when both are meant to behave the same.
+No open handoff items. This was a documentation maintenance update only: the installed skill and repo-local ops runbook copy were aligned and gained ambiguous-update, Plan Mode, and mirror-validation guidance. No production checks were executed.
 
 ## Workflow
 
 1. Locate and read the runbook before acting.
    - Identify the runbook objective, expected operator, prerequisites, commands, verification gates, and any existing progress/todo section.
    - For batch requests, inventory every target file first. Classify canonical runbooks, aliases/duplicates, empty index files, and supporting notes before editing.
+   - If the user asks to update a runbook or skill without specifying the intended change, first inspect the target, mirror copies, index references, and recent context. Ask for the missing intent only after non-mutating inspection, and do not infer a behavioral edit from the mere presence of pasted runbook content.
+   - When adding, removing, renaming, or replacing a runbook, identify the owning index or routing table and update it in the same pass unless the user explicitly scopes that out.
    - Check worktree status or equivalent file state when editing a repo. Preserve modified or untracked content you did not create.
    - If the runbook is missing a clear objective or success criteria, add them during the update.
    - If a command or action could affect production, spend money, delete data, or notify people, follow the user's approval and safety requirements before running it.
+   - In Plan Mode, produce a decision-complete update plan only. Do not edit files, apply patches, or otherwise mutate repo-tracked or installed skill files until execution mode is restored.
 
 2. Prefer goal-mode execution for long or verifiable runbooks.
    - When the environment supports `/goal` and the user has asked to run or continue the runbook, structure execution as a goal with:
@@ -75,6 +78,10 @@ No open handoff items after the latest maintenance sweep. This file is itself an
    - Re-read the changed sections for consistency with the actual outcome.
    - Check that the runbook still distinguishes durable procedure from transient progress.
    - Ensure the next agent can start from the top, see the current handoff quickly, know the verification path, and know how to maintain the runbook after the next run.
+   - Verify referenced runbook paths, canonical index links, and renamed aliases exist. Correct stale index references discovered by the maintenance pass.
+   - For repo edits, run `git diff --check` or an equivalent whitespace/format validation when available.
+   - When an installed skill and a repo-local runbook copy are intended to mirror each other, update both or state why only one was changed. Keep durable guidance byte-identical except for explicitly documented local-only metadata.
+   - For this skill pair, validate mirror alignment from `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules` with `diff -u /Users/evansmacbookpro/.codex/skills/runbook-maintainer/SKILL.md ops/skill-maintainer.md`; expect no output unless a local-only metadata difference is intentional and documented.
    - For batch edits, run a lightweight coverage check that every target runbook has the intended invocation/handoff shape or an intentional alias/index reason.
 
 ## Self-Maintenance Guide Pattern
@@ -97,6 +104,7 @@ Update this runbook when:
 - A repeated blocker or ambiguity slowed execution.
 - A verification gate was too weak, too broad, or missing.
 - A duplicate runbook or alias needs a clearer canonical owner.
+- A runbook was added, removed, renamed, or moved and the canonical index/routing table needs to change.
 
 Do not update this runbook for:
 - One-off counts, transient incidents, raw logs, or current-run-only findings.
@@ -138,8 +146,9 @@ If the pass was documentation maintenance only, say so in the handoff, for examp
 - Do not create multiple self-maintenance sections; merge with the existing maintenance/watchlist/backlog policy when present.
 - Do not make the runbook a transcript. Store history elsewhere if the user asks for an audit trail.
 - Do not mark a blocked item as done unless the blocker was actually removed or a replacement path was documented.
+- When changing a skill that has a repo-local runbook copy, keep the copy aligned unless the user asked for only one target.
 - If the runbook conflicts with live evidence, update the runbook and mention the conflict in the final response.
 
 ## Final Response
 
-Report the run outcome, the runbook path changed, whether `/goal` guidance was added or revised, whether self-maintenance guidance was added/revised/left unchanged, and the remaining open handoff items. Mention whether the pass executed the runbook or was maintenance-only, any canonical/alias changes, and any verification that could not be run.
+Report the run outcome, the runbook path changed, whether `/goal` guidance was added or revised, whether self-maintenance guidance was added/revised/left unchanged, and the remaining open handoff items. Mention whether the pass executed the runbook or was maintenance-only, any canonical/index/alias changes, path or diff validation performed, and any verification that could not be run.

@@ -28,21 +28,19 @@ Use ops/optiondata/optiondata-browser-e2e-product-review.md as the runbook. Use 
 
 ## Agent Handoff
 
-Last updated: 2026-06-22
+Last updated: 2026-06-27
 
-Maintenance-only update on 2026-06-22: no Browser/product checks were executed; the runbook now explicitly requires SEO, i18n/localized copy, and mobile view coverage for each in-scope product surface.
+Latest Browser walkthrough used local dev on `http://localhost:3721` with TEST Clerk/Stripe and disposable Clerk test user `od-runbook-20260626-1782488560548+clerk_test@optiondata.io`. Evidence artifacts are in `/tmp/optiondata-runbook-20260626`. Repository Playwright E2E scripts were not run.
 
-Latest Browser walkthrough used local dev on `http://localhost:3722` with TEST Clerk/Stripe. Trialing/no-sub personas, real Gmail OTP registration, historical SQL, option-chain, realtime test mode, and live API probes were exercised; repository Playwright E2E scripts were not run.
+Verified in the latest pass: survey-incomplete `/api_key` redirected to `/survey`; survey completion created a trialing Pro Plan subscription; `/billing`, `/api_key`, `/historical_data`, `/option_chain`, and `/realtime_data` settled to trialing access without the prior stale no-sub/sample state; the issued `apikey_` passed local live historical SQL (`200`, one row, `trialing`), option-chain (`200`, 3543 AAPL rows, beta header/source), and dev realtime WS handshake (`101`). After canceling the disposable Stripe test subscription, historical SQL and option-chain live requests returned `403`, and billing/data pages settled to no-sub/sample states without a trial banner.
 
-Backend follow-up completed after that walkthrough: the dev/test realtime worker was missing `API_KEY_SECRET` and `STRIPE_SECRET_KEY`, so it fell back to the legacy portal verifier that does not support portal-issued `apikey_` tokens. After adding both secrets to `cfworker-service-test`, the same trialing `apikey_` websocket handshake returned `101 Switching Protocols`; the no-sub `apikey_` still returned `401 Unauthorized`, preserving entitlement enforcement.
+Follow-up implementation verification on 2026-06-27: `optiondata-portal` now has route-owned title/description/canonical/OG/Twitter head tags for the reviewed routes; product docs/playgrounds use `YOUR_API_KEY` placeholders instead of visible `apikey_`/`cus_`/key-bearing `token=` examples; option-chain copy documents full-chain server-capped behavior instead of a user row limit; product pages and docs are constrained for mobile; `Open navigation` and option-chain `ALL/CALL/PUT` controls are localized; and `tradingflow-cfworker-service` maps local portal valid-key/no-entitlement results to HTTP `403`. Local verification used `pnpm test`, `pnpm lint`, worker `pnpm test`, and a Playwright browser probe against `http://localhost:3721` at `390x844` and desktop.
 
-Production follow-up completed with a one-time real Gmail alias (`evanzhousyforward+od-prod-apikey-20260622-0129@gmail.com`): production Clerk sign-up succeeded, survey completion created a trialing Pro Plan subscription, and the production portal-issued `apikey_` passed live checks (`/api/historical/sql` 200 with one row, `/api/option-chain` 200 with one row and beta header, `wss://ws.optiondata.io` opened).
+Open handoff items after the latest follow-up:
 
-Local fix implemented and verified in `optiondata-portal` after the production follow-up. On 2026-06-22, local dev on `http://localhost:3721` with fresh Clerk test user `od-local-goal-20260621-182406+clerk_test@optiondata.io` proved: pre-survey `/api/user/generate-api-key` returns 403 and `/api_key`/billing/data routes redirect to `/survey`; post-survey `/api_key` renders and regenerates an `apikey_`; `/billing`, `/realtime_data`, `/historical_data`, and `/option_chain` show loading instead of stale no-sub/sample states while subscription state refreshes, then settle to trialing access; the portal-issued key succeeds against local live historical SQL (200, one row, trialing cap), option-chain (200, one row, beta header), and the dev realtime worker (WS open + message).
-
-Open handoff items after the latest pass:
-
-- After deploying the local `optiondata-portal` fix, re-run the production one-time Gmail walkthrough: OTP sign-up should no longer show "Unable to load user data"; `/api_key` should redirect survey-incomplete users before rendering controls; post-survey billing/data pages should show loading until the trialing subscription snapshot is fresh; option-chain trial pages should not show sample-mode copy or `test_mode:true`; the issued `apikey_` should still pass live HTTP 200 + WS open.
+- Re-run the full Browser walkthrough after deploying the portal + cfworker changes; the 2026-06-27 follow-up verified local pages and unit/worker behavior, but did not repeat the complete authenticated Clerk/Stripe Browser matrix.
+- Specifically re-check production/deployed no-sub realtime WS semantics with a valid `apikey_`: expected live no-sub result is `403`, not `401`; verify after worker deploy and after any edge auth-cache TTL has expired.
+- In the next authenticated Browser pass, confirm trialing/active product pages still show no credential prefixes, no mobile horizontal overflow at `390x844`, localized controls in `?lang=zh`, and route-specific SEO metadata on landing, billing, API key, historical, option-chain, and realtime.
 
 ## Goal
 

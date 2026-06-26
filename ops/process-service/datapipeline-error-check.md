@@ -31,15 +31,16 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 This runbook was created as a documentation-maintenance merge of the four retired source runbooks listed above. No production checks were executed during creation.
 
 Current durable guidance from recent runs:
 
 - Resolve the **active writer** before interpreting logs. Production Worker `UW_ENABLED=true` means `tradingflow-cfworker-service` owns live UW ingest and Better Stack source `cf-service` is primary; otherwise process-service `syncUwData` and `Process Service[Production]` are primary.
+- Current `tradingflow-cfworker-service` code has retired Worker UW ingestion: `/uw-ingestion/*` and `/ingest` should return `404` after the removal deploy. If production still returns `200` for `/uw-ingestion/status` or emits `uw_ingestion_*` logs, treat that as stale Worker deployment / deploy skew first, then verify with `npx wrangler deployments list --env production`.
 - Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
-- For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/contract-rank/snapshot/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
+- For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
 - Do not treat all DEI zero rows as data loss. Split raw zero-DEI rows from actionable rows after SymbolMetaData join; precision or rounding can produce false positives.
 - A broken opening stream is P0 when websocket open fails, first trades are missing after join acknowledgement, heartbeat delivery fails, or live fanout transport is broken. Per-record normalization noise is usually P1 unless it blocks ingestion.
 
@@ -91,7 +92,9 @@ Requires explicit user authorization:
    - For full data-quality audits, prefer the most recent fully closed ET trading session. If today is open, use the prior trading day unless the user explicitly asks for live intraday latency.
 
 3. **Resolve the active writer.**
-   - Check Worker production config and `/uw-ingestion/status`.
+   - Check current Worker code/config and production deployment age before interpreting `/uw-ingestion/status`.
+   - In the current cfworker architecture, `/uw-ingestion/*` is retired and should return `404` once the removal deploy is live. A production `200` on `/uw-ingestion/status` means an older Worker bundle is still serving.
+   - If the currently deployed Worker still includes UW ingestion, use `/uw-ingestion/status` to decide whether Worker or process-service owns ingest.
    - If Worker UW ingest is enabled and active, use `cf-service` logs for producer health.
    - If Worker UW ingest is disabled but ClickHouse is current, use process-service logs and scripts for active writer evidence.
 
@@ -147,14 +150,15 @@ Use sibling repo `.env` credentials and existing scripts. Do not use a productio
 
 ```bash
 cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
+export PATH="$HOME/.bun/bin:$PATH" # if bun is not available in non-interactive shells
 set -a; source .env; set +a
 ```
 
 Preferred scripts:
 
-- `bun scripts/verify-producer-freshness.ts --date YYYY-MM-DD`
+- `bun scripts/verify-producer-freshness.ts YYYY-MM-DD`
 - `bun scripts/check-data-integrity.ts --date YYYY-MM-DD --baseline-date YYYY-MM-DD --strict`
-- `bun scripts/audit-small-trade-coverage.ts --date YYYY-MM-DD --baseline-date YYYY-MM-DD`
+- `bun scripts/audit-small-trade-coverage.ts --compare BASELINE_YYYY-MM-DD,YYYY-MM-DD`
 - `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase a --symbols SPY,NVDA,AAPL --strict`
 
 Use bounded custom SQL only when scripts do not answer the question.
@@ -185,10 +189,22 @@ Check Worker ingest status:
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
 
+First compare that result with the current cfworker repo:
+
+- Expected after the UW-ingestion removal deploy: `404` for `/uw-ingestion/*` and no `uw_ingestion_*` production logs.
+- If production returns `200` or Better Stack still emits `uw_ingestion_*` logs, verify deploy skew with:
+
+```bash
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service
+npx wrangler deployments list --env production
+```
+
 Interpretation:
 
 | Signal | Meaning |
 | --- | --- |
+| `/uw-ingestion/status` returns `404` and current repo has retired UW ingestion | Worker UW ingestion is not active; use process-service writer evidence for live UW ingest. |
+| `/uw-ingestion/status` returns `200` but current repo has retired UW ingestion | Production is running an older Worker bundle; stale UW DO logs can recur until the removal deploy reaches production. |
 | `enabled:true`, `connected:true` | Worker is expected to be active writer; use `cf-service` producer logs. |
 | `enabled:false` and ClickHouse current | Worker is not current writer or ingest is intentionally disabled; check process-service writer evidence. |
 | `enabled:true`, `connected:false`, ClickHouse stale | Worker ingest outage or upstream streaming issue; inspect `uw_websocket_health`, streaming lifecycle, and drain/drop logs. |
@@ -198,7 +214,9 @@ Then verify source freshness from process-service repo:
 
 ```bash
 cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
-bun scripts/verify-producer-freshness.ts --date YYYY-MM-DD
+export PATH="$HOME/.bun/bin:$PATH" # if bun is not available in non-interactive shells
+set -a; source .env; set +a
+bun scripts/verify-producer-freshness.ts YYYY-MM-DD
 ```
 
 Healthy evidence includes current max trade times, expected RTH hourly coverage, stable raw/aggregate ratios, and no large lag tail unexplained by market state.
@@ -253,18 +271,19 @@ Use public HTTP first:
 
 ```bash
 curl -sS "$WORKER_ORIGIN/canary" | jq .
-curl -sS "$WORKER_ORIGIN/api/contract-rank/snapshot/meta" | jq .
-curl -sS "$WORKER_ORIGIN/api/contract-rank/available-dates" | jq .
-curl -sS "$WORKER_ORIGIN/api/symbol-meta/status" | jq .
+curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" | jq .
+curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/meta" | jq .
+curl -sS "$WORKER_ORIGIN/api/v1/available-dates" | jq .
+curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
 
 For full snapshot size and date checks:
 
 ```bash
-curl -sS "$WORKER_ORIGIN/api/contract-rank/snapshot?date=YYYY-MM-DD" -o /tmp/contract-rank-snapshot.json
+curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/YYYY-MM-DD" -o /tmp/contract-rank-snapshot.json
 wc -c /tmp/contract-rank-snapshot.json
-jq '{date, generatedAt, symbols: (.data // .rows // [] | length)}' /tmp/contract-rank-snapshot.json
+jq '{date: (.date // .effectiveDate // .d), generatedAt: (.generatedAt // .asOf // .as), rowCount: (.rowCount // .rc // (.data // .rows // .r // [] | length))}' /tmp/contract-rank-snapshot.json
 ```
 
 Serving-layer interpretation:
@@ -296,11 +315,13 @@ Select a target date and healthy baseline:
 
 ```bash
 cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
+export PATH="$HOME/.bun/bin:$PATH" # if bun is not available in non-interactive shells
+set -a; source .env; set +a
 DATE=YYYY-MM-DD
 BASELINE_DATE=YYYY-MM-DD
 bun scripts/check-data-integrity.ts --date "$DATE" --baseline-date "$BASELINE_DATE" --strict
-bun scripts/verify-producer-freshness.ts --date "$DATE"
-bun scripts/audit-small-trade-coverage.ts --date "$DATE" --baseline-date "$BASELINE_DATE"
+bun scripts/verify-producer-freshness.ts "$DATE"
+bun scripts/audit-small-trade-coverage.ts --compare "$BASELINE_DATE,$DATE"
 ```
 
 Core thresholds from the data-quality runbook:
@@ -435,8 +456,8 @@ Impact radius language:
 ### cf-service Worker and serving
 - `/canary`:
 - snapshot meta/date:
-- available dates:
-- symbol-meta status:
+- `/api/v1/available-dates`:
+- `/api/v1/symbol-meta/latest/meta`:
 - relevant log events:
 - payload/size risk:
 

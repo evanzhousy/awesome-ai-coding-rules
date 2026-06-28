@@ -18,11 +18,14 @@ Use `/goal` for each analytics review:
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-28
 
 ### Look First
 
 - [ ] Revisit every active item in [Long-Term Issue Watchlist](#long-term-issue-watchlist) before broad exploration; mark each `worse`, `unchanged`, `improved`, `resolved`, or `blocked`, and prune/revise only with current evidence.
+- [ ] Start PH-W1 with active `$exception` issue classes around dynamic import/load failures, TradingView/widget errors, `ws.optiondata.io` fetch failures, and recent console-error-heavy recordings.
+- [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, and portal-session creation, but next runs must verify whether Stripe return success/cancel/completion events have been added.
+- [ ] Start PH-W7/PH-W8 by checking for active internal/test cohorts and `doc/automation/posthog/SKILL.md`; these were still missing in the latest reviewed checkout.
 
 ## Goal
 
@@ -112,6 +115,13 @@ Use this mode when the user asks for the PostHog MCP/plugin or `@posthog`.
 
 Follow the connected PostHog app's live tool discovery. If no tools are exposed, state the blocker and ask the user to connect or re-auth the plugin. Do not silently replace this with browser scraping.
 
+Current MCP notes:
+
+- Always run `search` or `tools` first, then `info <tool_name>` before each `call <tool_name> ...`. Some MCP wrappers reject or mislead when schemas are assumed.
+- Explicitly `switch-project` to project `300646` after resolving projects with `projects-get`, even if earlier calls appeared to use the right project. Silent active-project drift can make exact event queries look empty.
+- Discover live table/column shape through `execute-sql` against `system.information_schema.*`; treat older helpers such as `read-data-warehouse-schema` as optional/legacy if they are not exposed.
+- Use `read-data-schema` for event/property verification before analytics queries, then query with confirmed event names and properties.
+
 ## Criteria For Success
 
 The review is complete only when all applicable checks pass:
@@ -137,7 +147,8 @@ The review is complete only when all applicable checks pass:
 3. For MCP/plugin mode, read the PostHog plugin skill for the current session and follow its workflow.
 4. Discover the live PostHog tools exposed in the session when using MCP/plugin mode. Tool names can change; do not assume stale MCP names.
 5. Confirm the target organization/project, project timezone, and date window with either the user, CLI status, or plugin metadata.
-6. If no PostHog tools are exposed or CLI auth is insufficient, stop the affected PostHog portion and report:
+6. In MCP/plugin mode, explicitly switch to the confirmed target project before running event queries, then state the active project in the report.
+7. If no PostHog tools are exposed or CLI auth is insufficient, stop the affected PostHog portion and report:
    - `PostHog blocker: plugin tools unavailable or unauthenticated`
    - or `PostHog CLI blocker: token missing query:read`
    - exact discovery step attempted
@@ -421,3 +432,4 @@ When maintenance is performed, include a short `Runbook maintenance` note in the
 - Charts use inconsistent time windows or filters, so dashboard tiles disagree.
 - Old dashboards still point at renamed events or deprecated properties.
 - Backend/server conversion events are hidden by web-only `$host` filters or generic bot exclusions.
+- MCP active-project context drifts between calls, producing false empty taxonomy/event results until `switch-project` is rerun.

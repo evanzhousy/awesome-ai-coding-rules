@@ -17,9 +17,9 @@ Use `/goal` for product-ship or content-refresh runs:
 
 ## Agent Handoff
 
-Last updated: 2026-06-17
+Last updated: 2026-06-28
 
-No open handoff items after the latest run. Blog cover lettering was regenerated for the product posts with `bun run letter-blog-covers`; keep using that command after screenshot capture/sync when cover copy needs to stay current, and keep the generated covers aligned with the landing repo's shadcn/base-mira visual system.
+No open handoff items after the latest run. Blog cover lettering was regenerated for the product posts with `bun run letter-blog-covers`; keep using that command after screenshot capture/sync when cover copy needs to stay current, keep generated covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, and distinguish the Rank product entry route from explicit capture tab routes.
 
 ## When to use
 
@@ -48,9 +48,9 @@ Use this skill when:
 **Important invariant:** The single source of truth for release data is **the landing repo** (`tradingflow-web-landingpage`). The webapp (`tradingflow-webapp-fullstack`) only links to `${MARKETING_SITE_URL}/changelog` and does not duplicate `PRODUCT_CHANGELOG_RELEASES`.
 
 ### Current app route topology
-- **Rank workbench:** `/app/rank`
-- **Contract-level analysis:** `/app/rank/contracts`; legacy `/app/contract-rank` redirects here.
-- **Symbol-level analysis:** `/app/rank/symbols`; legacy `/app/market-rank` and `/app/symbol-level` redirect here.
+- **Rank workbench:** `/app/rank` opens the product-level Rank surface with Contracts as the default view.
+- **Contract-level analysis:** use the explicit tab route `/app/rank/contracts` for screenshot capture and deep links; legacy `/app/contract-rank` redirects here.
+- **Symbol-level analysis:** use the explicit tab route `/app/rank/symbols`; legacy `/app/market-rank` and `/app/symbol-level` redirect here.
 - **Option Chain Analysis:** no standalone route; GEX / Vol / Positioning / Chain capabilities live in Rank Symbols and the symbol inspection drawer. Legacy `/app/option-chain-analysis` should land on Rank Symbols.
 
 ### Preflight safety
@@ -174,7 +174,7 @@ After capture/MDX edits:
 - What's New cards are intentionally non-disruptive: each card expires seven calendar days after `publishedAt`; if all cards are expired, the modal must not pop up.
 - Keep modal card copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals in the modal.
 - If cover art under `public/feature-announcement/` changed, bump cache-bust in webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`.
-- Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")** and the changelog skill’s “What's New sync” section.
+- Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Feature Announcements ("What's New")**; behavior notes live in `doc/domain-knowledge/shared/functionality.md`.
 - If `FEATURE_ANNOUNCEMENT.campaignId` changes, update the capture script default and `AGENTS.md`.
 - Add or update `src/config/featureAnnouncement.test.ts` assertions when the active campaign, route links, post links, expiry, or modal copy contract changes.
 
@@ -205,7 +205,7 @@ This lives in `awesome-ai-coding-rules/ops/landingpage/update-blog-posts-and-cha
 
 ### Mandatory reads (sibling webapp)
 1. `doc/knowledge/glossary.md` — Use canonical surface names (Option Trades, Contract-level analysis, Option Chain Analysis, etc.). Do not invent alternate labels.
-2. `doc/domain-knowledge/domain-invariants/platform.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
+2. `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
 
 ### Repo map (landing repo)
 - Release data: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`, `PRODUCT_CHANGELOG_AREAS`, `PRODUCT_CHANGELOG_SECTION_ORDER`, `Localized<T>`, pick helpers).
@@ -271,13 +271,13 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 3. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
 4. **What's New (webapp)** — After new/updated cards, sync the in-app carousel in `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts` (see “What's New sync” below). Do **not** duplicate the releases array into the webapp.
 5. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
-6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/domain-invariants/platform.md` (per its `AGENTS.md`).
+6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` as applicable (per its `AGENTS.md`).
 7. **Webapp locales** — If changing in-app strings that link to changelog, edit webapp `src/locales/*.ts` and run its locale parity checker.
 
 ### What's New sync (sibling webapp)
 After editing `productChangelog.ts`, keep the in-app carousel aligned:
 
-1. Read webapp `doc/domain-knowledge/domain-invariants/platform.md` under **Feature Announcements ("What's New")**.
+1. Read webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Feature Announcements ("What's New")** and `doc/domain-knowledge/shared/functionality.md` when feature behavior or user-facing copy changes.
 2. Edit `src/config/featureAnnouncement.config.ts` — for each new/materially updated release still inside the seven-day What's New window, add/update a slide:
    - `publishedAt` = changelog `publishedAt`
    - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (7-day TTL; exclusive end)
@@ -332,7 +332,7 @@ Before editing blog posts (content/posts/**):
 Before editing the changelog:
 1. Read tradingflow-webapp-fullstack/doc/knowledge/glossary.md for canonical surface names.
 2. Follow the combined update-blog-posts-and-changelog skill (release card shape, scope, Git history guidance for which repo to mine, What's New sync).
-3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/domain-invariants/platform.md.
+3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/shared/domain-invariants.md and tradingflow-webapp-fullstack/doc/domain-knowledge/shared/functionality.md.
 
 Implementation:
 - Blog: edit MDX + images under content/posts; run capture-blog-ui when needed; keep covers in images/cover.png; sync retired posts from Option Chain Analysis when appropriate, then run letter-blog-covers if cover copy should differ by post.

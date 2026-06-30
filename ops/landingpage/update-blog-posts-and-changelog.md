@@ -17,9 +17,9 @@ Use `/goal` for product-ship or content-refresh runs:
 
 ## Agent Handoff
 
-Last updated: 2026-06-28
+Last updated: 2026-06-30
 
-No open handoff items after the latest run. Blog cover lettering was regenerated for the product posts with `bun run letter-blog-covers`; keep using that command after screenshot capture/sync when cover copy needs to stay current, keep generated covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, and distinguish the Rank product entry route from explicit capture tab routes.
+No open handoff items after the latest run. Keep using `bun run letter-blog-covers` after screenshot capture/sync when cover copy needs to stay current, keep generated covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, distinguish the Rank product entry route from explicit capture tab routes, and fall back to module-specific domain docs when `doc/knowledge/glossary.md` is absent.
 
 ## When to use
 
@@ -162,7 +162,7 @@ Use annotations when a dense product screenshot needs help explaining the workfl
 
 ### Content rules
 - **EN + zh:** Keep `index.mdx` and `index.zh.mdx` in sync (structure, images, adapted captions).
-- **Domain truth:** For product routes/params/naming, read sibling `tradingflow-webapp-fullstack/doc/domain-knowledge/` and glossary first.
+- **Domain truth:** For product routes/params/naming, read sibling `tradingflow-webapp-fullstack/doc/domain-knowledge/` and the glossary if it exists. If `doc/knowledge/glossary.md` is absent, do not fail the run; use the relevant `doc/domain-knowledge/<module>/domain-invariants.md` and `functionality.md`, plus current route/menu copy in `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and locale strings.
 - **Links:** Follow static-export rules in `AGENTS.md` (real slugs, no placeholders).
 
 ### What's New alignment (sibling webapp)
@@ -204,7 +204,7 @@ This lives in `awesome-ai-coding-rules/ops/landingpage/update-blog-posts-and-cha
 **Exactly one** changelog source of truth: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`) in the **landing repo**. The webapp links to the marketing page; it does not own the data.
 
 ### Mandatory reads (sibling webapp)
-1. `doc/knowledge/glossary.md` — Use canonical surface names (Option Trades, Contract-level analysis, Option Chain Analysis, etc.). Do not invent alternate labels.
+1. Canonical names — Read `doc/knowledge/glossary.md` if it exists. If it is absent, do not fail the run; use the relevant `doc/domain-knowledge/<module>/domain-invariants.md` and `functionality.md`, plus `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and current locale/menu strings. Treat `doc/knowledge/basic_concepts.md` and `doc/knowledge/data_schema.md` as data-concept references, not UI naming authority.
 2. `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
 
 ### Repo map (landing repo)
@@ -330,7 +330,7 @@ Before editing blog posts (content/posts/**):
 - Coordinate with changelog / What's New when the post accompanies a product ship.
 
 Before editing the changelog:
-1. Read tradingflow-webapp-fullstack/doc/knowledge/glossary.md for canonical surface names.
+1. Read tradingflow-webapp-fullstack/doc/knowledge/glossary.md for canonical surface names if present. If absent, use the relevant doc/domain-knowledge/<module>/domain-invariants.md and functionality.md files, plus current route/menu copy in src/utils/constants.ts, src/layouts/mainNav.ts, and locale strings.
 2. Follow the combined update-blog-posts-and-changelog skill (release card shape, scope, Git history guidance for which repo to mine, What's New sync).
 3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/shared/domain-invariants.md and tradingflow-webapp-fullstack/doc/domain-knowledge/shared/functionality.md.
 

@@ -31,9 +31,9 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-06-25
+Last updated: 2026-07-02
 
-This runbook was created as a documentation-maintenance merge of the four retired source runbooks listed above. No production checks were executed during creation.
+No open handoff items after the latest run.
 
 Current durable guidance from recent runs:
 
@@ -258,6 +258,8 @@ Resolve the `cf-service` Better Stack source at runtime. Event predicates to che
 | Insert failure | message contains `batch insert timeout`, `aggregate batch insert timeout`, `raw batch insert timeout`, or context `errorMessage = 'insert attempts exhausted'` |
 | Queue path | `uw_ingest_queue_*`, `processUwIngestQueueBatch`, enqueue/drain fields |
 | Snapshot refresh | `contract_rank_snapshot_refresh_completed` / failure events, `payloadBytes`, `snapshotDate`, and duration fields |
+
+Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself.
 
 Queue diagnosis:
 

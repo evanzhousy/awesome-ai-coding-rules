@@ -17,9 +17,9 @@ Use `/goal` for product-ship or content-refresh runs:
 
 ## Agent Handoff
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
-No open handoff items after the latest run. Keep using `bun run letter-blog-covers` after screenshot capture/sync when cover copy needs to stay current, keep generated covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, distinguish the Rank product entry route from explicit capture tab routes, and fall back to module-specific domain docs when `doc/knowledge/glossary.md` is absent.
+No open handoff items after the latest run. Keep using `bun run letter-blog-covers` after screenshot capture/sync when cover copy needs to stay current, keep generated blog covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, update webapp `public/feature-announcement/*.svg` cover art when active modal slide stories change, distinguish the Rank product entry route from explicit capture tab routes, and fall back to module-specific domain docs when `doc/knowledge/glossary.md` is absent.
 
 ## When to use
 
@@ -93,7 +93,7 @@ git status --short
    - OTP: `424242` (`E2E_VERIFICATION_CODE`)
 4. References: webapp `tests/e2e/fixtures/auth.ts`, its `doc/automation/e2e-test/README.md`, and landing `AGENTS.md`.
 
-The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`, seeds `sessionStorage` for feature announcements (default campaign `2026-06-rank-workbench`, overridable via `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID`), and handles What's New dismissal.
+The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`, seeds `sessionStorage` for feature announcements (default campaign `2026-06-late-recap-cookbooks-flow`, overridable via `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID`), and handles What's New dismissal.
 
 **Troubleshooting:** wrong `BLOG_UI_CAPTURE_BASE_URL` port, mismatched Clerk keys, stale OTP env — fix before re-running.
 
@@ -173,7 +173,9 @@ After capture/MDX edits:
 - For every user-visible release card or product walkthrough refresh, check `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts`. The modal should either be updated or explicitly left unchanged with a reason.
 - What's New cards are intentionally non-disruptive: each card expires seven calendar days after `publishedAt`; if all cards are expired, the modal must not pop up.
 - Keep modal card copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals in the modal.
-- If cover art under `public/feature-announcement/` changed, bump cache-bust in webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`.
+- When active modal slide stories change, update the matching SVG cover art under webapp `public/feature-announcement/*.svg` in the same pass. Covers should be content-led, sparse, and shadcn-like: neutral card surfaces, subtle borders/shadows, restrained blue/green/red accents, no TradingFlow brand text, no slide title pasted into the art, and one clear motif from the slide story.
+- Wire new or changed cover art through webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`; prefer a new `coverId` when the story changes materially, keep old IDs for older slides if still useful, and bump `FEATURE_ANNOUNCEMENT_COVER_VERSION` whenever a cover asset changes.
+- Visually inspect changed SVG covers for clipping, unreadable tiny text, overlap, and mismatch with the modal copy before accepting them.
 - Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Feature Announcements ("What's New")**; behavior notes live in `doc/domain-knowledge/shared/functionality.md`.
 - If `FEATURE_ANNOUNCEMENT.campaignId` changes, update the capture script default and `AGENTS.md`.
 - Add or update `src/config/featureAnnouncement.test.ts` assertions when the active campaign, route links, post links, expiry, or modal copy contract changes.
@@ -282,11 +284,13 @@ After editing `productChangelog.ts`, keep the in-app carousel aligned:
    - `publishedAt` = changelog `publishedAt`
    - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (7-day TTL; exclusive end)
    - `title` / `body` = short, story-level carousel copy. Use glossary names, but do not copy detailed changelog bullets.
-   - `coverId`, `linkHref`, optional `postPath` / `postLabel` from the mapping table (see original skill for details; areas map to specific covers and routes).
-3. Delete slide rows whose `activeUntilIso` is in the past. If all slides are expired, leave the active slide set empty so the modal does not pop up.
-4. Bump `campaignId` when the active slide set changes; extend `showUntilIso` and update any tests that assert the global expiry date.
-5. Verify: `pnpm exec vitest run src/config/featureAnnouncement.test.ts` (in webapp).
-6. If `campaignId` changed, update landing `scripts/capture-blog-ui-screenshots.ts` default `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID` and [AGENTS.md].
+   - `coverId`, `linkHref`, optional `postPath` / `postLabel` from the current product route and story.
+3. Update or add the matching SVG cover(s) in webapp `public/feature-announcement/`. If the active slide set now talks about a different story than the previous asset, create a new SVG filename and `coverId` instead of reusing an unrelated old surface cover.
+4. Update `src/components/FeatureAnnouncement/coverRegistry.tsx` for the active cover IDs and bump `FEATURE_ANNOUNCEMENT_COVER_VERSION` whenever SVG/PNG bytes change.
+5. Delete slide rows whose `activeUntilIso` is in the past. If all slides are expired, leave the active slide set empty so the modal does not pop up.
+6. Bump `campaignId` when the active slide set changes; extend `showUntilIso` and update any tests that assert the global expiry date, active cover IDs, and active links.
+7. Verify: visually inspect changed cover SVGs, then run `pnpm exec vitest run src/config/featureAnnouncement.test.ts` (in webapp).
+8. If `campaignId` changed, update landing `scripts/capture-blog-ui-screenshots.ts` default `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID` and [AGENTS.md].
 
 ### Runbook self-maintenance
 This runbook is part of the workflow. Update it in the same pass when a real run discovers drift.
@@ -298,7 +302,8 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - If no durable rule changed, state `Runbook maintenance: no change` in the final report.
 - Update selectors, route topology, expected warnings, commands, verification steps, and screenshot/annotation rules when the live repos disagree with this document.
 - When adding a new helper script or package script, document the command here and in any pasteable agent instruction.
-- When cover art or cover copy drifts, document the cover-lettering command and acceptance checks; future agents must be able to regenerate covers without manual image editing, and cover acceptance checks should include the current shadcn project style.
+- When blog cover art or cover copy drifts, document the cover-lettering command and acceptance checks; future agents must be able to regenerate covers without manual image editing, and cover acceptance checks should include the current shadcn project style.
+- When What's New slide stories change, document any new webapp feature-announcement SVG cover pattern, cover IDs, and cache-bust expectations so future changelog runs do not leave stale modal art.
 - When changing the What's New modal workflow, update both this runbook and the webapp `featureAnnouncement` tests so the operational contract is executable.
 - Keep guidance concrete: include exact file paths, env vars, and acceptance checks. Remove stale references instead of layering contradictory notes.
 - Do not use self-maintenance as a reason for broad cleanup; keep runbook edits tied to lessons from the current run.
@@ -313,6 +318,7 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - Duplicating `PRODUCT_CHANGELOG_RELEASES` in the webapp (forbidden).
 - Adding What's New slides without proper `activeUntilIso` or leaving stale expired rows.
 - Writing What's New cards like detailed changelog entries instead of short story-level announcements.
+- Changing What's New copy while reusing stale or unrelated cover art from an older product story.
 - Forgetting to bump `campaignId`.
 - Treating landing `git` history as default for in-app product bullets (it's mostly marketing/SEO).
 - Updating MDX screenshots while leaving `images/cover.png` with obsolete route names, legacy product positioning, or unreadable cover lettering.
@@ -339,10 +345,10 @@ Implementation:
 - Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
-- After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, update featureAnnouncement.test.ts, bump campaignId, update capture script default if needed.
+- After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, update matching SVG covers under public/feature-announcement, wire coverRegistry.tsx and bump its cache version, update featureAnnouncement.test.ts, bump campaignId, update capture script default if needed.
 - If the run reveals drift in these instructions, update this runbook in the same pass with the exact selector, command, warning, or acceptance check.
 - After blog MDX/image changes: run `bun run letter-blog-covers` when cover copy/assets changed, then `bun run lint && bun run build:dev` (or build for prod hashes).
-- After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then in webapp run the featureAnnouncement test.
+- After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then in webapp visually inspect changed feature-announcement SVG covers and run the featureAnnouncement test.
 
 Verify both:
 - Blog: lint + build:dev (plus build when hashes matter).

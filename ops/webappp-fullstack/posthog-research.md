@@ -18,7 +18,7 @@ Use `/goal` for each analytics review:
 
 ## Agent Handoff
 
-Last updated: 2026-06-28
+Last updated: 2026-07-03
 
 ### Look First
 
@@ -26,6 +26,7 @@ Last updated: 2026-06-28
 - [ ] Start PH-W1 with active `$exception` issue classes around dynamic import/load failures, TradingView/widget errors, `ws.optiondata.io` fetch failures, and recent console-error-heavy recordings.
 - [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, and portal-session creation, but next runs must verify whether Stripe return success/cancel/completion events have been added.
 - [ ] Start PH-W7/PH-W8 by checking for active internal/test cohorts and `doc/automation/posthog/SKILL.md`; these were still missing in the latest reviewed checkout.
+- [ ] Before applying bot or acquisition filters, verify the live property names with `read-data-schema` or taxonomy warnings. The `2026-07-03` run warned that `$virt_is_bot` and `$utm_source` were not current taxonomy properties; use `utm_source` / login `initial_utm_source` where present, and do not rely on bot filters unless a current bot property exists.
 
 ## Goal
 
@@ -40,6 +41,7 @@ Produce an evidence-backed product analytics review that answers three questions
 - Use PostHog as the primary evidence source. Do not infer traffic or behavior from code alone.
 - Do not create, edit, archive, or delete dashboards, insights, events, cohorts, feature flags, or surveys unless the user explicitly asks after the review.
 - Do not expose raw user PII in the final report. Aggregate by counts, sessions, routes, cohorts, and anonymized examples.
+- Do not repeat secrets returned by tools, including PostHog project API tokens or ingestion keys that can appear in project-context responses.
 - Do not silently fall back to browser UI scraping when the PostHog plugin is unavailable. State the blocker and ask the user to connect or re-auth the PostHog plugin.
 - Treat any hardcoded project IDs in this file as expected defaults, not truth. Report the actual organization/project returned by the plugin.
 - After running this runbook, the AI agent may update this runbook when the run exposes a better query, missing checklist item, stale assumption, recurring blocker, or stronger report structure that would make the next run more accurate or faster. Keep those edits scoped to runbook quality; do not encode one-off findings as permanent rules unless they are reusable.
@@ -58,7 +60,7 @@ Unless the user overrides:
 | Segments | Anonymous vs logged-in if available; new vs returning; top routes; device/browser; country/region; referrer/source |
 | Exclusions | Internal/test users, localhost/dev hosts, staging hosts, known QA accounts, and bot traffic when identifiable |
 
-Filtering note: use production host and bot exclusions for browser traffic, but do not apply those filters blindly to backend/server product events. Backend conversion events can have no `$host` and may be classified as bots; query them with explicit `channel`, `runtime`, or equivalent properties so billing/provisioning steps are not hidden.
+Filtering note: use production host and verified bot exclusions for browser traffic, but do not apply those filters blindly to backend/server product events. Backend conversion events can have no `$host` and may be classified as bots; query them with explicit `channel`, `runtime`, or equivalent properties so billing/provisioning steps are not hidden. Do not assume default property names such as `$virt_is_bot` or `$utm_source`; confirm current taxonomy first.
 
 ## Long-Term Issue Watchlist
 
@@ -118,6 +120,7 @@ Follow the connected PostHog app's live tool discovery. If no tools are exposed,
 Current MCP notes:
 
 - Always run `search` or `tools` first, then `info <tool_name>` before each `call <tool_name> ...`. Some MCP wrappers reject or mislead when schemas are assumed.
+- `switch-project` responses can include project tokens. Use the project id/name/timezone in the report, but do not paste the token.
 - Explicitly `switch-project` to project `300646` after resolving projects with `projects-get`, even if earlier calls appeared to use the right project. Silent active-project drift can make exact event queries look empty.
 - Discover live table/column shape through `execute-sql` against `system.information_schema.*`; treat older helpers such as `read-data-warehouse-schema` as optional/legacy if they are not exposed.
 - Use `read-data-schema` for event/property verification before analytics queries, then query with confirmed event names and properties.
@@ -433,3 +436,4 @@ When maintenance is performed, include a short `Runbook maintenance` note in the
 - Old dashboards still point at renamed events or deprecated properties.
 - Backend/server conversion events are hidden by web-only `$host` filters or generic bot exclusions.
 - MCP active-project context drifts between calls, producing false empty taxonomy/event results until `switch-project` is rerun.
+- Query examples or dashboards assume stale properties such as `$virt_is_bot` or `$utm_source`, causing warnings or misleading source/bot splits.

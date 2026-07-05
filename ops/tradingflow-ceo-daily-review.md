@@ -17,18 +17,20 @@ This is a production-first runbook. Daily CEO verdicts must use production surfa
 Use `/goal` for each daily automation run:
 
 - Objective: produce an evidence-backed TradingFlow daily CEO report covering production engineering health, production product behavior, production data freshness, business operations, customer/support signals, unusual situations, short- and long-term actions, and board/investor-level strategic recommendations.
-- Success criteria: this runbook's `Agent Handoff`, tool preflight matrix, and routing table are read first; required production credentials/tools are proven with read-only preflights; the relevant narrower runbooks are used for source evidence; no production/customer/payment mutation occurs without explicit approval; the report follows the required CEO template; and this runbook is maintained if reusable drift is discovered.
+- Success criteria: this runbook's `Agent Handoff`, tool preflight matrix, and routing table are read first; required production credentials/tools are proven with read-only preflights; Linear is checked as the centralized task ledger; the relevant narrower runbooks are used for source evidence; no production/customer/payment/ticket mutation occurs without explicit approval or an automation mode that explicitly allows Linear writes; the report follows the required CEO template; and this runbook is maintained if reusable drift is discovered.
 - Stop condition: the CEO report is complete, a critical production incident requires immediate human escalation, or source access is explicitly blocked and the missing checks are listed.
 
 Pasteable automation prompt:
 
 ```text
-Use ops/tradingflow-ceo-daily-review.md as the production runbook and canonical ops entrypoint. Act as TradingFlow's daily AI CEO. Read its Agent Handoff, tool preflight matrix, and runbook routing table first; prove read-only production access to the needed tools; run the relevant production engineering, product, analytics, business operations, revenue, and support checks; then deliver the CEO Daily Report template. Do not mutate production, billing, customer data, support messages, deployments, secrets, or third-party configuration without explicit user approval for the exact action.
+Use ops/tradingflow-ceo-daily-review.md as the production runbook and canonical ops entrypoint. Act as TradingFlow's daily AI CEO. Read its Agent Handoff, tool preflight matrix, and runbook routing table first; prove read-only production access to the needed tools; check Linear as the centralized task ledger; run the relevant production engineering, product, analytics, business operations, revenue, support, and Linear portfolio checks; then deliver the CEO Daily Report template. Do not mutate production, billing, customer data, support messages, deployments, secrets, third-party configuration, or Linear tickets without explicit user approval for the exact action or an automation mode that explicitly allows ticket maintenance.
 ```
 
 ## Agent Handoff
 
-Last updated: 2026-06-24
+Last updated: 2026-07-04
+
+Latest maintenance added Linear as the centralized task-management source for CEO reviews. Future runs should read Linear alongside production health evidence, map recommendations to existing tickets when possible, and propose or create new tickets in Linear only when the user or automation mode explicitly authorizes ticket writes.
 
 Latest maintenance clarified that this is a production-first CEO runbook. Production Stripe CLI live-mode access was verified on 2026-06-24 for aggregate read-only revenue checks; future runs should prefer `node ops/scripts/stripe-production-revenue-summary.mjs` for revenue and subscription evidence, not `.env.local` test-mode Stripe keys.
 
@@ -45,6 +47,7 @@ No open handoff items. Start with this runbook's tool preflight matrix and routi
 5. State uncertainty. If PostHog, Better Stack, Stripe, Clerk, Lark, Browser, ClickHouse, Cloudflare, or provider APIs are blocked, mark the affected verdict `unknown`, not `healthy`.
 6. Separate CEO severity from app observability priority. Use `Critical`, `High`, `Medium`, and `Watch` for this report. Do not invent app-level `P2` observability if the narrower webapp policy only supports `P0` and `P1`.
 7. Keep mode discipline. Production revenue and customer-state conclusions require production Stripe/Clerk/Neon evidence. Test-mode or fixture data must be labeled as diagnostic only.
+8. Treat Linear as the centralized task ledger. Daily CEO action plans should reference existing Linear tickets when they exist, identify stale or missing ticket coverage, and recommend new tickets with project, priority, and owner. Creating, editing, closing, assigning, labeling, or reprioritizing Linear tickets is still a write and requires explicit approval unless the automation mode grants ticket-maintenance authority.
 
 ## Daily Scope
 
@@ -66,6 +69,7 @@ Default company surfaces:
 | Data and infrastructure | Cloudflare Worker serving layer, Durable Objects, KV reference data, ClickHouse source freshness, provider APIs, Better Stack telemetry |
 | Business operations | Stripe subscription/billing state, Clerk/account growth, support inbox, customer blockers, conversion and activation funnels, churn/payment failures |
 | Strategy | Product-market signal, retention and trust risks, pricing/packaging signal, investor narrative, operational leverage, moat-building data assets |
+| Task management | Linear projects, open tickets, stale `In Progress` work, recent `codex` recommendations, project milestones, priority/owner gaps |
 
 ## Read First
 
@@ -133,6 +137,7 @@ Treat Alpaca as connected when the command exits 0, reports `status: 200`, `ok: 
 | Lark / Feishu CLI | Support mail, calendar, docs, Drive, Base, task, approval, and other Lark-backed workflows referenced by `lark-*` skills or user requests | Use local `lark-cli`; no MCP/connector is required when a Lark skill or runbook says to use the CLI. Choose `--as user` for user-owned resources such as mail, calendar, Drive, docs, and personal tasks; choose `--as bot` only for bot-owned/app-level operations. | Read the relevant `lark-*` skill first. Always reuse existing auth before starting login: run `command -v lark-cli`, `lark-cli --version`, then `lark-cli auth status --json --verify`. For a specific action, run `lark-cli auth check --scope "<needed_scope>" --json` before the action. For mail support workflows, prior known checks include `lark-cli mail user_mailboxes profile --as user --params '{"user_mailbox_id":"me"}' --json` and `lark-cli mail +triage --as user --mailbox me --max <n> --format json`. | Do not start `lark-cli auth login`, generate a QR code, or ask a human to scan a new QR code until the existing session has been checked and either fails, is expired, or lacks the exact required user scope. Reusing existing auth is the default because new QR login interrupts long-running runbooks. If login is actually required, use split-flow `lark-cli auth login --scope "<scope>" --no-wait --json`, generate a QR code with `lark-cli auth qrcode`, then stop and wait for the user to confirm before completing `--device-code`. Do not output app secrets, access tokens, or raw auth payloads. If JSON output includes `_notice.update`, finish the task and offer `lark-cli update`. High-risk writes that exit `10` require explicit user confirmation before retrying with `--yes`. |
 | Stripe billing UX tests | `ops/webappp-fullstack/browser-e2e-product-review.md` | No MCP/connector is required for normal billing UX checks. Browser is primary for user-visible checkout/portal flows. SDK/API verification or cleanup should use `STRIPE_SECRET_KEY` from `$WORKSPACE/tradingflow-webapp-fullstack/.env.local`. | Before any authorized payment lifecycle test, confirm the local Stripe key source exists and starts with `sk_test_`. Use the app and Stripe-hosted UI in Browser for capability proof; use SDK/API only for setup, canonical status verification, or cleanup. | Abort on missing key, `sk_live_`, unknown key source, or any fetched Stripe object with `livemode: true`. Treat Stripe connector/plugin mutations as unsafe until test mode is proven. Do not complete payment/add-card/change-card/cancel flows unless the user explicitly authorizes that exact test. |
 | Stripe production revenue | `ops/tradingflow-ceo-daily-review.md` | Use the local Stripe CLI only, preferably through `node ops/scripts/stripe-production-revenue-summary.mjs` from this repo. For manual preflight, verify `command -v stripe`, `stripe --version`, and `stripe config --list` with all keys redacted. The account should resolve to TradingFlow production and live mode should be available through the CLI config. | Preferred daily check: `node ops/scripts/stripe-production-revenue-summary.mjs`, then report aggregate-only balance, cash/revenue windows, charge health, subscription counts, and MRR/ARR proxy by status/currency. Manual fallback preflight: `stripe balance retrieve --live | jq '{object, available, pending}'`; manual fallback aggregate sources: `stripe balance_transactions list --live`, `stripe charges list --live`, and `stripe subscriptions list --live --status all`. | This production row is for read-only CEO revenue reporting, not payment lifecycle testing. Always pass `--live`; never print raw keys, customer PII, cards, invoices, or full object payloads. Never create, update, refund, cancel, or open checkout/portal sessions from a daily revenue check without explicit approval for that exact mutation. Treat helper `truncated: true` as partial evidence and name the truncated section. |
+| Linear task ledger | `ops/tradingflow-ceo-daily-review.md` | Use the Linear plugin/MCP when available. If tools are not already exposed, discover them first with tool search for Linear issue/project tools. | Read-only preflight: list teams and active projects, then list open issues for `TradingFlow Team` and `Tradely`, plus any `codex`-labeled issues. For a lightweight daily run, capture counts by project/status/priority and the highest-risk stale or unassigned tickets. | Linear is the centralized task-management source. Reads are part of every CEO run. Writes such as creating tickets, closing issues, changing priority, adding labels, assigning owners, or updating project state require explicit approval unless the automation mode says ticket maintenance is allowed. When creating Codex-originated tickets, add the `codex` label so they are filterable. |
 | Clerk auth | Browser product review and landing screenshot runbooks | Use the app's normal login fixtures and `$WORKSPACE/tradingflow-webapp-fullstack/.env.local` (`CLERK_SECRET_KEY` for server-side checks when needed). | For UI runs, verify the displayed email/account identity after login or account switch before counting coverage. Default safe fixture OTPs and account emails are documented in the target runbook. | Do not confuse cached sessions with a new account state. Clear the Browser context or Clerk cookies and retry once when identity/billing state does not change. |
 | Neon database | Authorized billing lifecycle tests | Use `NEON_DATABASE_URL` from `$WORKSPACE/tradingflow-webapp-fullstack/.env.local` when a runbook explicitly needs canonical user/billing state or restoration. | Run only read-only user/customer lookups unless an authorized Stripe lifecycle test requires fixture setup or cleanup. Report safe ids and statuses only. | Restore seeded users if a test repoints `stripe_customer_id`. Do not mutate Neon during ordinary product review. |
 | Discord webhooks | Observability routing references in webapp/data-pipeline runbooks | Prefer verifying emitted routing through Better Stack logs or code paths. Webhook URLs live in repo env/secrets and are notification sinks, not normal connection probes. | Check that the relevant env var name exists or that Better Stack shows the expected P0/P1 event. | Do not send test Discord messages unless the user explicitly asks to verify notification delivery. |
@@ -148,6 +153,7 @@ ToolAccess:
 - clickhouse: connected|blocked|skipped; credential_source=<repo/.env path>; script_or_query=<name>; blocker=<none or exact error>
 - browser: connected|blocked|skipped; target=<url>; blocker=<none or exact error>
 - stripe/clerk/neon/cloudflare/massive/alpaca/longport/lark-cli/discord: connected|blocked|skipped; path=<env|browser|wrangler|sdk|cli>; blocker=<none or exact error>
+- linear: connected|blocked|skipped; path=<plugin|mcp>; teams=<resolved names or n/a>; blocker=<none or exact error>
 ```
 
 ## Runbook Routing
@@ -161,6 +167,7 @@ ToolAccess:
 | Webapp | `ops/webappp-fullstack/posthog-research.md` | Running product analytics, event quality, dashboard, and behavior reviews in PostHog. |
 | Webapp | `ops/webappp-fullstack/browser-e2e-product-review.md` | Walking webapp UI journeys with `@Browser` for manual E2E product testing, UI defects, and PM/trader UX findings. |
 | Landing | `ops/landingpage/browser-e2e-test.md` | Simulating user journeys while doing E2E maintenance and product review. |
+| Landing | `ops/landingpage/create-landing-hero-video.md` | Creating or refreshing the homepage hero product video from real local webapp screenshots with HyperFrames and WebM-first delivery. |
 | Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts (`content/posts/**`), screenshots, public changelog, and What's New sync. |
 | Landing | `ops/landingpage/update-tutorial-series.md` | Creating/updating the bilingual tutorial series (`content/series/tradingflow-docs`) - page-based how-to chapters with annotated screenshots, Mermaid diagrams, and cross-links. |
 | Landing | `ops/landingpage/posthog-events.md` | Auditing or extending landing-site PostHog event taxonomy and funnel definitions. |
@@ -195,6 +202,7 @@ At minimum for a standard daily run:
 | Stripe CLI live mode | Production revenue, subscription, payment failure, trial, refund, and billing-state aggregate checks |
 | Clerk/Neon | Account growth and entitlement/account-state read-only checks when needed |
 | Lark / support mail | Support inbox and customer issue triage |
+| Linear | Centralized task ledger: active projects, current ticket state, stale in-progress work, priority/owner gaps, and existing coverage for recommended actions |
 | Provider APIs | Massive, Alpaca, Longport checks only when data-quality symptoms require them |
 
 If a tool is blocked, continue with the rest of the run and include the blocker in `ToolAccess` and the affected scorecard row.
@@ -271,8 +279,28 @@ Do not print customer emails, payment method data, invoice PDFs, full object pay
 | Support and customer voice | New support emails/messages, unresolved urgent threads, repeated complaints, churn reasons, enterprise/prospect signals |
 | Prospect/investor signal | Unread investor, partner, or qualified prospect emails/messages; report counts and subject-level themes only unless the user asks for details |
 | Marketing/content | Landing uptime, recent changelog/blog/tutorial freshness, SEO/i18n/mobile regressions, campaign or launch anomalies |
+| Linear task management | Active project count, issues by project/status/priority, stale `In Progress` work, unassigned urgent/high tickets, recent `codex`-labeled recommendations, missing ticket coverage for material recommendations |
 
 Do not send replies, drafts, refunds, coupons, customer status changes, billing changes, or CRM updates unless the user explicitly asks. It is safe to propose exact next actions and draft language in the report.
+
+### 4.1 Linear Portfolio Review
+
+Linear is the centralized place to manage TradingFlow tasks. Run this phase after the production health and business checks so the CEO can map evidence-backed recommendations to the actual task ledger.
+
+Daily minimum:
+
+1. List active Linear teams and projects.
+2. Count open issues by project, status, and priority.
+3. Identify urgent/high-priority tickets without owners, stale `In Progress` tickets, and active work without a current project or milestone.
+4. Review recent `codex`-labeled issues so the report can separate agent-recommended work from human-entered product commitments.
+5. For every material CEO recommendation, cite an existing Linear ticket or state `missing ticket coverage` with a proposed title, project, priority, and rationale.
+
+Linear write policy:
+
+- Read Linear during every CEO run.
+- Do not create, update, close, assign, relabel, reprioritize, or comment on Linear tickets unless the user explicitly asks or the automation prompt says ticket maintenance is allowed.
+- When writes are authorized, prefer updating an existing ticket over creating a duplicate. If creating a Codex-originated ticket, add the `codex` label and include a concise high-level design or acceptance criteria when the ticket is strategic or cross-system.
+- If Linear is blocked, mark task-management visibility as `Unknown`, include the exact blocker in `ToolAccess`, and keep the action plan explicit about which recommendations were not checked against existing tickets.
 
 ### 5. Unusual Situation Detection
 
@@ -286,6 +314,7 @@ Flag a situation as unusual when any of these are true:
 - Landing/marketing funnel changes without an obvious campaign or release reason.
 - A monitor/tool is unavailable and would hide a material incident.
 - The same issue appears in two independent sources, such as Better Stack plus support, or PostHog plus Browser.
+- A material recommendation has no Linear ticket, or the related Linear ticket is stale, unowned, blocked, or lower priority than the evidence suggests.
 
 For each unusual situation, report:
 
@@ -305,7 +334,8 @@ Convert evidence into decisions. The daily report must include:
 3. What changed since the previous day or latest comparable baseline.
 4. What the company should do today.
 5. What the company should invest in over 7-30 days.
-6. What strategic questions or risks should be raised to board members, advisors, or investors.
+6. Which Linear tickets already cover the needed action, which tickets need owner/priority/status changes, and which recommendations need new ticket coverage.
+7. What strategic questions or risks should be raised to board members, advisors, or investors.
 
 Keep strategic recommendations evidence-tied. Avoid generic advice such as "improve marketing" unless the report names the metric, customer behavior, or product gap that supports it.
 
@@ -334,6 +364,7 @@ Market context:
 | Revenue/billing | ... | ... | ... | ... |
 | Growth/conversion | ... | ... | ... | ... |
 | Support/customer voice | ... | ... | ... | ... |
+| Linear/task ledger | ... | ... | ... | ... |
 | Observability/tools | ... | ... | ... | ... |
 
 ## Unusual Situations
@@ -354,14 +385,15 @@ Market context:
 - Support/customer voice:
 - Prospect/investor signal:
 - Marketing/content:
+- Linear/task ledger:
 - Blockers:
 
 ## Action Plan
-| Horizon | Action | Why now | Expected impact | Confidence | Verification |
-| --- | --- | --- | --- | --- | --- |
-| Today | ... | ... | ... | High/Medium/Low | ... |
-| 7 days | ... | ... | ... | ... | ... |
-| 30-90 days | ... | ... | ... | ... | ... |
+| Horizon | Action | Linear ticket / ticket action | Why now | Expected impact | Confidence | Verification |
+| --- | --- | --- | --- | --- | --- | --- |
+| Today | ... | existing TF-123 | ... | ... | High/Medium/Low | ... |
+| 7 days | ... | ... | ... | ... | ... | ... |
+| 30-90 days | ... | ... | ... | ... | ... | ... |
 
 ## Board / Advisor Lens
 - Strategic read:
@@ -385,6 +417,7 @@ Market context:
 - clerk/neon: connected|blocked|skipped; path=...; blocker=...
 - lark/support: connected|blocked|skipped; path=...; blocker=...
 - provider-apis: connected|blocked|skipped; path=...; blocker=...
+- linear: connected|blocked|skipped; path=...; teams=...; blocker=...
 
 ## Evidence Index
 - Source, command/tool/query, timestamp, and short result.
@@ -426,6 +459,7 @@ Update this runbook when:
 - A daily CEO run repeatedly needs a new source, metric, surface, report section, or escalation rule.
 - A tool credential path, connector, runbook filename, or preflight check drifts.
 - A strategic/business metric becomes important enough to check every daily run.
+- Linear project/ticket workflow changes, including labels, required fields, centralized task-management rules, or write-approval boundaries.
 - Automation needs a different mode, schedule contract, or output format.
 
 Do not update this runbook for:

@@ -26,7 +26,9 @@ Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Bro
 
 ## Agent Handoff
 
-Last updated: 2026-06-23
+Last updated: 2026-07-06
+
+2026-07-06 Cookbooks drift note: current `tradingflow-webapp-fullstack` checkouts use the live-run recipe model documented in `doc/domain-knowledge/cookbooks/domain-invariants.md` and `functionality.md`. The older frozen snapshot contract (`doc/automation/cookbooks/SKILL.md`, `public/cookbook-snapshots/`, static dated gallery) is retired and may be absent. Do not file `New recipe`, `My recipes`, `AI Insight`, or `Edit with AI` as defects merely because they are visible in an AI-enabled paid dev/test build; test or avoid them according to their current live-run, paid, AI, and mutation semantics below.
 
 2026-06-23 maintenance-only note: the durable procedure now requires explicit Option Trades saved-filter lifecycle coverage and a `SavedFilterLifecycleMatrix` when Option Trades filters are in scope. No Browser run was executed for this runbook edit.
 
@@ -202,7 +204,7 @@ Read in this order:
    - Shared auth, billing, access, Watchlist, and app shell context: `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md`
    - Option Trades: `doc/domain-knowledge/option-trades/domain-invariants.md` and `doc/domain-knowledge/option-trades/functionality.md`
    - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
-   - Cookbooks when in scope: `doc/automation/cookbooks/SKILL.md`; if Network evidence is needed, also read `src/lib/cookbook-snapshots/load.ts` to understand the intended static JSON fetch contract.
+   - Cookbooks when in scope: `doc/domain-knowledge/cookbooks/domain-invariants.md` and `doc/domain-knowledge/cookbooks/functionality.md`; if AI chat, recipe creation, or recipe editing is explicitly in scope, also read `doc/automation/ai-chat-e2e/SKILL.md` as a journey map.
 4. Shared product review contract when present: `doc/automation/product-review/README.md`
 5. Shared E2E policy when present: `doc/automation/e2e-test/e2e-update-skills.md`
 6. The module-specific product-review prompt when present:
@@ -221,14 +223,16 @@ Path drift note: older product-review prompts may still mention `doc/knowledge/g
 | Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/option-trades-goal-driven-prompt.md`, `doc/automation/e2e-test/option-trades-goal-driven-prompt.md`, `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
 | Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/contract-rank-goal-driven-prompt.md`, `doc/automation/e2e-test/contract-rank-goal-driven-prompt.md`, `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
 | Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/e2e-test/market-rank-goal-driven-prompt.md`, `tests/e2e/specs/market-rank/market-rank.spec.ts`; if product-review prompt is missing, use `product-review/README.md` + rank domain docs |
-| Cookbooks | `/app/cookbooks`, `/app/cookbooks/$templateId`, dated `slug~YYYY-MM-DD` reports | `doc/automation/cookbooks/SKILL.md`, `src/lib/cookbook-snapshots/load.ts` | use the gallery/report UI as the journey map; do not run snapshot generation during Browser review |
+| Cookbooks | `/app/cookbooks`, `/app/cookbooks/$templateId`, pinned-session `slug~YYYY-MM-DD` reports, AI/edit workspaces only when explicitly in scope | `doc/domain-knowledge/cookbooks/domain-invariants.md`, `doc/domain-knowledge/cookbooks/functionality.md`; AI flows: `doc/automation/ai-chat-e2e/SKILL.md` | use the gallery/report UI as the journey map; do not submit AI prompts, fork recipes, delete drafts, or save recipes unless explicitly authorized |
 
 ## Cookbooks Browser Review Rules
 
-- Treat dated Cookbook reports as read-only frozen snapshots. Verify the gallery date picker, snapshot card links, report rendering, TOC anchors, Back navigation, localized report copy, and disclaimer.
-- Do not click `New recipe`, private draft delete confirmations, `/edit` workspace links, `Edit with AI`, or submit `Recipe AI` prompts unless the user explicitly authorizes recipe-draft or AI-agent mutation for this run.
-- It is safe to open and close `Recipe AI` without submitting when reviewing visible UI, but record that no prompt was submitted.
-- If Browser cannot expose Network entries, use source only as supporting evidence for static fetch paths; do not mark "no runtime query / no LLM call" as fully network-proven without a Browser/Chrome network check.
+- Treat Cookbooks as live-run recipes, not frozen snapshots. Opening an official template resolves the recipe for the latest completed session; pinned-session URLs such as `slug~YYYY-MM-DD` rerun the same recipe for that date.
+- Verify the gallery in two groups: `Official templates` open read-only live reports; `My recipes` rows and `/edit` links are user-owned draft/edit surfaces and can mutate state.
+- For read-only report coverage, verify official template `Open`, report rendering, `Run`, date picker or pinned-session URL, TOC anchors, Back navigation, localized report copy, and the canonical disclaimer.
+- Do not click `New recipe`, private draft delete confirmations, `/edit` workspace links, `Edit with AI`, or `Save` unless the user explicitly authorizes recipe-draft mutation for this run.
+- Do not click `AI Insight`, starter prompts, or submit global/sidebar AI prompts unless the user explicitly authorizes AI-costing behavior. It is safe to open and close the global assistant without submitting, but record that no prompt was submitted.
+- If Browser cannot expose Network entries, use visible UI plus current domain docs as evidence for live-run behavior. Do not assert "no live query / no LLM call" for Cookbooks; the current product intentionally runs recipe data live and generates AI insight only on explicit demand.
 
 ## Runtime Setup
 

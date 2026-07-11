@@ -1,6 +1,6 @@
 ---
 name: datapipeline-error-check
-description: End-to-end TradingFlow production data-pipeline error check that combines process-service Better Stack error triage, cf-service producer health, Cloudflare Worker Durable Object/KV serving health, and ClickHouse data-quality checks. Use when the user asks why contract-rank/option-flow data is stale, lagging, missing, delayed, not refreshed, or whether UW ingest, Worker snapshots, Durable Objects, or ClickHouse source data are healthy.
+description: End-to-end TradingFlow production data-pipeline error check that combines process-service Better Stack error triage, cf-service producer health, Cloudflare Worker Durable Object/R2/KV serving health, and ClickHouse data-quality checks. Use when the user asks why contract-rank/option-flow data is stale, lagging, missing, delayed, not refreshed, or whether UW ingest, Worker snapshots, Durable Objects, R2 objects, or ClickHouse source data are healthy.
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Use it when the question spans more than one layer of the TradingFlow data path:
 
 1. **Producer ownership and liveness** - which service is writing UW/option-flow rows.
 2. **Process-service errors and heartbeats** - EC2 backend jobs, cron, and legacy producer health.
-3. **cf-service Worker and Durable Objects** - public serving endpoints, DO/KV state, snapshots, and Worker logs.
+3. **cf-service Worker, Durable Objects, R2, and KV** - public serving endpoints, DO/R2/KV state, snapshots, and Worker logs.
 4. **ClickHouse source data** - row freshness, completeness, latency, metadata enrichment, contract-rank correctness, and Greeks parity.
 
 This runbook is read-only by default. Do not deploy, mutate Cloudflare KV/DO state, send heartbeat pings manually, force snapshot refreshes, run backfills, or change Better Stack monitors unless the user explicitly authorizes that exact action.
@@ -31,7 +31,7 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-07-02
+Last updated: 2026-07-08
 
 No open handoff items after the latest run.
 
@@ -41,6 +41,8 @@ Current durable guidance from recent runs:
 - Current `tradingflow-cfworker-service` code has retired Worker UW ingestion: `/uw-ingestion/*` and `/ingest` should return `404` after the removal deploy. If production still returns `200` for `/uw-ingestion/status` or emits `uw_ingestion_*` logs, treat that as stale Worker deployment / deploy skew first, then verify with `npx wrangler deployments list --env production`.
 - Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
 - For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
+- Current contract-rank columnar reads should redirect to immutable R2 objects when `columnarObjectPath` is present. Verify with a bounded `GET` to `/api/v1/contract-rank/latest-snapshot?format=columns`: expect a `307` to `/api/v1/contract-rank/snapshot-objects/.../columns-v1.json`, followed by `200` with `x-contract-rank-r2-key` and immutable cache headers. Do not use `HEAD` for this check; the columnar route can return `405`.
+- Before the 09:30 ET open, current-day option-flow tables can legitimately have zero rows and strict data-quality scripts can report row-count breaches. Treat those as pre-open guardrails, not an outage, unless Better Stack lifecycle/heartbeat evidence also shows producer failure. Re-run current-day flow freshness after the first RTH window, usually 09:35 ET or later.
 - Do not treat all DEI zero rows as data loss. Split raw zero-DEI rows from actionable rows after SymbolMetaData join; precision or rounding can produce false positives.
 - A broken opening stream is P0 when websocket open fails, first trades are missing after join acknowledgement, heartbeat delivery fails, or live fanout transport is broken. Per-record normalization noise is usually P1 unless it blocks ingestion.
 
@@ -60,7 +62,7 @@ At the end of each run:
 | --- | --- | --- |
 | Runbooks | `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules` | This file and source runbooks. |
 | Process service | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` | EC2 backend, ClickHouse scripts, process-service logs, symbol-meta, option-chain and Greeks checks. |
-| Cloudflare Worker | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service` | Worker production config, Durable Objects, KV bindings, Wrangler, UW ingest Worker code. |
+| Cloudflare Worker | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service` | Worker production config, Durable Objects, R2/KV bindings, Wrangler, UW ingest Worker code. |
 | Webapp | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack` | Contract-rank consumers, UI stale-data symptoms, mart diagnostics. |
 
 ## Read-Only Boundary
@@ -267,7 +269,7 @@ Queue diagnosis:
 - Before tuning queue `max_batch_size` or concurrency, check whether each queue message is inserted separately. Combining messages into larger ClickHouse insert batches may be the real fix.
 - If Worker ingest is disabled and no queue events exist, do not keep debugging queue mode as the active incident path.
 
-### Phase 4 - Worker Serving, Durable Object, and KV Status
+### Phase 4 - Worker Serving, Durable Object, R2, and KV Status
 
 Use public HTTP first:
 
@@ -279,6 +281,25 @@ curl -sS "$WORKER_ORIGIN/api/v1/available-dates" | jq .
 curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
+
+For R2-backed columnar contract-rank reads:
+
+```bash
+curl -sS -L --compressed --max-time 30 \
+  -D /tmp/contract-rank-columns.headers \
+  "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot?format=columns" \
+  -o /tmp/contract-rank-columns.json
+sed -n '1,80p' /tmp/contract-rank-columns.headers
+jq '{v,d,rc,cv,as,columnKeys:(.c|keys|length), sidLen:(.c.sid|length)}' /tmp/contract-rank-columns.json
+```
+
+Expected healthy evidence:
+
+- First response is a `307` redirect to `/api/v1/contract-rank/snapshot-objects/.../columns-v1.json`.
+- Object response is `200` with `x-contract-rank-r2-key`, matching `x-contract-rank-content-version`, and immutable cache headers.
+- No `x-contract-rank-object-fallback` header appears.
+- Parsed payload date and row count match latest snapshot metadata.
+- `HEAD` can return `405`; use `GET` for this check.
 
 For full snapshot size and date checks:
 
@@ -293,10 +314,11 @@ Serving-layer interpretation:
 | Symptom | Likely layer |
 | --- | --- |
 | `/canary` fails | Worker availability/deploy/routing. |
-| Snapshot meta old, ClickHouse current | Snapshot cron, DO refresh, KV write/read, payload-size guardrail, or cache invalidation. |
+| Snapshot meta old, ClickHouse current | Snapshot cron, DO refresh, R2/KV write/read, payload-size guardrail, or cache invalidation. |
 | Snapshot meta current, UI old | Webapp route/cache/client state. |
 | `available-dates` missing latest date, ClickHouse has rows | Worker date-retention or refresh path. |
 | Snapshot payload near Cloudflare limits | Size/serialization guardrail; check `payloadBytes` trend and KV object sizes. |
+| Columnar metadata present but no R2 redirect/key | R2 upload, binding, object lookup, or fallback path. |
 | Worker ingest disabled but snapshots current | Not necessarily unhealthy; active writer is elsewhere. |
 
 Use Wrangler read-only commands when HTTP indicates a serving issue:

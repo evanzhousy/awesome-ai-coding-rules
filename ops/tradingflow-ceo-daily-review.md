@@ -215,7 +215,7 @@ Use the narrowest existing runbook for evidence:
 | --- | --- |
 | Are production app errors normal or unusual? | `ops/webappp-fullstack/webapp-check-error.md` |
 | Is the data pipeline fresh, served, internally consistent, and free of producer/provider gaps? | `ops/process-service/datapipeline-error-check.md` |
-| Are app observability routes capturing the right severity? | Webapp error runbook plus sibling webapp `doc/harness/observability-rules.md` when needed |
+| Are app observability routes capturing the right severity? | Webapp error runbook plus `ops/harness/observability-rules.md` when needed |
 
 Daily minimum:
 

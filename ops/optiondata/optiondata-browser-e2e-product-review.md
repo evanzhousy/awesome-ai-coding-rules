@@ -16,19 +16,61 @@ This runbook is intentionally **browser-first**. Do not run the repository Playw
 
 Use `/goal` for a full review:
 
-- Objective: run a Browser-driven product E2E walkthrough of the requested OptionData portal surface, finding UI defects and PM/data-consumer UX issues without executing repository E2E scripts.
-- Success criteria: Browser is used for every app interaction; required product/domain context is read; scoped journeys are exercised for the relevant personas and viewports; SEO metadata, i18n/localized copy, and mobile responsive behavior are reviewed for each in-scope surface; **identity rule — use a Clerk test user (`<label>+clerk_test@optiondata.io`, fixed code `424242`) for the major/bulk walkthrough, and a fresh real disposable Gmail alias (`evanzhousyforward+<run-id>@gmail.com`) with a real OTP ONLY to test the genuine registration flow itself**; when the survey/access gate is in scope, the `/survey` qualification flow and its trial side-effect are exercised; when entitlement is in scope, the realtime-subscription guard is checked across guest / signed-in-no-survey / trialing / active / no-sub states; **when the API key or any data API is in scope, the key shown in `/api_key` is proven against live non-`test_mode` endpoints — trialing/active live HTTP 200 and realtime WS 101, no-sub live HTTP 403, never 401 for a valid key**; explicitly-authorized billing-capability tests prove the user can go app → Stripe-hosted UI → app and see the correct billing/access result; any Stripe/Clerk fixture mutations are restored; findings use the required output tables; and this runbook is maintained if reusable friction is found.
-- Stop condition: scoped journeys are complete, a real browser/auth/data/local-env blocker is documented with evidence, or the user redirects scope.
+- Objective: run a Browser-driven, round-based OptionData portal product E2E loop. Each round designs concrete test use cases, executes them in the browser, records evidence, fixes eligible findings only after an invariant-drift gate, retests the affected journeys, and decides the next round.
+- Success criteria: Browser is used for every app interaction; required product/domain context is read; each round has a Round Test Plan before execution; scoped journeys are exercised for the relevant personas and viewports; SEO metadata, i18n/localized copy, and mobile responsive behavior are reviewed for each in-scope surface; **identity rule — use a Clerk test user (`<label>+clerk_test@optiondata.io`, fixed code `424242`) for the major/bulk walkthrough, and a fresh real disposable Gmail alias (`evanzhousyforward+<run-id>@gmail.com`) with a real OTP ONLY to test the genuine registration flow itself**; when the survey/access gate is in scope, the `/survey` qualification flow and its trial side-effect are exercised; when entitlement is in scope, the realtime-subscription guard is checked across guest / signed-in-no-survey / trialing / active / no-sub states; **when the API key or any data API is in scope, the key shown in `/api_key` is proven against live non-`test_mode` endpoints — trialing/active live HTTP 200 and realtime WS 101, no-sub live HTTP 403, never 401 for a valid key**; explicitly-authorized billing-capability tests prove the user can go app → Stripe-hosted UI → app and see the correct billing/access result; fix-mode findings include an `InvariantImpactMatrix` before code edits; any Stripe/Clerk fixture mutations are restored; findings use the required output tables; and this runbook is maintained if reusable friction is found.
+- Stop condition: required route/persona/viewport matrices are covered with no open Critical/High/Medium fix-mode findings, a real browser/auth/data/local-env blocker is documented with evidence, the user redirects scope, or the objective is review-only and findings/next-round tests have been reported.
 
 Pasteable objective:
 
 ```text
-Use ops/optiondata/optiondata-browser-e2e-product-review.md as the runbook. Use the Browser plugin to walk the requested OptionData portal journeys in the browser. Do not run repository Playwright scripts; use specs only as read-only journey maps. Review SEO metadata, i18n/localized copy, and mobile view behavior for every in-scope surface. Identity rule: use a Clerk test user (<label>+clerk_test@optiondata.io, fixed code 424242) for the major/bulk test process, and a fresh real disposable evanzhousyforward+<run-id>@gmail.com alias with a real OTP only to test the registration flow itself. When the access gate is in scope, complete /survey (invitation code OPDAP; redistribute=No, non-professional=Yes) and verify the 14-day realtime trial appears in /billing. When entitlement is in scope, check the realtime-subscription guard across guest, signed-in-no-survey, trialing, active, and no-realtime-sub states. When the API key or any data API (realtime WS, historical SQL, option chain) is in scope, prove the apikey_ shown in /api_key actually works against live non-test endpoints: trialing/active live HTTP 200 and WS 101, no-sub live HTTP 403, and never 401 for a valid key; record sample/test-mode 200s separately. Use Stripe/Clerk SDK mutation only to set up, verify, force, or restore fixtures, never as proof of a user capability or of key validity. Produce UI defect findings, ProductReviewFinding rows, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, ApiKeyDataApiMatrix when data/key is in scope, BillingLifecycleMatrix when applicable, SeoI18nMobileMatrix, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and a runbook maintenance note.
+Use ops/optiondata/optiondata-browser-e2e-product-review.md as the runbook. Run it as an iterative /goal loop: for each round, first design a Round Test Plan with concrete use cases, personas, routes, viewport(s), expected domain behavior, and evidence to collect; then use the Browser plugin to execute those use cases. Do not run repository Playwright scripts; use specs only as read-only journey maps. Review SEO metadata, i18n/localized copy, and mobile view behavior for every in-scope surface. Identity rule: use a Clerk test user (<label>+clerk_test@optiondata.io, fixed code 424242) for the major/bulk test process, and a fresh real disposable evanzhousyforward+<run-id>@gmail.com alias with a real OTP only to test the registration flow itself. When the access gate is in scope, complete /survey (invitation code OPDAP; redistribute=No, non-professional=Yes) and verify the 14-day realtime trial appears in /billing. When entitlement is in scope, check the realtime-subscription guard across guest, signed-in-no-survey, trialing, active, and no-realtime-sub states. When the API key or any data API (realtime WS, historical SQL, option chain) is in scope, prove the apikey_ shown in /api_key actually works against live non-test endpoints: trialing/active live HTTP 200 and WS 101, no-sub live HTTP 403, and never 401 for a valid key; record sample/test-mode 200s separately. In fix mode, do not edit code until each finding has an InvariantImpactMatrix entry comparing the proposed fix to domain truth and adjacent implementation contracts; fix narrowly, then run focused verification plus the Browser retest that proves the finding is resolved without breaking adjacent invariants. Use Stripe/Clerk SDK mutation only to set up, verify, force, or restore fixtures, never as proof of a user capability or of key validity. Produce Round Test Plan, BrowserJourneyCoverage, UI defect findings, ProductReviewFinding rows, InvariantImpactMatrix for fixed findings, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, ApiKeyDataApiMatrix when data/key is in scope, BillingLifecycleMatrix when applicable, SeoI18nMobileMatrix, TraderScorecard, evidence index, blockers, next-round recommendation, and a runbook maintenance note.
 ```
+
+## `/goal` Round Loop
+
+Treat `/goal` execution as iterative, not as a one-shot click-through. Each round must complete this loop before moving on:
+
+1. **Design test use cases.** Write a Round Test Plan with the route(s), persona(s), viewport(s), account state, controls/actions, expected domain behavior, evidence to capture, and explicit out-of-scope items. Prefer small, coherent slices such as "survey-incomplete guard for all data routes", "trialing API key live HTTP+WS", or "mobile ZH option-chain query".
+2. **Execute the planned cases in Browser.** Use the Browser plugin for app actions. Capture settled UI state, route, persona, viewport, console/network notes, and safe HTTP/WS evidence for key/data checks.
+3. **Classify findings.** Fill `ProductReviewFinding` and the relevant matrices. Separate product/design findings from environment blockers, local fixture gaps, and sample/test-mode behavior that is expected by the contract.
+4. **Run the invariant-drift gate before fixes.** For every finding that may change implementation, fill `InvariantImpactMatrix` before editing code. Domain truth (`CLAUDE.md`, `wiki/knowledge/*`, entitlement/auth/billing/API-key sources, SEO/i18n/mobile contracts) wins over current code and tests.
+5. **Fix eligible findings narrowly.** Only fix when the user's objective or latest instruction includes fix mode. Preserve the data-API auth model, survey policy, billing semantics, route ownership, localization behavior, and sample-vs-live split. Do not make unrelated refactors.
+6. **Verify and retest.** Run the focused tests or checks that cover the touched contract, `git diff --check`, and the Browser retest for the original use case. Also smoke-test adjacent invariants that the fix could affect.
+7. **Decide the next round.** If uncovered use cases, fresh findings, or unresolved verification gaps remain, propose/design the next Round Test Plan. If coverage is complete, close with final matrices, evidence, residual risk, and runbook maintenance notes.
+
+If the user asked for review-only execution, stop after steps 1-3 and the next-round recommendation; do not edit application code.
+
+## Domain-Invariant Drift Gate Before Fixes
+
+Before any fix-mode code edit, compare the observed implementation to the domain invariant the product is supposed to preserve. The goal is not just to remove the visible finding; it is to avoid a "fix" that makes auth, entitlement, billing, data access, SEO, i18n, or mobile behavior inconsistent with the product contract.
+
+Use these sources for the gate when relevant:
+
+- Product/domain truth: `CLAUDE.md` and `wiki/knowledge/*`.
+- Survey/auth gate: `src/domain/policies/SurveyPolicy.ts`, `src/components/RouteGuard.tsx`, `src/server/clerk.ts`.
+- Entitlement and key validity: `src/server/realtime-entitlement.ts`, API route handlers, `src/utils/apiKeyGenerator.ts`, cfworker API-key verifier when WS behavior is in scope.
+- Billing: `src/components/billing/*`, `/api/subscription`, `/api/stripe/*`, Stripe test-mode state used for fixtures.
+- Data products: `src/routes/api/historical/sql.ts`, `src/routes/api/option-chain.ts`, option-chain handler/server files, realtime WS host/config.
+- SEO/i18n/mobile: `src/lib/seo.ts`, route `head`/metadata definitions, `src/i18n/*`, route/page/component layout sources.
+
+Required `InvariantImpactMatrix` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `findingId` | Matching `ProductReviewFinding.id` |
+| `proposedFix` | One-sentence implementation approach |
+| `domainInvariantTouched` | Auth, survey, entitlement, billing, API-key, data schema, sample/live split, SEO, i18n, mobile, or other |
+| `sourceOfTruth` | Files/docs/runtime evidence used to define the invariant |
+| `implementationDriftObserved` | Whether current implementation differs from the invariant, and how |
+| `riskIfFixedNaively` | Existing behavior that could break if the fix is too broad |
+| `guardVerification` | Focused tests, Browser retests, HTTP/WS checks, or snapshot/head/i18n/mobile checks that must pass |
+| `status` | `cleared`, `needs-design-decision`, `blocked`, or `not-fix-mode` |
 
 ## Agent Handoff
 
-Last updated: 2026-06-27
+Last updated: 2026-07-06
+
+2026-07-06 maintenance-only update: clarified `/goal` round-based execution, fix-mode scope, and the invariant-drift gate before code edits. No product/browser checks were executed in this maintenance pass; the product follow-up items below remain open.
 
 Latest Browser walkthrough used local dev on `http://localhost:3721` with TEST Clerk/Stripe and disposable Clerk test user `od-runbook-20260626-1782488560548+clerk_test@optiondata.io`. Evidence artifacts are in `/tmp/optiondata-runbook-20260626`. Repository Playwright E2E scripts were not run.
 
@@ -61,7 +103,7 @@ Produce an evidence-backed Browser walkthrough report that answers:
 ## Non-Negotiables
 
 - Use the Browser plugin for all app interactions. Do not substitute `pnpm test:e2e`, `npx playwright test`, generators, or repo scripts for the walkthrough.
-- Do not edit tests, product code, route files, or docs unless the user explicitly expands scope beyond review.
+- Do not edit tests, product code, route files, or docs unless the user's `/goal` objective or latest instruction explicitly expands scope into fix mode. In fix mode, pass the Domain-Invariant Drift Gate before each code edit.
 - Do not commit findings, screenshots, or review artifacts. Findings stay in session output unless the user asks for a persistent artifact.
 - Treat E2E specs as journey maps only (titles, personas, routes, expected outcomes); do not cite selectors or spec line numbers as UX evidence.
 - Domain truth (CLAUDE.md + `wiki/knowledge/*`) wins over current code/tests; report mismatches (e.g., docs vs. actual response fields).
@@ -321,6 +363,20 @@ A finding is real when it has persona, route+viewport, visible evidence, expecte
 
 ## Required Output
 
+### RoundTestPlan
+Required at the start of each `/goal` round.
+| Field | Meaning |
+| --- | --- |
+| `roundId` | Stable round label, e.g. `ROUND-001` |
+| `purpose` | What risk or product question this round is designed to answer |
+| `useCases` | Concrete cases to execute, not broad route names |
+| `personas` | Guest, survey-incomplete, trialing, active, no-sub, or other |
+| `routesAndControls` | Routes, dialogs, controls, data/API surfaces, and SEO/i18n/mobile surfaces in scope |
+| `viewports` | Desktop/mobile sizes to test |
+| `expectedDomainBehavior` | Expected behavior from CLAUDE.md, knowledge docs, policy/source files, or product invariant |
+| `evidencePlan` | Browser/UI, console/network, HTTP/WS, screenshot labels, or fixture proof to capture |
+| `fixMode` | `yes` only when the user's instruction authorizes code changes |
+
 ### BrowserJourneyCoverage
 | Field | Meaning |
 | --- | --- |
@@ -402,6 +458,9 @@ Required when payment/add-card/change-card/cancel/billing-access is explicitly i
 | `evidence` | URLs, visible copy, status codes, screenshot labels, console/network |
 | `acceptanceSignal` | What a future Browser review would see to call it resolved |
 
+### InvariantImpactMatrix
+Required for every fix-mode finding before implementation edits. Use the field definitions in `Domain-Invariant Drift Gate Before Fixes`. If the user asked for review-only execution, write `not-fix-mode` instead of editing code.
+
 ### ElementActionMatrix
 | Field | Meaning |
 | --- | --- |
@@ -429,20 +488,22 @@ Concise ratings/notes for: `speedToInsight`, `scanability`, `decisionConfidence`
 
 ### Final Report Shape
 1. Scope and environment (incl. which local env gotchas were resolved).
-2. Browser procedure summary: routes, personas, viewports, hidden/visible.
-3. BrowserJourneyCoverage table.
-4. RegistrationFlowMatrix when auth/signup is in scope.
-5. AccessTierGuardMatrix when entitlement/auth/billing is in scope.
-6. ApiKeyDataApiMatrix when key/data API is in scope.
-7. BillingLifecycleMatrix when payment/cancel is in scope.
-8. Ranked ProductReviewFinding table.
-9. ElementActionMatrix.
-10. SeoI18nMobileMatrix.
-11. TraderScorecard.
-12. Evidence index: screenshot labels, URLs, notable console/network/HTTP/WS observations.
-13. Blockers and uncertainty.
-14. Runbook maintenance suggestion.
-15. Explicit statement: `Repository Playwright E2E scripts were not run`.
+2. Round summary: RoundTestPlan, Browser execution status, fix/retest status, and next-round decision.
+3. Browser procedure summary: routes, personas, viewports, hidden/visible.
+4. BrowserJourneyCoverage table.
+5. RegistrationFlowMatrix when auth/signup is in scope.
+6. AccessTierGuardMatrix when entitlement/auth/billing is in scope.
+7. ApiKeyDataApiMatrix when key/data API is in scope.
+8. BillingLifecycleMatrix when payment/cancel is in scope.
+9. Ranked ProductReviewFinding table.
+10. InvariantImpactMatrix for fix-mode findings.
+11. ElementActionMatrix.
+12. SeoI18nMobileMatrix.
+13. TraderScorecard.
+14. Evidence index: screenshot labels, URLs, notable console/network/HTTP/WS observations.
+15. Blockers and uncertainty.
+16. Runbook maintenance suggestion.
+17. Explicit statement: `Repository Playwright E2E scripts were not run`.
 
 ## Severity Guide
 | Severity | Use when |
@@ -477,7 +538,7 @@ Concise ratings/notes for: `speedToInsight`, `scanability`, `decisionConfidence`
 ## Runbook Self-Maintenance
 At the end of each run:
 1. Decide whether the walkthrough, docs, auth, routes, entitlement model, or data-API contract revealed a reusable lesson.
-2. Promote durable lessons into Required Context, Module Map, Runtime Setup, Workflow, Troubleshooting, or output templates.
+2. Promote durable lessons into Required Context, Module Map, Runtime Setup, `/goal` Round Loop, Domain-Invariant Drift Gate, Workflow, Troubleshooting, or output templates.
 3. Keep transient state in Agent Handoff only; prune completed/obsolete handoff items before adding new ones.
 4. If the pass was documentation maintenance only, say so in Agent Handoff and in the final report.
 5. If no durable rule changed, state `Runbook maintenance: no change`.

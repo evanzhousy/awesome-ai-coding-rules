@@ -124,8 +124,8 @@ Current module owners:
 | Market Recap | `doc/domain-knowledge/market-recap/domain-invariants.md` and, when needed, `doc/domain-knowledge/market-recap/functionality.md` |
 | Portfolio | `doc/domain-knowledge/portfolio/domain-invariants.md` and, when needed, `doc/domain-knowledge/portfolio/functionality.md` |
 | Assistant Channels, linked external chat identities, webhooks | `doc/domain-knowledge/assistant-channels/domain-invariants.md` and, when needed, `doc/domain-knowledge/assistant-channels/functionality.md` |
-| Logging, telemetry, async API failure reporting, observability policy | `doc/harness/observability-rules.md` |
-| UI styling only | `doc/harness/ui-style.md`; still read domain invariants if the UI change affects access, persistence, ranking, data interpretation, or user promises |
+| Logging, telemetry, async API failure reporting, observability policy | `ops/harness/observability-rules.md` |
+| UI styling only | `ops/harness/ui-style.md`; still read domain invariants if the UI change affects access, persistence, ranking, data interpretation, or user promises |
 
 ## Workflow
 

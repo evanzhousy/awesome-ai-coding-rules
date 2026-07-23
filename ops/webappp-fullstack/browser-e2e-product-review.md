@@ -200,32 +200,27 @@ cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack
 
 Read in this order:
 
-1. `AGENTS.md`
-2. Glossary when present. The current checkout may not have `doc/knowledge/glossary.md`; do not block the run on that missing file.
-3. Relevant domain docs in the current checkout:
+1. Webapp `AGENTS.md`
+2. [`knowledge/basic_concepts.md`](../../knowledge/basic_concepts.md) for canonical product terms
+3. Relevant domain docs in the webapp checkout:
    - Shared auth, billing, access, Watchlist, and app shell context: `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md`
    - Option Trades: `doc/domain-knowledge/option-trades/domain-invariants.md` and `doc/domain-knowledge/option-trades/functionality.md`
    - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
-   - Cookbooks when in scope: `doc/domain-knowledge/cookbooks/domain-invariants.md` and `doc/domain-knowledge/cookbooks/functionality.md`; if AI chat, recipe creation, or recipe editing is explicitly in scope, also read `doc/automation/ai-chat-e2e/SKILL.md` as a journey map.
-4. Shared product review contract when present: `doc/automation/product-review/README.md`
-5. Shared E2E policy when present: `doc/automation/e2e-test/e2e-update-skills.md`
-6. The module-specific product-review prompt when present:
-   - Auth: `doc/automation/product-review/auth-goal-driven-prompt.md`
-   - Option Trades: `doc/automation/product-review/option-trades-goal-driven-prompt.md`
-   - Contract-level analysis: `doc/automation/product-review/contract-rank-goal-driven-prompt.md`
-7. The module-specific E2E prompt and spec as read-only journey maps.
+   - Cookbooks when in scope: `doc/domain-knowledge/cookbooks/domain-invariants.md` and `doc/domain-knowledge/cookbooks/functionality.md`; if AI chat, recipe creation, or recipe editing is explicitly in scope, also read `ops/webappp-fullstack/ai-chat-e2e/SKILL.md` as a journey map.
+4. This runbook (`ops/webappp-fullstack/browser-e2e-product-review.md`)
+5. The module-specific Playwright specs under `tests/e2e/specs/` as read-only journey maps.
 
-Path drift note: older product-review prompts may still mention `doc/knowledge/glossary.md`, `platform.md`, `option-trades.md`, `rank.md`, `contract-rank.md`, or standalone `/app/contract-rank`. Some checkouts may also lack the older `doc/automation/product-review/*` and `doc/automation/e2e-test/*` prompt files. Prefer the current checkout's `doc/domain-knowledge/{shared,option-trades,rank}/...` files as source of truth, use existing `tests/e2e` specs only as journey maps when prompt docs are absent, and record prompt drift in `Prompt maintenance suggestion`.
+Path drift note: older prompts may still mention retired paths (`doc/knowledge/glossary.md`, `doc/automation/product-review/*`, `doc/automation/e2e-test/*`). Prefer webapp `doc/domain-knowledge/{shared,option-trades,rank}/...`, this runbook, and existing `tests/e2e` specs; record prompt drift in `Prompt maintenance suggestion`.
 
 ## Module Map
 
 | Surface | Primary routes | Domain truth | Read-only journey maps |
 | --- | --- | --- | --- |
-| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `shared/domain-invariants.md`, `shared/functionality.md` | `doc/automation/product-review/auth-goal-driven-prompt.md`, `doc/automation/e2e-test/auth-goal-driven-prompt.md`, `tests/e2e/specs/auth/` |
-| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/option-trades-goal-driven-prompt.md`, `doc/automation/e2e-test/option-trades-goal-driven-prompt.md`, `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
-| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/product-review/contract-rank-goal-driven-prompt.md`, `doc/automation/e2e-test/contract-rank-goal-driven-prompt.md`, `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
-| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | `doc/automation/e2e-test/market-rank-goal-driven-prompt.md`, `tests/e2e/specs/market-rank/market-rank.spec.ts`; if product-review prompt is missing, use `product-review/README.md` + rank domain docs |
-| Cookbooks | `/app/cookbooks`, `/app/cookbooks/$templateId`, pinned-session `slug~YYYY-MM-DD` reports, AI/edit workspaces only when explicitly in scope | `doc/domain-knowledge/cookbooks/domain-invariants.md`, `doc/domain-knowledge/cookbooks/functionality.md`; AI flows: `doc/automation/ai-chat-e2e/SKILL.md` | use the gallery/report UI as the journey map; do not submit AI prompts, fork recipes, delete drafts, or save recipes unless explicitly authorized |
+| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `shared/domain-invariants.md`, `shared/functionality.md` | this runbook; `tests/e2e/specs/auth/` |
+| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
+| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
+| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/market-rank/market-rank.spec.ts` |
+| Cookbooks | `/app/cookbooks`, `/app/cookbooks/$templateId`, pinned-session `slug~YYYY-MM-DD` reports, AI/edit workspaces only when explicitly in scope | `doc/domain-knowledge/cookbooks/domain-invariants.md`, `doc/domain-knowledge/cookbooks/functionality.md`; AI flows: `ops/webappp-fullstack/ai-chat-e2e/SKILL.md` | use the gallery/report UI as the journey map; do not submit AI prompts, fork recipes, delete drafts, or save recipes unless explicitly authorized |
 
 ## Cookbooks Browser Review Rules
 
@@ -968,7 +963,7 @@ Use concise ratings or notes for:
 
 ## When To Switch Runbooks
 
-- User asks to fix tests or certify Playwright coverage: switch to the matching `doc/automation/e2e-test/*-goal-driven-prompt.md` in the app repo.
+- User asks to fix tests or certify Playwright coverage: stay on this runbook and the matching `tests/e2e/specs/*` journey maps in the webapp repo.
 - User asks for code implementation and PR after findings: use the app repo product-review full playbook workflow and then normal engineering workflow.
 - User asks for production error correlation: use `ops/webappp-fullstack/error-investigate.md`.
 - User asks for PostHog analytics, traffic, dashboards, or session replay research: use `ops/webappp-fullstack/posthog-research.md`.

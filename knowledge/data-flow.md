@@ -12,6 +12,15 @@ currently only runs `CanaryCheckLambda` — the original AppSync fetcher is disa
 Key deps: `@clickhouse/client`, `node-cron`, `dynamoose`, `@google-cloud/bigquery`, `pg`,
 `black-scholes`, `greeks`, `longport`, `@sentry/node`, `@logtail/node`, `discord-webhook-node`.
 
+Webapp runtime boundary (updated 2026-07-10): Rank structure, GEX, and daily price/ATR context read
+normalized data from the CF Worker + ClickHouse contract-rank path. The paid GEX price chart is the
+single deliberate provider exception: its premium server endpoint fetches Massive one-minute
+underlying aggregates, filters/resamples the selected regular session, and returns a provider-neutral
+candle contract. Stock/ETF bars are explicitly unadjusted; cash-index adjustment and volume are not
+applicable. `MASSIVE_API_KEY` remains server-only. The webapp still has no
+Alpaca market-data (`APCA_*`) or Longport/LONGBRIDGE runtime provider; Portfolio keeps Alpaca OAuth
+only for the read-only broker integration.
+
 ---
 
 ## High-Level Data Flow

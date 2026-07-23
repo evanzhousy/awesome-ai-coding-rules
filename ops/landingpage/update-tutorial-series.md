@@ -55,7 +55,7 @@ Target checkout: `../tradingflow-web-landingpage` when opened from `awesome-ai-c
 - **Asset copy:** `scripts/copy-assets.ts` `processSeries()` copies the shared `images/` folder to `public/<postsBasePath>/<chapter-slug>/images/` for every chapter file **and** to `public/<postsBasePath>/<series-slug>/images/` for `index.*`. `postsBasePath` = `site.config.ts` `posts.basePath` (currently `blogs`); series slug = `tradingflow-docs`.
 - **Screenshot capture:** `scripts/capture-blog-ui-screenshots.ts` (Playwright vs the sibling webapp dev server) — writes into `content/posts/<feature>/images/`. See the blog runbook for the full capture workflow, login fixtures, readiness gates, and crop/clip rules. Current routes captured: `/app/option-trades`, `/app/rank/contracts`, `/app/rank/symbols`.
 - **Series annotation:** `scripts/annotate-series-screenshots.ts` — bakes numbered callouts onto series images (see Annotation below).
-- **Content source of truth:** start with this ops repo's `knowledge/*.md` for product-facing concepts, metric definitions, data freshness, schema vocabulary, and methodology vocabulary. Then read `tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md` (what each surface does) and `.../domain-invariants.md` (the rules, e.g. freemium boundaries) for `option-trades`, `rank`, `shared`; plus `doc/knowledge/glossary.md` if present for canonical names. These sources are already at useful altitude — quote/condense them; do not paste engineering internals.
+- **Content source of truth:** start with this ops repo's `knowledge/*.md` for product-facing concepts, metric definitions, data freshness, schema vocabulary, and methodology vocabulary. Then read `tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md` (what each surface does) and `.../domain-invariants.md` (the rules, e.g. freemium boundaries) for `option-trades`, `rank`, `shared`; plus `knowledge/basic_concepts.md` if present for canonical names. These sources are already at useful altitude — quote/condense them; do not paste engineering internals.
 
 ### Financial University Teacher Review
 
@@ -300,7 +300,7 @@ Before editing:
 - git status the landing + webapp worktrees; don't revert unrelated changes.
 - Read this ops repo's knowledge/*.md for product-facing concepts, metric definitions, and data freshness.
 - Then read tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/functionality.md +
-  domain-invariants.md (option-trades, rank, shared) and doc/knowledge/glossary.md if present.
+  domain-invariants.md (option-trades, rank, shared) and knowledge/basic_concepts.md if present.
 
 Structure:
 - Flat clean-slug chapters slug.mdx + slug.zh.mdx; order via index.mdx/index.zh.mdx `posts: [...]`.

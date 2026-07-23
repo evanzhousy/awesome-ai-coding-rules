@@ -6,7 +6,7 @@ This document is the **UI/style harness** for TradingFlow: semantic tokens, shad
 
 When sources disagree, use this order:
 
-1. **`doc/knowledge/glossary.md`** and task-relevant docs under **`doc/domain-knowledge/`** (invariants and feature behavior).
+1. **`knowledge/basic_concepts.md`** and task-relevant docs under the webapp **`doc/domain-knowledge/`** (invariants and feature behavior).
 2. **[`AGENTS.md`](../../AGENTS.md)** (mandatory UI rules, package commands, wiki maintenance triggers).
 3. **This harness** (preset, tokens, composition habits).
 4. **Current code** — do not treat implementation as permission to violate documented product or UI contracts.
@@ -142,7 +142,9 @@ This project aligns with the **shadcn/ui** theme created from:
 
 **[New Project — preset `b1aIaoaxs`](https://ui.shadcn.com/create?preset=b1aIaoaxs)**
 
-That preset selects **base-luma**, **Base UI**, **neutral** base + **neutral** primary (near-black CTAs), **Inter** (body + heading), **default** radius (`--radius: 0.625rem`), Lucide icons, and blue chart colors. Use it when regenerating or comparing primitives so tokens and component chrome stay consistent.
+That preset selects **base-luma**, **Base UI**, **neutral** base, **Inter** (body + heading), **default** radius (`--radius: 0.625rem`), Lucide icons, and blue chart colors. Use it when regenerating or comparing primitives so tokens and component chrome stay consistent.
+
+**Brand primary override (product decision):** `--primary` / `--sidebar-primary` in **`src/index.css`** use TradingFlow dark blue `#1e4d7b` (light + dark) — not the preset’s neutral near-black/near-white primary. Keep that override when re-applying theme/fonts from the preset CLI.
 
 **Stack model (do not conflate layers):**
 
@@ -422,6 +424,6 @@ Dialog, alert-dialog, and sheet **overlays** should dim the page using **theme t
 ## Related references
 
 - **[`AGENTS.md`](../../AGENTS.md)** — UI rules, shadcn baseline, observability triggers.
-- **[`doc/knowledge/glossary.md`](../knowledge/glossary.md)** — canonical terms.
+- **[`knowledge/basic_concepts.md`](../../knowledge/basic_concepts.md)** — canonical terms.
 - **`doc/domain-knowledge/`** — invariants and feature behavior when UI work touches product contracts.
 - **[`.agents/skills/shadcn/SKILL.md`](../../.agents/skills/shadcn/SKILL.md)** — full shadcn/ui operational rules for this repo.

@@ -478,7 +478,7 @@ Watchlist identity is `items[*].symbol`. `exchange` is cached metadata for displ
 }
 ```
 
-The server normalizes legacy singleton Option Trades Preference documents into one default Saved Filter Set named `Default`. The API enforces at least one set, exactly one default, default delete rejection, and last-set delete rejection. Legacy DynamoDB `table_filters` are converted only by the one-time backfill script and are not preserved in Neon.
+The server normalizes legacy singleton Option Trades Preference documents into one default Saved Filter Set named `Default`. The API enforces at least one set, exactly one default, default delete rejection, and last-set delete rejection. Neon preference documents are now the source of truth; legacy table-filter records are not read at runtime.
 
 ### Indexes
 

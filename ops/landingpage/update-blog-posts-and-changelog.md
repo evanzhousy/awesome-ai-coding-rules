@@ -1,25 +1,27 @@
 ---
 name: update-blog-posts-and-changelog
-description: Maintains TradingFlow landing-page blog posts (MDX under content/posts with covers, screenshots via capture-blog-ui) and the Product Changelog (src/lib/productChangelog.ts release cards, What's New sync). Covers UI capture workflow, ROUTE_PLAN + retired-post sync, EN/zh parity, changelog card shape/tests, glossary alignment, and cross-sync between blog ships and in-app carousel. Use when editing blog posts, refreshing data-app screenshots, adding/editing changelog releases, shipping user-visible product notes, or coordinating What's New after product updates.
+description: Maintains TradingFlow landing-page blog posts (MDX under content/posts with covers, screenshots via capture-blog-ui), the public Product Changelog (src/lib/productChangelog.ts release cards), and signed-in Featurebase Product Updates. Covers UI capture workflow, ROUTE_PLAN + retired-post sync, EN/zh parity, changelog card shape/tests, glossary alignment, and cross-sync between blog ships, changelog cards, and Featurebase Updates. Use when editing blog posts, refreshing data-app screenshots, adding/editing changelog releases, shipping user-visible product notes, or coordinating Featurebase Updates after product updates.
 ---
 
-# Update Blog Posts and Product Changelog (TradingFlow landing)
+# Update Blog Posts, Product Changelog, and Featurebase Updates (TradingFlow landing)
 
-This combined skill covers maintenance of two closely related areas on the marketing site: the bilingual blog posts and the public Product Changelog. They frequently intersect during product ships (blog post + changelog card + What's New carousel slide).
+This combined skill covers maintenance of three closely related release surfaces: bilingual landing blog posts, the public Product Changelog, and signed-in Featurebase Product Updates. They frequently intersect during product ships (blog post + changelog card + Featurebase Update).
 
 ## Recommended Invocation
 
 Use `/goal` for product-ship or content-refresh runs:
 
-- Objective: update the requested blog posts, screenshots, changelog releases, and What's New sync without drifting from the current product contract.
-- Success criteria: involved worktrees are checked before edits, screenshots/covers/changelog cards are verified with the documented commands, sibling webapp What's New sync is handled or explicitly deferred, and this runbook is updated for reusable drift.
+- Objective: update the requested blog posts, screenshots, changelog releases, and Featurebase Updates sync without drifting from the current product contract.
+- Success criteria: involved worktrees are checked before edits, screenshots/covers/changelog cards are verified with the documented commands, sibling webapp Featurebase Product Updates sync is handled or explicitly deferred, and this runbook is updated for reusable drift.
 - Stop condition: all requested content artifacts pass verification, or a blocker identifies the exact missing repo access, login, screenshot, locale, or test condition.
 
 ## Agent Handoff
 
-Last updated: 2026-07-01
+Last updated: 2026-07-20
 
-No open handoff items after the latest run. Keep using `bun run letter-blog-covers` after screenshot capture/sync when cover copy needs to stay current, keep generated blog covers aligned with the landing repo's shadcn/base-mira visual system, use the webapp shared domain docs for What's New policy checks, update webapp `public/feature-announcement/*.svg` cover art when active modal slide stories change, distinguish the Rank product entry route from explicit capture tab routes, and fall back to module-specific domain docs when `doc/knowledge/glossary.md` is absent.
+### Look First
+
+- [ ] Re-verify the signed-in Featurebase **Updates** dropdown from the live app footer when an authenticated browser session is available. Latest run published Featurebase changelog `6a5dde46d23ee72bbc2bef6c` (`rank-saved-views-and-steadier-previews`) and verified API/public URL state, but ego-browser inherited a guest session so the footer dropdown/read-state click could not be completed.
 
 ## When to use
 
@@ -27,7 +29,7 @@ Use this skill when:
 - Changing `content/posts/**` (copy, screenshots, covers, cross-links, or verifying no loading spinners / bad images).
 - Adding, editing, or reordering release cards in the public changelog.
 - The user mentions `/changelog`, `tradingflow.com/changelog`, `PRODUCT_CHANGELOG_RELEASES`, product release notes, or blog UI captures.
-- You need to keep blog screenshots and changelog / What's New in sync after a product ship.
+- You need to keep blog screenshots, public changelog cards, and Featurebase Updates in sync after a product ship.
 
 ## Repo map
 
@@ -45,7 +47,7 @@ Use this skill when:
 - i18n chrome: `src/i18n/translations.ts`.
 - Feature gate: `site.config.ts` `features.changelog.enabled`.
 
-**Important invariant:** The single source of truth for release data is **the landing repo** (`tradingflow-web-landingpage`). The webapp (`tradingflow-webapp-fullstack`) only links to `${MARKETING_SITE_URL}/changelog` and does not duplicate `PRODUCT_CHANGELOG_RELEASES`.
+**Important invariant:** The single source of truth for public release data is **the landing repo** (`tradingflow-web-landingpage`). Signed-in Product Updates are published/read through Featurebase. The webapp (`tradingflow-webapp-fullstack`) links to `${MARKETING_SITE_URL}/changelog` for the public changelog and must not duplicate `PRODUCT_CHANGELOG_RELEASES`.
 
 ### Current app route topology
 - **Rank workbench:** `/app/rank` opens the product-level Rank surface with Contracts as the default view.
@@ -64,7 +66,7 @@ git status --short
 
 - Treat unrelated modified/deleted/untracked files as user or external work. Do not revert them.
 - If a sibling dev server is already running, reuse the active port after confirming it serves the webapp.
-- Keep intended edits scoped to the landing repo, the webapp What's New config/tests, and this runbook unless the product/docs contract requires more.
+- Keep intended edits scoped to the landing repo, Featurebase Update publication/verification, and this runbook unless the product/docs contract requires webapp integration changes.
 
 ## Blog Posts Maintenance
 
@@ -91,9 +93,9 @@ git status --short
 3. Defaults (override via env):
    - Email: `active+clerk_test@example.com` (`E2E_LOGIN_EMAIL`, `E2E_LOGIN_EMAIL_ACTIVE`)
    - OTP: `424242` (`E2E_VERIFICATION_CODE`)
-4. References: webapp `tests/e2e/fixtures/auth.ts`, its `doc/automation/e2e-test/README.md`, and landing `AGENTS.md`.
+4. References: webapp `tests/e2e/fixtures/auth.ts`, sibling `awesome-ai-coding-rules/ops/webappp-fullstack/browser-e2e-product-review.md`, and landing `AGENTS.md`.
 
-The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`, seeds `sessionStorage` for feature announcements (default campaign `2026-06-late-recap-cookbooks-flow`, overridable via `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID`), and handles What's New dismissal.
+The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`. If you are capturing an old branch that still mounts the retired custom What's New modal, keep its dismissal key in sync with that branch's campaign. Current production Product Updates are Featurebase-owned and do not use the legacy sessionStorage campaign key.
 
 **Troubleshooting:** wrong `BLOG_UI_CAPTURE_BASE_URL` port, mismatched Clerk keys, stale OTP env — fix before re-running.
 
@@ -162,23 +164,21 @@ Use annotations when a dense product screenshot needs help explaining the workfl
 
 ### Content rules
 - **EN + zh:** Keep `index.mdx` and `index.zh.mdx` in sync (structure, images, adapted captions).
-- **Domain truth:** For product routes/params/naming, read sibling `tradingflow-webapp-fullstack/doc/domain-knowledge/` and the glossary if it exists. If `doc/knowledge/glossary.md` is absent, do not fail the run; use the relevant `doc/domain-knowledge/<module>/domain-invariants.md` and `functionality.md`, plus current route/menu copy in `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and locale strings.
+- **Domain truth:** For product routes, params, and UI naming, read sibling `tradingflow-webapp-fullstack/doc/domain-knowledge/`, plus current route/menu copy in `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and locale strings. Use `awesome-ai-coding-rules/knowledge/basic_concepts.md` and `knowledge/data_schema.md` as shared data-concept references when relevant, but do not treat them as the webapp UI naming authority. If a referenced knowledge path is absent in a checkout, do not fail the run; fall back to the module-specific webapp docs.
 - **Links:** Follow static-export rules in `AGENTS.md` (real slugs, no placeholders).
 
-### What's New alignment (sibling webapp)
-Blog work for a product ship should be coordinated with changelog / What's New updates (see below).
+### Featurebase Updates alignment (sibling webapp)
+Blog work for a product ship should be coordinated with public changelog and signed-in Featurebase Updates (see below).
 
 After capture/MDX edits:
-- If a post slug is in an active slide’s `postPath`, refresh the slide’s `body` and confirm `postPath`.
-- For every user-visible release card or product walkthrough refresh, check `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts`. The modal should either be updated or explicitly left unchanged with a reason.
-- What's New cards are intentionally non-disruptive: each card expires seven calendar days after `publishedAt`; if all cards are expired, the modal must not pop up.
-- Keep modal card copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals in the modal.
-- When active modal slide stories change, update the matching SVG cover art under webapp `public/feature-announcement/*.svg` in the same pass. Covers should be content-led, sparse, and shadcn-like: neutral card surfaces, subtle borders/shadows, restrained blue/green/red accents, no TradingFlow brand text, no slide title pasted into the art, and one clear motif from the slide story.
-- Wire new or changed cover art through webapp `src/components/FeatureAnnouncement/coverRegistry.tsx`; prefer a new `coverId` when the story changes materially, keep old IDs for older slides if still useful, and bump `FEATURE_ANNOUNCEMENT_COVER_VERSION` whenever a cover asset changes.
-- Visually inspect changed SVG covers for clipping, unreadable tiny text, overlap, and mismatch with the modal copy before accepting them.
-- Per-slide expiry and mapping rules live in webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Feature Announcements ("What's New")**; behavior notes live in `doc/domain-knowledge/shared/functionality.md`.
-- If `FEATURE_ANNOUNCEMENT.campaignId` changes, update the capture script default and `AGENTS.md`.
-- Add or update `src/config/featureAnnouncement.test.ts` assertions when the active campaign, route links, post links, expiry, or modal copy contract changes.
+- For every user-visible release card or product walkthrough refresh, decide whether a matching **Featurebase Update** should be created or refreshed. Featurebase is the signed-in Product Updates source of truth; the landing changelog remains the public source of truth.
+- Keep Featurebase Update copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals.
+- Current webapp contract: `FeaturebaseAppProvider` mounts once at the app root; `FeaturebaseSurfaces` owns the Updates dropdown and unread card; the footer trigger is `data-featurebase-changelog`; Product feedback lives at `/user/product-feedback`; legacy `/app/portal` redirects there.
+- Read webapp `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` under **Product Updates ("What's New")** before changing Product Updates behavior or link policy.
+- Read these code surfaces when verifying integration drift: `src/components/Featurebase/FeaturebaseAppProvider.tsx`, `src/components/Featurebase/FeaturebaseSurfaces.tsx`, `src/components/FooterToolbar/index.tsx`, `src/components/GlobalHeader/AvatarDropdown.tsx`, `src/components/Featurebase/FeaturebaseProductFeedbackPage.tsx`, `src/human/appConfigs.ts`, and `src/human/featureFlags.ts`.
+- Do **not** add or update `src/config/featureAnnouncement.config.ts`, `src/config/featureAnnouncement.test.ts`, or `public/feature-announcement/*.svg` for current production Product Updates; those belong only to retired/legacy branches that still mount the custom modal.
+- Featurebase workspace evidence: current app id is in webapp `APP_CONFIGS.FEATUREBASE_APP_ID`, and the live workspace is documented in `src/human/appConfigs.ts` as `https://tradingflowcom.featurebase.app`.
+- If publishing through Featurebase dashboard/API, verify the Update appears from the signed-in app footer **Updates** control and that Featurebase owns unread/read state. Do not add a competing app-side dismissal store.
 
 ### Verification (blog)
 ```bash
@@ -203,11 +203,11 @@ Use `bun run build` when you need production image optimizer hash refresh (see `
 This lives in `awesome-ai-coding-rules/ops/landingpage/update-blog-posts-and-changelog.md`; when working in the landing repo, reference it as the sibling `../awesome-ai-coding-rules/...` runbook.
 
 ### Greenfield invariant
-**Exactly one** changelog source of truth: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`) in the **landing repo**. The webapp links to the marketing page; it does not own the data.
+**Exactly one** public changelog source of truth: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`) in the **landing repo**. Signed-in Product Updates are Featurebase-owned. The webapp links to the marketing page for public release notes; it does not own public changelog data.
 
 ### Mandatory reads (sibling webapp)
-1. Canonical names — Read `doc/knowledge/glossary.md` if it exists. If it is absent, do not fail the run; use the relevant `doc/domain-knowledge/<module>/domain-invariants.md` and `functionality.md`, plus `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and current locale/menu strings. Treat `doc/knowledge/basic_concepts.md` and `doc/knowledge/data_schema.md` as data-concept references, not UI naming authority.
-2. `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` — Only if touching What’s New behavior, footer/modal link policy, or URL/new-tab contract.
+1. Canonical names — Read the relevant webapp `doc/domain-knowledge/<module>/domain-invariants.md` and `functionality.md`, plus `src/utils/constants.ts`, `src/layouts/mainNav.ts`, and current locale/menu strings. Use sibling `awesome-ai-coding-rules/knowledge/basic_concepts.md` and `knowledge/data_schema.md` only as shared data-concept references when needed; they are not the authority for current webapp UI names.
+2. `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` — Only if touching Product Updates, Featurebase, footer update controls, feedback routing, link policy, or URL/new-tab contract.
 
 ### Repo map (landing repo)
 - Release data: `src/lib/productChangelog.ts` (`PRODUCT_CHANGELOG_RELEASES`, `PRODUCT_CHANGELOG_AREAS`, `PRODUCT_CHANGELOG_SECTION_ORDER`, `Localized<T>`, pick helpers).
@@ -219,9 +219,11 @@ This lives in `awesome-ai-coding-rules/ops/landingpage/update-blog-posts-and-cha
 
 Changing only release copy or adding cards usually touches **only** `productChangelog.ts`. Touch UI or `translations.ts` only for presentation/chrome changes.
 
-### Public URL and webapp links
+### Public URL, Featurebase, and webapp links
 - Canonical: `https://tradingflow.com/changelog` (static export, trailing slash per site config).
-- Webapp: `MARKETING_SITE_URL + /changelog` (new tab from Option Trades footer, What’s New, etc.). Do **not** reintroduce an in-app `/changelog` route or duplicate the data.
+- Webapp public changelog links: `MARKETING_SITE_URL + /changelog` from app surfaces that need the public release ledger. Do **not** reintroduce an in-app `/changelog` route or duplicate the data.
+- Signed-in Product Updates: Featurebase Updates dropdown from the fixed footer **Updates** control. Featurebase owns update content, ordering, unread/read state, destination behavior, and the optional non-blocking unread card.
+- Product feedback: avatar menu **Product feedback** opens `/user/product-feedback`; legacy `/app/portal` redirects there.
 
 ### Scope (what belongs in the changelog)
 Only behavior that **shipped** to real users in production (or the intended hosted product).
@@ -234,7 +236,7 @@ Only behavior that **shipped** to real users in production (or the intended host
 - Notebook/wiki-only, SQL/metadata tweaks with no clear user-visible outcome.
 - Commit hashes, ticket IDs, branch names, subsystem codenames.
 
-**Prefer to include:** glossary-named surfaces, localization users see, filters/tables/live mode, ranking/lookup behavior, What’s New / footer UX, real user-visible **Fixed** items.
+**Prefer to include:** glossary-named surfaces, localization users see, filters/tables/live mode, ranking/lookup behavior, Product Updates / footer UX, real user-visible **Fixed** items.
 
 **Locales:** New cards should ship with both `en` and `zh` (`title`, `summary`, parallel bullet arrays) unless explicitly backfilling English only (add `zh` later).
 
@@ -262,40 +264,55 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 
 | Intent | Repo / ref | Notes |
 | --- | --- | --- |
-| Product / data-app releases (Option Trades, Option Chain Analysis, Contract-level analysis, Symbol-level analysis, What’s New, etc.) | `tradingflow-webapp-fullstack` — `origin/main` (or `main`) | Run dated log: `git fetch origin main && git log origin/main --format='%h %ad %s' --date=short -80 --since=YYYY-MM-DD`. |
+| Product / data-app releases (Option Trades, Option Chain Analysis, Contract-level analysis, Symbol-level analysis, Product Updates / Featurebase, etc.) | `tradingflow-webapp-fullstack` — `origin/main` (or `main`) | Run dated log: `git fetch origin main && git log origin/main --format='%h %ad %s' --date=short -80 --since=YYYY-MM-DD`. |
 | Marketing site only (new landing sections, pricing table, SEO, static pages) | `tradingflow-web-landingpage` — `origin/main` | Use when user explicitly wants landing ships or no app change but public site changed materially. |
 
 **Grouping:** Merge commits into one card per ship moment. Pick `publishedAt` as the calendar date of the latest user-visible ship in the cluster.
 
 ### Workflow
 1. **Gather** — App-facing: dated `git log` on `tradingflow-webapp-fullstack origin/main`. Landing-only: same on `tradingflow-web-landingpage`. Map to glossary surface names.
-2. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history).
-3. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
-4. **What's New (webapp)** — After new/updated cards, sync the in-app carousel in `tradingflow-webapp-fullstack/src/config/featureAnnouncement.config.ts` (see “What's New sync” below). Do **not** duplicate the releases array into the webapp.
-5. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
-6. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` as applicable (per its `AGENTS.md`).
-7. **Webapp locales** — If changing in-app strings that link to changelog, edit webapp `src/locales/*.ts` and run its locale parity checker.
+2. **Flag / rollout check** — Before drafting each candidate bullet, verify it is enabled for the intended production audience, not merely implemented or merged. Check `src/human/featureFlags.ts`, module config helpers, per-user rollout gates such as PostHog flags, and route/access guards. If a feature is off, internal-only, or gated to a narrow rollout, omit it or scope the copy to the enabled audience.
+3. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history) and any feature that is implemented but not enabled.
+4. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
+5. **Featurebase Updates** — After new/updated cards, create or refresh the matching signed-in Featurebase Update unless explicitly deferred with a reason (see “Featurebase Updates sync” below). Do **not** duplicate the releases array into the webapp.
+6. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
+7. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` as applicable (per its `AGENTS.md`).
+8. **Webapp locales** — If changing in-app strings that link to changelog, edit webapp `src/locales/*.ts` and run its locale parity checker.
 
-### What's New sync (sibling webapp)
-After editing `productChangelog.ts`, keep the in-app carousel aligned:
+### Featurebase Updates sync (sibling webapp + Featurebase)
+After editing `productChangelog.ts`, keep signed-in Product Updates aligned:
 
-1. Read webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Feature Announcements ("What's New")** and `doc/domain-knowledge/shared/functionality.md` when feature behavior or user-facing copy changes.
-2. Edit `src/config/featureAnnouncement.config.ts` — for each new/materially updated release still inside the seven-day What's New window, add/update a slide:
-   - `publishedAt` = changelog `publishedAt`
-   - `activeUntilIso` = `buildSlideActiveUntilIso(publishedAt)` (7-day TTL; exclusive end)
-   - `title` / `body` = short, story-level carousel copy. Use glossary names, but do not copy detailed changelog bullets.
-   - `coverId`, `linkHref`, optional `postPath` / `postLabel` from the current product route and story.
-3. Update or add the matching SVG cover(s) in webapp `public/feature-announcement/`. If the active slide set now talks about a different story than the previous asset, create a new SVG filename and `coverId` instead of reusing an unrelated old surface cover.
-4. Update `src/components/FeatureAnnouncement/coverRegistry.tsx` for the active cover IDs and bump `FEATURE_ANNOUNCEMENT_COVER_VERSION` whenever SVG/PNG bytes change.
-5. Delete slide rows whose `activeUntilIso` is in the past. If all slides are expired, leave the active slide set empty so the modal does not pop up.
-6. Bump `campaignId` when the active slide set changes; extend `showUntilIso` and update any tests that assert the global expiry date, active cover IDs, and active links.
-7. Verify: visually inspect changed cover SVGs, then run `pnpm exec vitest run src/config/featureAnnouncement.test.ts` (in webapp).
-8. If `campaignId` changed, update landing `scripts/capture-blog-ui-screenshots.ts` default `BLOG_UI_FEATURE_ANNOUNCEMENT_CAMPAIGN_ID` and [AGENTS.md].
+1. Read webapp `doc/domain-knowledge/shared/domain-invariants.md` under **Product Updates ("What's New")** and `doc/domain-knowledge/shared/functionality.md` when feature behavior or user-facing copy changes.
+2. Draft the matching **Featurebase Update** from the public changelog story:
+   - `title` / short body = story-level, not a dense release-note dump.
+   - Link to the most useful app route or public blog/changelog page only when it helps the user act.
+   - Keep implementation details, commit IDs, branch names, and raw URLs out of user-facing copy.
+3. Publish or update the Featurebase Update through the approved Featurebase dashboard/API path for `https://tradingflowcom.featurebase.app`. If you cannot access Featurebase, explicitly report `Featurebase Update deferred` with the blocker.
+   - REST reference: `https://docs.featurebase.app/rest-api/changelogs/createchangelog` (`https://do.featurebase.app/v2/changelogs`, `Featurebase-Version: 2026-01-01.nova`).
+   - Before creating, query for likely duplicates with `GET /v2/changelogs?state=all&limit=20&q=<short title phrase>`.
+   - Use `FEATUREBASE_API_KEY` only from the local shell or exact variable extraction; do not source a full `.env.local` if unrelated unquoted values make it parse-unsafe.
+   - Keep REST-created copy short and story-level. `title`, `markdownContent`, `locale`, and `date` are usually enough.
+   - `categories` are optional and must already exist in the workspace. Do not assume `Fixed` exists just because the public changelog has a `fixed` section.
+   - Verify the create response. If it returns `state: "draft"`, an empty slug, or `isPublished: false`, call `POST /v2/changelogs/{id}/publish` with `{"sendEmail":false,"locales":["en"]}` before reporting publication complete.
+   - After publish/update, verify `state: "live"`, `isPublished: true`, `publishedLocales` includes `en`, `emailSentToSubscribers: false`, and the public URL returns HTTP 200.
+4. Verify in the app, not only in the dashboard:
+   - Signed-in user sees the footer **Updates** control only after Featurebase identity reaches `identified`.
+   - The trigger has `data-featurebase-changelog` and opens the Featurebase Updates dropdown.
+   - Featurebase owns unread/read state and any non-blocking unread card.
+   - Auth, login modal, paywall, and `/app/billing` flows do not receive intrusive update cards.
+   - `/user/product-feedback` loads the Featurebase embed or a clear unavailable/error state; `/app/portal` redirects there.
+5. If webapp Featurebase integration code changes, run focused checks from `tradingflow-webapp-fullstack`:
+   - `pnpm exec vitest run src/components/Featurebase/featurebaseUpdatesContract.test.ts src/components/Featurebase/FeaturebaseAppProvider.test.ts src/components/Featurebase/FeaturebaseProductFeedbackPage.test.ts src/components/Featurebase/featurebaseJsDependency.test.ts src/server/featurebase.test.ts src/server/core/config.test.ts`
+   - `pnpm locale:check`
+   - `pnpm validate:routes`
+   - `pnpm build:test`
+   - Browser smoke on a built preview for `/user/product-feedback`, `/app/portal`, and a signed-in footer **Updates** click.
+6. Do not update legacy `featureAnnouncement` config/tests/SVG covers for current production Product Updates. Only touch those files when explicitly maintaining an old branch that still mounts the retired modal.
 
 ### Runbook self-maintenance
 This runbook is part of the workflow. Update it in the same pass when a real run discovers drift.
 
-- At the end of each run, decide whether the run revealed a reusable lesson for future blog/changelog/What's New work.
+- At the end of each run, decide whether the run revealed a reusable lesson for future blog/changelog/Featurebase Updates work.
 - Promote durable lessons into the relevant workflow section, pasteable instruction, verification command, or anti-pattern list.
 - Keep transient next-run state in `Agent Handoff`; keep one-off content decisions, release candidates, screenshot review notes, and current-run blockers in the final report unless they remain unresolved.
 - Prune completed or obsolete handoff items before adding new ones.
@@ -303,8 +320,8 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - Update selectors, route topology, expected warnings, commands, verification steps, and screenshot/annotation rules when the live repos disagree with this document.
 - When adding a new helper script or package script, document the command here and in any pasteable agent instruction.
 - When blog cover art or cover copy drifts, document the cover-lettering command and acceptance checks; future agents must be able to regenerate covers without manual image editing, and cover acceptance checks should include the current shadcn project style.
-- When What's New slide stories change, document any new webapp feature-announcement SVG cover pattern, cover IDs, and cache-bust expectations so future changelog runs do not leave stale modal art.
-- When changing the What's New modal workflow, update both this runbook and the webapp `featureAnnouncement` tests so the operational contract is executable.
+- When Featurebase Updates behavior changes, document the app trigger, provider, identity, route, dashboard/API, and verification expectations so future changelog runs do not publish only one release ledger.
+- When changing the Product Updates/Featurebase workflow, update both this runbook and the webapp Featurebase docs/tests so the operational contract is executable.
 - Keep guidance concrete: include exact file paths, env vars, and acceptance checks. Remove stale references instead of layering contradictory notes.
 - Do not use self-maintenance as a reason for broad cleanup; keep runbook edits tied to lessons from the current run.
 - Do not update this runbook for one-off changelog copy choices, raw git logs, temporary screenshot artifacts, or completed progress that belongs only in the final handoff.
@@ -316,10 +333,11 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 - Duplicate `publishedAt`, wrong sort order, reused `id`.
 - Shipping local-only or unreleased features.
 - Duplicating `PRODUCT_CHANGELOG_RELEASES` in the webapp (forbidden).
-- Adding What's New slides without proper `activeUntilIso` or leaving stale expired rows.
-- Writing What's New cards like detailed changelog entries instead of short story-level announcements.
-- Changing What's New copy while reusing stale or unrelated cover art from an older product story.
-- Forgetting to bump `campaignId`.
+- Publishing a public changelog card while forgetting the matching Featurebase Update.
+- Reintroducing the retired custom What's New modal, campaign dismissal store, `featureAnnouncement` config, or `public/feature-announcement` cover workflow for current production updates.
+- Writing Featurebase Updates like detailed changelog entries instead of short story-level announcements.
+- Duplicating feedback/portal controls in the footer; Product feedback belongs in the avatar menu and `/user/product-feedback`.
+- Assuming a Featurebase dashboard update is enough without verifying the signed-in app footer Updates dropdown.
 - Treating landing `git` history as default for in-app product bullets (it's mostly marketing/SEO).
 - Updating MDX screenshots while leaving `images/cover.png` with obsolete route names, legacy product positioning, or unreadable cover lettering.
 
@@ -333,24 +351,26 @@ Before editing blog posts (content/posts/**):
 - After capture, inspect regenerated screenshots for loading copy/spinners/skeletons before accepting them.
 - If using screenshot callouts, annotate only after raw captures are clean and verify the labels do not cover the data.
 - Update `images/cover.png` visible short content cue when the post story, route, or retired/merged status changes; run `bun run letter-blog-covers` and inspect changed covers for no brand/title text, legibility, minimal copy, post-specific meaning, and alignment with the landing repo's current shadcn style.
-- Coordinate with changelog / What's New when the post accompanies a product ship.
+- Coordinate with the public changelog and Featurebase Updates when the post accompanies a product ship.
 
 Before editing the changelog:
-1. Read tradingflow-webapp-fullstack/doc/knowledge/glossary.md for canonical surface names if present. If absent, use the relevant doc/domain-knowledge/<module>/domain-invariants.md and functionality.md files, plus current route/menu copy in src/utils/constants.ts, src/layouts/mainNav.ts, and locale strings.
-2. Follow the combined update-blog-posts-and-changelog skill (release card shape, scope, Git history guidance for which repo to mine, What's New sync).
-3. If the task touches What’s New or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/shared/domain-invariants.md and tradingflow-webapp-fullstack/doc/domain-knowledge/shared/functionality.md.
+1. Read the relevant tradingflow-webapp-fullstack/doc/domain-knowledge/<module>/domain-invariants.md and functionality.md files, plus current route/menu copy in src/utils/constants.ts, src/layouts/mainNav.ts, and locale strings. Use sibling awesome-ai-coding-rules/knowledge/basic_concepts.md and knowledge/data_schema.md only as data-concept references when relevant.
+2. Follow the combined update-blog-posts-and-changelog skill (release card shape, scope, Git history guidance for which repo to mine, Featurebase Updates sync).
+3. If the task touches Product Updates, Featurebase, feedback routing, footer controls, or link policy, read tradingflow-webapp-fullstack/doc/domain-knowledge/shared/domain-invariants.md and tradingflow-webapp-fullstack/doc/domain-knowledge/shared/functionality.md.
 
 Implementation:
 - Blog: edit MDX + images under content/posts; run capture-blog-ui when needed; keep covers in images/cover.png; sync retired posts from Option Chain Analysis when appropriate, then run letter-blog-covers if cover copy should differ by post.
 - Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
-- After new release cards or blog ships that affect What's New: sync slides in webapp featureAnnouncement.config.ts, update matching SVG covers under public/feature-announcement, wire coverRegistry.tsx and bump its cache version, update featureAnnouncement.test.ts, bump campaignId, update capture script default if needed.
+- Before announcing a feature, verify it is enabled for the intended production audience via feature flags, PostHog rollout gates, route guards, and access gates; do not announce implemented-but-disabled work.
+- After new release cards or blog ships that affect Product Updates: create or refresh the matching Featurebase Update in the TradingFlow Featurebase workspace, or explicitly defer it with the access/blocker. Do not edit retired featureAnnouncement config/tests/SVG covers unless maintaining a legacy branch that still mounts the old modal.
 - If the run reveals drift in these instructions, update this runbook in the same pass with the exact selector, command, warning, or acceptance check.
 - After blog MDX/image changes: run `bun run letter-blog-covers` when cover copy/assets changed, then `bun run lint && bun run build:dev` (or build for prod hashes).
-- After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then in webapp visually inspect changed feature-announcement SVG covers and run the featureAnnouncement test.
+- After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then verify the signed-in Featurebase Updates dropdown or report why Featurebase publication/verification was deferred.
+- If webapp Featurebase integration code changes: from tradingflow-webapp-fullstack run the focused Featurebase vitest set, `pnpm locale:check`, `pnpm validate:routes`, `pnpm build:test`, and browser smoke `/user/product-feedback`, `/app/portal`, and the footer Updates trigger.
 
 Verify both:
 - Blog: lint + build:dev (plus build when hashes matter).
-- Changelog: the productChangelog test + webapp featureAnnouncement test.
+- Changelog: the productChangelog test + Featurebase Update publication/verification, or a clear deferred reason.
 ```

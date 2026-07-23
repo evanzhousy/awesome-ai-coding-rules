@@ -31,9 +31,13 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-07-08
+Last updated: 2026-07-21
 
-No open handoff items after the latest run.
+### Look First
+
+Open process-service deploy drift as of 2026-07-21: the production GCE checkout is still at `449394f`, while remote `master` is `17fadd0`. The stale runtime still excludes `MXEF` from symbol metadata and still calls the unauthenticated Contract Rank refresh path. Treat production behavior that conflicts with the current repo as deploy drift until the deployed revision is reconciled; this run did not mutate production.
+
+The 2026-07-20 Contract Rank recovery remains healthy. Test version `ea7b32da-7dfd-4531-9627-b22198b1ae16` promoted consecutive `314982`- and `318430`-row snapshots. Production version `59dc51d7-9d28-450a-9784-935de285e6a4` then promoted `321850` rows with `latestTradeTime=2026-07-20 15:30:59`, and its advertised V2 object matched metadata and immutable R2 headers. The single `contract_rank_snapshot_build_abandoned` at the start of the production recovery was cleanup of the pre-deploy 100000-row checkpoint; the new build progressed through 300000 rows and emitted `contract_rank_snapshot_refresh_completed`.
 
 Current durable guidance from recent runs:
 
@@ -41,7 +45,12 @@ Current durable guidance from recent runs:
 - Current `tradingflow-cfworker-service` code has retired Worker UW ingestion: `/uw-ingestion/*` and `/ingest` should return `404` after the removal deploy. If production still returns `200` for `/uw-ingestion/status` or emits `uw_ingestion_*` logs, treat that as stale Worker deployment / deploy skew first, then verify with `npx wrangler deployments list --env production`.
 - Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
 - For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
-- Current contract-rank columnar reads should redirect to immutable R2 objects when `columnarObjectPath` is present. Verify with a bounded `GET` to `/api/v1/contract-rank/latest-snapshot?format=columns`: expect a `307` to `/api/v1/contract-rank/snapshot-objects/.../columns-v1.json`, followed by `200` with `x-contract-rank-r2-key` and immutable cache headers. Do not use `HEAD` for this check; the columnar route can return `405`.
+- Current contract-rank metadata can advertise both `columnarV2ObjectPath` and the V1 `columnarObjectPath`. Prefer a bounded `GET` to the advertised V2 path when present: expect `200`, a `columns-v2` `x-contract-rank-r2-key`, matching content-version/digest headers, and immutable cache headers. Keep `/api/v1/contract-rank/latest-snapshot?format=columns` as the V1 compatibility check; it should redirect to `columns-v1.json`. Do not use `HEAD`; columnar routes can return `405`.
+- If `cf-service` logs repeatedly show `scheduled Contract Rank snapshot branch failed: Durable Object exceeded its CPU time limit and was reset`, and ClickHouse plus `mv_contract_rank_flow` are current, classify it as a Worker snapshot-builder CPU/time-budget failure. Do not call it producer ingest loss; prove the mart freshness with the Phase 6 SQL and then fix the snapshot build path or split the refresh workload.
+- If the inner refresh reports `Durable Object's isolate exceeded its memory limit and was reset` at a repeatable row checkpoint while ClickHouse remains current, classify it as live builder-state retention. Inspect aggregate writer buffers and JavaScript object/string shape before blaming R2 object size; the final immutable object can be healthy and much smaller than the transient heap.
+- If Better Stack only has the outer scheduled HTTP 502, use the next attempt's `contract_rank_snapshot_build_abandoned` checkpoint as failure-stage evidence. Repeated `stage=row_query` at the same checkpoint row count with zero column chunks means interruption before artifact promotion; compare that row count with the checkpoint interval and current mart cardinality. Do not classify this signature as R2 failure when the advertised last-good object still validates.
+- When one pass builds multiple transport projections concurrently, multiply the per-writer flush threshold by the number of pending writers before raising CPU limits. Contract Rank has 33 concurrent text buffers; a 4 MiB threshold permitted 132 MiB of pending text before JSON and encoder overhead, while 512 KiB caps the same nominal budget at 16.5 MiB.
+- Do not treat the nominal pending-text total as the JavaScript heap total. Repeated `pending += fragment` appends form a live V8 rope node per cell; the Contract Rank writer reproduced about 184 MiB of heap at 100,000 rows with only 13.5 MiB of visible pending text. Keep value fragments periodically joined into bounded batches, expose fragment/segment counts in progress telemetry, and validate in a real Cloudflare isolate. A local high-memory Node scale test alone will not catch this failure mode.
 - Before the 09:30 ET open, current-day option-flow tables can legitimately have zero rows and strict data-quality scripts can report row-count breaches. Treat those as pre-open guardrails, not an outage, unless Better Stack lifecycle/heartbeat evidence also shows producer failure. Re-run current-day flow freshness after the first RTH window, usually 09:35 ET or later.
 - Do not treat all DEI zero rows as data loss. Split raw zero-DEI rows from actionable rows after SymbolMetaData join; precision or rounding can produce false positives.
 - A broken opening stream is P0 when websocket open fails, first trades are missing after join acknowledgement, heartbeat delivery fails, or live fanout transport is broken. Per-record normalization noise is usually P1 unless it blocks ingestion.
@@ -116,13 +125,13 @@ Requires explicit user authorization:
 
 Resolve sources at runtime. Do not rely on old IDs or table names.
 
-1. `telemetry_list_teams_tool` if team scope is unclear.
-2. `telemetry_list_sources_tool`.
+1. `mcp__betterstack__teams` if team scope is unclear.
+2. `mcp__betterstack__sources`.
 3. Match by source name:
    - `Process Service[Production]` for EC2 process-service logs and legacy writer evidence.
    - `cf-service` for Worker producer, Durable Object, snapshot refresh, and serving-layer logs.
-4. `telemetry_get_query_instructions_tool` for the resolved `source_id` and `source_type: logs`.
-5. Use the returned table names in `telemetry_query`.
+4. `mcp__betterstack__query_help` for the resolved `source_id` and `source_type: logs`.
+5. Use the returned table names in `mcp__betterstack__query`.
 
 For process-service uptime, resolve by name rather than trusting old IDs:
 
@@ -230,10 +239,26 @@ Use this phase when the active writer is process-service, when process-service j
 Required checks:
 
 - Resolve `Process Service[Production]` logs source at runtime.
-- Read `telemetry_get_query_instructions_tool` before SQL.
+- Read `mcp__betterstack__query_help` before SQL.
 - Query `level="error"` rows for the requested window.
 - Group by `jobName`, severity tag (`[P0 Error]`, `[P1 Error]`), `_pattern`, and last seen.
 - Check Uptime push heartbeat and pull canary by name.
+
+If production logs contradict the current process-service repo, verify deployment freshness before debugging current source behavior. A green canary proves liveness, not revision freshness. Keep this check read-only unless the user separately authorizes a deploy:
+
+```bash
+gcloud compute ssh instance-20260416-070150 \
+  --project=project-433c2ee5-662f-4dd7-bd9 \
+  --zone=us-central1-f \
+  --tunnel-through-iap \
+  --quiet \
+  --command="cd ~/tradingflow-process-service-ec2 && \
+    git rev-parse HEAD && \
+    git status -sb && \
+    git ls-remote origin refs/heads/master"
+```
+
+Do not use the host's cached `origin/master` ref as remote truth before a fetch; `git ls-remote` is read-only and returns the current remote head. If source and compiled `dist/` both reflect an older revision, classify the mismatch as stale deployment rather than a current provider-chain defect.
 
 Prioritize:
 
@@ -261,7 +286,7 @@ Resolve the `cf-service` Better Stack source at runtime. Event predicates to che
 | Queue path | `uw_ingest_queue_*`, `processUwIngestQueueBatch`, enqueue/drain fields |
 | Snapshot refresh | `contract_rank_snapshot_refresh_completed` / failure events, `payloadBytes`, `snapshotDate`, and duration fields |
 
-Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself.
+Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself. Repeated Durable Object CPU-limit resets during scheduled Contract Rank snapshot refreshes are serving-layer build failures when ClickHouse source and `mv_contract_rank_flow` stay current.
 
 Queue diagnosis:
 
@@ -282,12 +307,19 @@ curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
 
-For R2-backed columnar contract-rank reads:
+For R2-backed columnar contract-rank reads, inspect metadata first and prefer V2 when advertised:
 
 ```bash
+curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" \
+  -o /tmp/contract-rank-meta.json
+jq '{effectiveDate,rowCount,asOf,latestTradeTime,columnarV2ObjectPath,columnarObjectPath}' \
+  /tmp/contract-rank-meta.json
+
+# Use columnarV2ObjectPath from metadata when present; otherwise use columnarObjectPath.
+OBJECT_PATH="$(jq -r '.columnarV2ObjectPath // .columnarObjectPath' /tmp/contract-rank-meta.json)"
 curl -sS -L --compressed --max-time 30 \
   -D /tmp/contract-rank-columns.headers \
-  "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot?format=columns" \
+  "$WORKER_ORIGIN$OBJECT_PATH" \
   -o /tmp/contract-rank-columns.json
 sed -n '1,80p' /tmp/contract-rank-columns.headers
 jq '{v,d,rc,cv,as,columnKeys:(.c|keys|length), sidLen:(.c.sid|length)}' /tmp/contract-rank-columns.json
@@ -295,8 +327,8 @@ jq '{v,d,rc,cv,as,columnKeys:(.c|keys|length), sidLen:(.c.sid|length)}' /tmp/con
 
 Expected healthy evidence:
 
-- First response is a `307` redirect to `/api/v1/contract-rank/snapshot-objects/.../columns-v1.json`.
-- Object response is `200` with `x-contract-rank-r2-key`, matching `x-contract-rank-content-version`, and immutable cache headers.
+- When `columnarV2ObjectPath` is present, the advertised object response is `200` with a `columns-v2` `x-contract-rank-r2-key`, matching `x-contract-rank-content-version` and payload-digest headers, and immutable cache headers.
+- When V2 is absent, the advertised V1 object is the compatibility fallback. The alias route `/api/v1/contract-rank/latest-snapshot?format=columns` can also be checked separately and should return a `307` to `columns-v1.json` followed by `200`.
 - No `x-contract-rank-object-fallback` header appears.
 - Parsed payload date and row count match latest snapshot metadata.
 - `HEAD` can return `405`; use `GET` for this check.
@@ -315,6 +347,7 @@ Serving-layer interpretation:
 | --- | --- |
 | `/canary` fails | Worker availability/deploy/routing. |
 | Snapshot meta old, ClickHouse current | Snapshot cron, DO refresh, R2/KV write/read, payload-size guardrail, or cache invalidation. |
+| Snapshot meta old, mart current, and DO CPU-limit reset logs | Contract Rank snapshot builder exceeded Worker/Durable Object CPU budget; fix or split the build path, not source ingest. |
 | Snapshot meta current, UI old | Webapp route/cache/client state. |
 | `available-dates` missing latest date, ClickHouse has rows | Worker date-retention or refresh path. |
 | Snapshot payload near Cloudflare limits | Size/serialization guardrail; check `payloadBytes` trend and KV object sizes. |
@@ -390,6 +423,35 @@ Recommended checks:
 2. Sample active symbols/contracts from the mart.
 3. Compare contract identity (`option_symbol`, `put_call`, `strike`, `expiration_date`) against Massive live snapshot when timing is appropriate.
 4. Compare mart structure fields to same-day/prior `OptionChainTable` with webapp diagnostics when Massive timing drift makes live snapshot ambiguous.
+
+Freshness query:
+
+```sql
+SELECT
+  toString(date) AS date,
+  count() AS state_rows,
+  uniqExact(option_symbol) AS contracts,
+  toString(sumMerge(trade_count)) AS mart_trade_count,
+  toString(maxMerge(latest_trade_time)) AS latest_trade_time
+FROM mv_contract_rank_flow
+WHERE date = 'YYYY-MM-DD'
+GROUP BY date
+FORMAT JSONEachRow
+```
+
+Compare with `AggregatedOptionTrades` for the same date:
+
+```sql
+SELECT
+  toString(date) AS date,
+  count() AS agg_buckets,
+  toString(sum(trade_count)) AS agg_trade_count,
+  toString(max(time)) AS latest_agg_time
+FROM AggregatedOptionTrades
+WHERE date = 'YYYY-MM-DD'
+GROUP BY date
+FORMAT JSONEachRow
+```
 
 Verdict:
 

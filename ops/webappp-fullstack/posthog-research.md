@@ -18,15 +18,16 @@ Use `/goal` for each analytics review:
 
 ## Agent Handoff
 
-Last updated: 2026-07-03
+Last updated: 2026-07-21
 
 ### Look First
 
 - [ ] Revisit every active item in [Long-Term Issue Watchlist](#long-term-issue-watchlist) before broad exploration; mark each `worse`, `unchanged`, `improved`, `resolved`, or `blocked`, and prune/revise only with current evidence.
-- [ ] Start PH-W1 with active `$exception` issue classes around dynamic import/load failures, TradingView/widget errors, `ws.optiondata.io` fetch failures, and recent console-error-heavy recordings.
-- [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, and portal-session creation, but next runs must verify whether Stripe return success/cancel/completion events have been added.
-- [ ] Start PH-W7/PH-W8 by checking for active internal/test cohorts and `doc/automation/posthog/SKILL.md`; these were still missing in the latest reviewed checkout.
-- [ ] Before applying bot or acquisition filters, verify the live property names with `read-data-schema` or taxonomy warnings. The `2026-07-03` run warned that `$virt_is_bot` and `$utm_source` were not current taxonomy properties; use `utm_source` / login `initial_utm_source` where present, and do not rely on bot filters unless a current bot property exists.
+- [ ] Start PH-W1 with active `$exception` issue classes around dynamic import/load failures, snapshot timeout errors, fetch/load failures, missing server secrets, and recent console-error-heavy recordings.
+- [ ] Start PH-W3 by checking Product health dashboard SQL/user-count hygiene. The `2026-07-21` run found at least one SQL tile using `uniq(distinct_id)` despite person-on-events being enabled, plus dashboard references to retired or not-yet-observed events.
+- [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, portal-session creation, and source-code return handlers, but next runs must verify live `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` events.
+- [ ] Start PH-W7/PH-W8 by checking for active internal/test cohorts and local tracking taxonomy docs. This runbook exists in this repo now, but reusable PostHog taxonomy docs and standard filter cohorts still need live verification.
+- [ ] Before applying bot or acquisition filters, verify the live property names with `read-data-schema` and run a small with/without-filter baseline. The `2026-07-21` run saw `$virt_traffic_type` / `$virt_is_bot` values in schema, but SQL still emitted taxonomy warnings for `$virt_traffic_type`; use `utm_source` / login `initial_utm_source` where present.
 
 ## Goal
 
@@ -60,7 +61,7 @@ Unless the user overrides:
 | Segments | Anonymous vs logged-in if available; new vs returning; top routes; device/browser; country/region; referrer/source |
 | Exclusions | Internal/test users, localhost/dev hosts, staging hosts, known QA accounts, and bot traffic when identifiable |
 
-Filtering note: use production host and verified bot exclusions for browser traffic, but do not apply those filters blindly to backend/server product events. Backend conversion events can have no `$host` and may be classified as bots; query them with explicit `channel`, `runtime`, or equivalent properties so billing/provisioning steps are not hidden. Do not assume default property names such as `$virt_is_bot` or `$utm_source`; confirm current taxonomy first.
+Filtering note: use production host and verified bot exclusions for browser traffic, but do not apply those filters blindly to backend/server product events. Backend conversion events can have no `$host` and may be classified as bots; query them with explicit `channel`, `runtime`, or equivalent properties so billing/provisioning steps are not hidden. Do not assume default property names such as `$virt_is_bot` or `$utm_source`; confirm current taxonomy first. For user-level metrics in HogQL, prefer `uniq(person_id)` or `count(DISTINCT person_id)` over `uniq(distinct_id)` because this project has person-on-events enabled; dashboard tiles using `distinct_id` can overcount after auth identity changes.
 
 ## Long-Term Issue Watchlist
 
@@ -70,14 +71,14 @@ Seeded from the `2026-06-16` PostHog MCP run:
 
 | ID | Area | What to check in the next run | Prior baseline / evidence to compare |
 | --- | --- | --- | --- |
-| PH-W1 | Exception volume and top issues | Check whether `$exception` is still one of the highest-volume event families, whether active error-tracking issues declined, and whether the same top issue classes remain. | `$exception` was the largest bad signal; active issues included TradingView/widget promise rejections, dynamic import load failures, cross-frame `SecurityError`, TooltipProvider misuse, and server/load errors. |
-| PH-W2 | Backend conversion visibility | Verify backend conversion events are included in monetization reports with channel-aware filters and are not hidden by `$host` or generic bot exclusions. | `user_provisioned`, `billing_customer_portal_session_created`, and `billing_checkout_session_created` had `channel=backend`, `runtime=server`, no `$host`, and `$virt_is_bot=1`. |
-| PH-W3 | Dashboard staleness | Re-check whether old dashboards still query retired events/properties and whether Product health became the canonical dashboard. | `My App Dashboard`, `Option Trades`, and `Contract Rank` referenced stale assumptions such as `app_route_viewed`, `route`, `path_group`, `option_trades_filters_reset`, or absent Contract Rank CTA events. |
-| PH-W4 | Monetization and paywall funnel | Track whether paywall-to-CTA-to-checkout volume improves and whether checkout events are visible in the same funnel as frontend paywall actions. | Product health paywall funnel was `110` paywall users -> `18` CTA users -> `1` checkout user; premium gate funnel was `238` blocked users -> `87` paywall users -> `14` CTA users. |
-| PH-W5 | Acquisition attribution quality | Check whether source, referrer, and UTM coverage improved beyond direct and same-site attribution. | Sessions were dominated by direct and same-site traffic; external sources were tiny and login UTM breakdown was mostly empty/direct. |
-| PH-W6 | Mobile and product-friction paths | Re-check mobile share, dead clicks, rageclicks, console errors, and route-specific friction for top product paths. | Mobile represented a material user share; dead/rage clicks clustered around `/app/option-trades/live`, `/app/option-trades/historical`, `/app/contract-rank`, `/app/rank/contracts`, and `/app/rank/symbols`. |
-| PH-W7 | Test/internal filtering | Check whether reusable internal/test cohorts or documented standard filters now exist, and whether key dashboards consistently use them. | No cohorts were configured; filtering depended on project filters and per-insight `filterTestAccounts`, with inconsistent dashboard hygiene. |
-| PH-W8 | Tracking docs and taxonomy | Check whether missing or stale local PostHog automation/taxonomy docs were restored or removed. | Repo docs referenced `doc/automation/posthog/SKILL.md`, but the file was missing in the inspected checkout. |
+| PH-W1 | Exception volume and top issues | Check whether `$exception` is still one of the highest-volume event families, whether active error-tracking issues declined, and whether the same top issue classes remain. | `2026-07-21` run: last 7d still had ~1,400 exception events. Top active issues included a dynamic import failure for a gamma-exposure chunk, DirectSnapshotFetchError snapshot timeouts, missing `FEATUREBASE_JWT_SECRET`, and fetch/load failures. Replay samples with console errors showed hundreds to 1,748 console errors in single sessions. |
+| PH-W2 | Backend conversion visibility | Verify backend conversion events are included in monetization reports with channel-aware filters and are not hidden by `$host` or generic bot exclusions. | `2026-07-21` run: `billing_checkout_session_created` and `billing_customer_portal_session_created` remained visible when queried without web-only `$host` filters. App code still sends backend events through `captureBackendPostHogEvent` with checkout and portal context. |
+| PH-W3 | Dashboard staleness | Re-check whether old dashboards still query retired events/properties and whether Product health became the canonical dashboard. | `2026-07-21` run: Product health was useful but still had dashboard drift: one SQL tile used `uniq(distinct_id)`, and some tiles referenced retired or not-yet-observed events such as `routine_action_clicked`, `notebooks_run_open_clicked`, `billing_upgrade_cta_clicked`, and missing Market/GEX dashboard events. |
+| PH-W4 | Monetization and paywall funnel | Track whether paywall-to-CTA-to-checkout volume improves and whether checkout events are visible in the same funnel as frontend paywall actions. | `2026-07-21` run: last 30d showed `170` premium-gate users -> `21` paywall-shown users -> `1` paywall CTA/checkout user. `paywall_suppressed`, `paywall_plan_selected`, `billing_checkout_redirect_started`, and attempt/context properties were live; `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` were not observed in taxonomy/results. |
+| PH-W5 | Acquisition attribution quality | Check whether source, referrer, and UTM coverage improved beyond direct and same-site attribution. | `2026-07-21` run: attribution was still dominated by direct and same-site traffic. External sources were tiny compared with `$direct`, and Google/account referrers represented small user counts. |
+| PH-W6 | Mobile and product-friction paths | Re-check mobile share, dead clicks, rageclicks, console errors, and route-specific friction for top product paths. | `2026-07-21` run: mobile remained material, and dead/rage clicks still clustered around `/app/option-trades/live`, `/app/option-trades/historical`, `/app/rank/contracts`, and `/app/rank/symbols`; recent replay samples confirmed console-error-heavy sessions on `/app/option-trades/live` and `/app/home`. |
+| PH-W7 | Test/internal filtering | Check whether reusable internal/test cohorts or documented standard filters now exist, and whether key dashboards consistently use them. | `2026-07-21` run: `system.cohorts` returned no active cohorts. Filtering still depends on project settings and per-insight `filterTestAccounts`; Market Recap dashboard included low-volume tiles with `filterTestAccounts=false`, which may be intentional but should be rechecked. |
+| PH-W8 | Tracking docs and taxonomy | Check whether missing or stale local PostHog automation/taxonomy docs were restored or removed. | `2026-07-21` run: this runbook exists at `ops/webappp-fullstack/posthog-research.md`, but local app-repo taxonomy docs and dashboard-event contracts still need verification because dashboard queries are ahead of some observed events. |
 
 When a new run finds a recurring issue that needs follow-up, add it to this table with a stable ID and concise baseline. When an item is resolved, mark it in the run report and either keep one final resolved note or remove it only if it no longer needs tracking.
 
@@ -436,4 +437,5 @@ When maintenance is performed, include a short `Runbook maintenance` note in the
 - Old dashboards still point at renamed events or deprecated properties.
 - Backend/server conversion events are hidden by web-only `$host` filters or generic bot exclusions.
 - MCP active-project context drifts between calls, producing false empty taxonomy/event results until `switch-project` is rerun.
-- Query examples or dashboards assume stale properties such as `$virt_is_bot` or `$utm_source`, causing warnings or misleading source/bot splits.
+- Query examples or dashboards assume stale properties such as `$virt_is_bot`, `$virt_traffic_type`, or `$utm_source`, causing warnings or misleading source/bot splits.
+- Dashboard SQL uses `distinct_id` for users in a person-on-events project; prefer `person_id` for user counts unless distinct browser/device identities are explicitly intended.

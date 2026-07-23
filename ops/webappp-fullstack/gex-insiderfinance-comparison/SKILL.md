@@ -32,8 +32,8 @@ for live comparison work and maintainable as documentation without executing
 the browser workflow.
 
 Canonical owner: this file,
-`doc/automation/gex-insiderfinance-comparison/SKILL.md`. As of 2026-06-28 there
-is no separate `doc/automation` index or alias runbook for this workflow.
+`ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md`. As of 2026-06-28 there
+is no separate ops index or alias runbook for this workflow.
 
 ## Agent Handoff
 
@@ -66,7 +66,7 @@ Default ticker: `SPY`.
 
 1. Work from `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack`.
 2. Read the Rank domain context before comparing behavior:
-   - `doc/knowledge/glossary.md` if present. If the file is missing in the
+   - `knowledge/basic_concepts.md` if present. If the file is missing in the
      checkout, state that explicitly.
    - `doc/domain-knowledge/rank/domain-invariants.md`
    - `doc/domain-knowledge/rank/functionality.md`
@@ -476,7 +476,7 @@ For documentation-only runbook updates:
 
 ```bash
 git diff --check
-test -f doc/automation/gex-insiderfinance-comparison/SKILL.md
+test -f ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md
 test -f doc/domain-knowledge/rank/domain-invariants.md
 test -f doc/domain-knowledge/rank/functionality.md
 ```
@@ -519,7 +519,7 @@ Update this runbook when:
 - A verification gate is too weak, too broad, or missing.
 - A duplicate runbook or alias needs a clearer canonical owner.
 
-If another automation index is added under `doc/automation/`, add this runbook
+If another automation index is added under `ops/webappp-fullstack/`, add this runbook
 there as part of the same maintenance pass.
 
 Do not update this runbook for:

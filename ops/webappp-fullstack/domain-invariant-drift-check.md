@@ -102,7 +102,7 @@ Do not call the audit complete until the report states which diff source was use
 Read in this order:
 
 1. `AGENTS.md`
-2. `doc/knowledge/basic_concepts.md`
+2. `knowledge/basic_concepts.md`
 3. The relevant `doc/domain-knowledge/<module>/domain-invariants.md`
 4. The sibling `functionality.md` only when the invariant text depends on feature behavior details
 5. Relevant changed source files and tests

@@ -1,6 +1,8 @@
 # Data API Reference
 
-This document summarises every external data API currently consumed across the TradingFlow platform, categorized by the core data domain they serve.
+This document summarises external data APIs used across the broader TradingFlow platform, categorized by the core data domain they serve.
+
+> **Webapp runtime boundary (updated 2026-07-10):** Rank structure, GEX, and daily price/ATR context still read normalized data from the CF Worker + ClickHouse contract-rank path. The one deliberate provider exception is the paid GEX price chart's intraday candle endpoint, which fetches Massive one-minute aggregates server-side. The browser never receives the provider credential or provider response shape. The webapp still does not consume Alpaca market-data (`APCA_*`) or Longport/LONGBRIDGE; Portfolio's Alpaca OAuth remains a separate read-only broker integration.
 
 ---
 
@@ -55,12 +57,12 @@ APIs used to fetch current live spot prices, batch market snapshots, and daily/m
 
 | | |
 |---|---|
-| **Project** | `tradingflow-webapp-fullstack` |
+| **Project** | Retired from `tradingflow-webapp-fullstack` |
 | **Massive endpoint** | `GET /v2/snapshot/locale/us/markets/stocks?apiKey=<KEY>` |
 | **Symbols** | ✅ **Multiple tickers at once** — supports a `tickers` comma-separated list, or full market if omitted. |
-| **Purpose** | Returns price, volume, OHLC, and trade activity in a single response. Used to bulk-resolve underlying spot prices. |
+| **Purpose** | Returns price, volume, OHLC, and trade activity in a single response. Formerly used as a webapp GEX/chain spot fallback. |
 | **Index & Alias Support** | ❌ **Does not support Indices.** Returns empty data or fails for `SPX`, `SPXW`, and `I:SPX`. (Optimized for US Equities and ETFs). Use `Index Snapshot` for indices. |
-| **Consumer** | `stocks.ts` (`fetchBatchStockSpots`) → GEX/chain universe (Rank Symbols + GEX screener internals) gap-fill for symbols still missing spot after Alpaca + index snapshot paths. |
+| **Consumer** | No current `tradingflow-webapp-fullstack` consumer. |
 
 **Sample request (filtered to specific tickers):**
 ```
@@ -91,17 +93,14 @@ APCA-API-SECRET-KEY: <SECRET_KEY>
 
 | | |
 |---|---|
-| **Project** | `tradingflow-webapp-fullstack` |
-| **Internal route** | `GET /api/massive/v2/snapshot/locale/us/markets/stocks/tickers` |
+| **Project** | Retired from `tradingflow-webapp-fullstack` |
+| **Internal route** | Removed |
 | **Massive endpoint** | `GET /v2/snapshot/locale/us/markets/stocks/tickers?tickers={TICKER}` |
 | **Symbols** | ⚠️ **Single symbol only** — the proxy enforces exactly one ticker. |
-| **Purpose** | Fetch a real-time price quote for a single stock ticker. Used by chain/GEX features (integrated in Rank Symbols inspection) to display a live underlying price where applicable. |
-| **Consumer** | `massiveSnapshotService.ts` → `fetchSelectedSymbolLiveQuote` |
+| **Purpose** | Former single-stock live quote proxy. Rank/GEX no longer calls this provider path. |
+| **Consumer** | No current `tradingflow-webapp-fullstack` consumer. |
 
-**Sample request:**
-```
-GET /api/massive/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AAPL
-```
+**Former sample request:** removed with the retired webapp proxy route.
 
 ### Index Snapshot (Live Quote)
 > 📄 Docs: [https://polygon.io/docs/indices/get_v3_snapshot_indices](https://polygon.io/docs/indices/get_v3_snapshot_indices)
@@ -114,29 +113,28 @@ GET /api/massive/v2/snapshot/locale/us/markets/stocks/tickers?tickers=AAPL
 | **Symbols** | ✅ **Multiple symbols per request** — up to all four index families passed via `ticker.any_of` (e.g. `I:SPX,I:RUT,I:VIX,I:NDX`). |
 | **Index & Alias Support** | ✅ **Supports Indices**. Highly permissive: accepts and returns data for `I:SPX`, `SPX`, `SPXW`, and `I:SPXW` interchangeably without error. |
 | **Purpose** | Fetch a real-time price quote for multiple major market indices. Used by the **`syncUwData`** component to resolve canonical underlying prices for index options. |
-| **Consumer** | `MassiveIndexQuoteProvider` → `getLatestQuote()` (process service). **`tradingflow-webapp-fullstack`:** `src/server/providers/massive/stocks.ts` (`fetchBatchMassiveIndexSpots`) → GEX/chain universe (Rank Symbols) live spot for cash indices. |
+| **Consumer** | `MassiveIndexQuoteProvider` → `getLatestQuote()` (process service). No current `tradingflow-webapp-fullstack` consumer. |
 
 **Sample request:**
 ```
 GET https://api.massive.com/v3/snapshot/indices?ticker.any_of=I:SPX,I:RUT,I:VIX,I:NDX&apiKey=<MASSIVE_API_KEY>
 ```
 
-### 1-Minute OHLC Aggregates (Backfill)
+### 1-Minute OHLC Aggregates (GEX price candles)
 
 | | |
 |---|---|
 | **Project** | `tradingflow-webapp-fullstack` |
-| **Internal route** | `GET /api/massive/v2/aggs` |
+| **Internal route** | Paid `GET /api/market-rank/symbol-candles?symbol={SYMBOL}&date={YYYY-MM-DD}&interval={1\|5\|15\|30\|60\|240}` |
 | **Massive endpoint** | `GET /v2/aggs/ticker/{TICKER}/range/1/minute/{from}/{to}` |
 | **Symbols** | ⚠️ **Single symbol only** — one call per ticker. |
-| **Purpose** | Fetch 1-minute OHLC bars for a stock or index for a given date range. Used by the **Option Trades** page to backfill the `underlying_price` field on each trade. |
-| **Index & Alias Support** | ✅ **Supports Indices.** Strictly requires Polygon's `I:` prefix (e.g., `I:SPX`). `SPX` and `SPXW` return no results. Known indices trigger a fallback to automatically prefix with `I:`. |
-| **Consumer** | `massiveSpotBackfill.ts` → `fetchMinuteSpotMap` |
+| **Auth** | Server-only `Authorization: Bearer <MASSIVE_API_KEY>`; the internal endpoint separately enforces the Rank premium entitlement. |
+| **Purpose** | True underlying candles for the GEX `1m · 5m · 15m · 30m · 1h · 4h` selector. The server requests one-minute bars (explicitly unadjusted for stocks/ETFs; adjustment and volume not applicable for cash indices), keeps 09:30 ET through the official close (normally 16:00; 13:00 on early-close sessions), and resamples larger intervals from the regular-session open. |
+| **Index & Alias Support** | ✅ **Supports Indices** via `I:` tickers. Weekly roots fold to the same cash index (`SPXW→I:SPX`, `NDXP→I:NDX`, etc.); price-distinct mini products remain distinct (`XSP→I:XSP`, `XND→I:XND`, `MRUT→I:MRUT`). |
+| **Caching / polling** | The visible latest-session browser query polls every 30s from 09:30 ET through official close + 20m. A per-instance 15s server cache coalesces concurrent calls; historical responses cache for 6h; transient refresh failures can serve the last-good response for up to 30m. Empty/malformed provider refreshes are failures and cannot overwrite last-good candles. |
+| **Consumer** | Symbol-level analysis → symbol drawer → GEX → Price & GEX Levels. |
 
-**Sample request:**
-```
-GET /api/massive/v2/aggs?ticker=SPY&from=2026-03-14&to=2026-03-14
-```
+Production use must be covered by a Massive plan/license that permits commercial redistribution to TradingFlow users; individual/personal plan access is not sufficient evidence of redistribution rights.
 
 ### Daily OHLCV & HV (Polygon Aggregates)
 > 📄 Docs: [https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to](https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to)
@@ -165,7 +163,7 @@ GET https://api.polygon.io/v2/aggs/ticker/AAPL/range/1/day/2026-01-15/2026-03-11
 |---|---|
 | **Real-time Quotes endpoint** | `GET /v1/quote/pull/quote` |
 | **History endpoint** | `GET /v1/quote/pull/history-candlestick` |
-| **Purpose** | Fetch real-time live spot prices or historical OHLCV candlestick data for securities. Potential alternative/fallback for Massive/Polygon/Alpaca quotes and aggregates. |
+| **Purpose** | Fetch real-time live spot prices or historical OHLCV candlestick data for securities. Not a webapp fallback provider. |
 | **Index & Alias Support** | ✅ **Supports Indices** (requires `.SYMBOL.US` format). Alias roots like `SPXW.US` must map to canonical `.SPX.US`. |
 | **Response Schema** | Standard JSON format returning an array of quote/history data elements mapped from Protobuf (e.g., `"securityCalcIndex": [...]`). |
 
@@ -206,7 +204,7 @@ Authorization: Bearer <MASSIVE_API_KEY>
 | **Symbols** | ✅ **Multiple option contract symbols** — pass a comma-separated list of OCC-format option symbols (e.g. `AAPL260321C00200000,AAPL260321P00200000`). |
 | **Purpose** | Returns the latest trade, latest quote, and greeks for each given **option contract symbol**. Useful for looking up specific known contracts by their full OCC ticker. |
 | **Index & Alias Support** | ✅ **Supports Indices.** Works for index options using OCC format. |
-| **Potential use case** | Could replace or supplement the Massive `/v3/snapshot/options/{symbol}` call for fetching greeks + quotes on a targeted subset of contracts. |
+| **Potential use case** | None in `tradingflow-webapp-fullstack`; retained here only as upstream API reference. |
 
 ### Alpaca Option Chain
 > 📄 Docs: [https://docs.alpaca.markets/reference/optionchain](https://docs.alpaca.markets/reference/optionchain)
@@ -217,7 +215,7 @@ Authorization: Bearer <MASSIVE_API_KEY>
 | **Symbols** | ⚠️ **Single underlying symbol** — the underlying (e.g. `SPY`, `AAPL`) is embedded in the URL path. |
 | **Purpose** | Returns the latest trade, latest quote, and greeks for **every option contract** on a given underlying symbol. This is the Alpaca equivalent of the Massive `/v3/snapshot/options/{symbol}` call currently in use. |
 | **Index & Alias Support** | ✅ **Supports Indices.** Uses root-form underlyings (`SPX`, `SPXW`, `XSP`) in the path. Does **not** accept Polygon/Massive-style `I:` prefixes (`I:SPX` returns a 400 error). |
-| **Current TradingFlow use** | `tradingflow-webapp-fullstack` uses this as the drawer chain fallback for stocks/ETFs and the primary chain source for indices in `src/server/providers/alpaca/options.ts` / `gexDrawerInspectionService.ts`. In the current runtime, Alpaca contracts often return quote/trade data while leaving `iv`, `delta`, and `gamma` null. The drawer now runs the same local enrichment pass for **all** providers, so missing fields are locally derived when spot + contract pricing context are sufficient. |
+| **Current TradingFlow use** | Retired from `tradingflow-webapp-fullstack`; Rank/GEX full-chain data comes from the CF Worker + ClickHouse contract-rank path. |
 
 ### Longport Symbol & Price Details (Verified)
 | Category | Details |
@@ -239,4 +237,4 @@ Authorization: Bearer <MASSIVE_API_KEY>
 | **Access Warning** | Real-time options require `USOption` market data permissions (Error `301604` if missing). |
 | **Response Schema** | JSON array format (e.g., `option_quote: [...]`, `strike_price_info: [...]`). |
 | **Underlying Price** | Included in the `OptionQuote` response (verified via SDK definitions). |
-| **Current TradingFlow use** | `tradingflow-webapp-fullstack` uses the SDK-backed chain path for stock/ETF drawer inspection and uses LongPort spot quotes for both equities and cash indices. In the current runtime, index option-chain expiry lookup is not usable (`.SPX.US`, `.NDX.US`, `.VIX.US` returned no expiries), so LongPort is not the index option-chain source. |
+| **Current TradingFlow use** | Retired from `tradingflow-webapp-fullstack`; Longport is not a webapp fallback provider. |

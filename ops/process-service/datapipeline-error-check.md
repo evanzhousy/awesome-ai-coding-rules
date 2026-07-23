@@ -31,13 +31,11 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-07-21
+Last updated: 2026-07-23
 
 ### Look First
 
-Open process-service deploy drift as of 2026-07-21: the production GCE checkout is still at `449394f`, while remote `master` is `17fadd0`. The stale runtime still excludes `MXEF` from symbol metadata and still calls the unauthenticated Contract Rank refresh path. Treat production behavior that conflicts with the current repo as deploy drift until the deployed revision is reconciled; this run did not mutate production.
-
-The 2026-07-20 Contract Rank recovery remains healthy. Test version `ea7b32da-7dfd-4531-9627-b22198b1ae16` promoted consecutive `314982`- and `318430`-row snapshots. Production version `59dc51d7-9d28-450a-9784-935de285e6a4` then promoted `321850` rows with `latestTradeTime=2026-07-20 15:30:59`, and its advertised V2 object matched metadata and immutable R2 headers. The single `contract_rank_snapshot_build_abandoned` at the start of the production recovery was cleanup of the pre-deploy 100000-row checkpoint; the new build progressed through 300000 rows and emitted `contract_rank_snapshot_refresh_completed`.
+- [ ] Deploy the current `tradingflow-cfworker-service` Contract Rank reliability change, then verify one full trading session. Success requires no terminal `contract_rank_snapshot_refresh_failed`, no abandoned build left unresolved, all three `contract_rank_snapshot_r2_artifact_published` artifacts before promotion, and a current advertised V2 object. A retry event followed by successful publication is recovered degradation, not a failed refresh.
 
 Current durable guidance from recent runs:
 
@@ -49,6 +47,7 @@ Current durable guidance from recent runs:
 - If `cf-service` logs repeatedly show `scheduled Contract Rank snapshot branch failed: Durable Object exceeded its CPU time limit and was reset`, and ClickHouse plus `mv_contract_rank_flow` are current, classify it as a Worker snapshot-builder CPU/time-budget failure. Do not call it producer ingest loss; prove the mart freshness with the Phase 6 SQL and then fix the snapshot build path or split the refresh workload.
 - If the inner refresh reports `Durable Object's isolate exceeded its memory limit and was reset` at a repeatable row checkpoint while ClickHouse remains current, classify it as live builder-state retention. Inspect aggregate writer buffers and JavaScript object/string shape before blaming R2 object size; the final immutable object can be healthy and much smaller than the transient heap.
 - If Better Stack only has the outer scheduled HTTP 502, use the next attempt's `contract_rank_snapshot_build_abandoned` checkpoint as failure-stage evidence. Repeated `stage=row_query` at the same checkpoint row count with zero column chunks means interruption before artifact promotion; compare that row count with the checkpoint interval and current mart cardinality. Do not classify this signature as R2 failure when the advertised last-good object still validates.
+- Treat R2 `10001` internal errors, network loss, overload, reset, and timeout messages as transient only when a bounded retry succeeds. Staging and immutable artifact operations are idempotent; retry them locally, recreate immutable upload streams per attempt, and promote no snapshot pointer until compact, columnar V1, and columnar V2 all exist. A coordinator reset may reclaim only the exact same `scheduledTime`, and that recovery dispatch must bypass the snapshot attempt throttle without turning a normal refresh into a hard rebuild.
 - When one pass builds multiple transport projections concurrently, multiply the per-writer flush threshold by the number of pending writers before raising CPU limits. Contract Rank has 33 concurrent text buffers; a 4 MiB threshold permitted 132 MiB of pending text before JSON and encoder overhead, while 512 KiB caps the same nominal budget at 16.5 MiB.
 - Do not treat the nominal pending-text total as the JavaScript heap total. Repeated `pending += fragment` appends form a live V8 rope node per cell; the Contract Rank writer reproduced about 184 MiB of heap at 100,000 rows with only 13.5 MiB of visible pending text. Keep value fragments periodically joined into bounded batches, expose fragment/segment counts in progress telemetry, and validate in a real Cloudflare isolate. A local high-memory Node scale test alone will not catch this failure mode.
 - Before the 09:30 ET open, current-day option-flow tables can legitimately have zero rows and strict data-quality scripts can report row-count breaches. Treat those as pre-open guardrails, not an outage, unless Better Stack lifecycle/heartbeat evidence also shows producer failure. Re-run current-day flow freshness after the first RTH window, usually 09:35 ET or later.
@@ -171,6 +170,7 @@ Preferred scripts:
 - `bun scripts/check-data-integrity.ts --date YYYY-MM-DD --baseline-date YYYY-MM-DD --strict`
 - `bun scripts/audit-small-trade-coverage.ts --compare BASELINE_YYYY-MM-DD,YYYY-MM-DD`
 - `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase a --symbols SPY,NVDA,AAPL --strict`
+- `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase b --strict`
 
 Use bounded custom SQL only when scripts do not answer the question.
 
@@ -285,8 +285,12 @@ Resolve the `cf-service` Better Stack source at runtime. Event predicates to che
 | Insert failure | message contains `batch insert timeout`, `aggregate batch insert timeout`, `raw batch insert timeout`, or context `errorMessage = 'insert attempts exhausted'` |
 | Queue path | `uw_ingest_queue_*`, `processUwIngestQueueBatch`, enqueue/drain fields |
 | Snapshot refresh | `contract_rank_snapshot_refresh_completed` / failure events, `payloadBytes`, `snapshotDate`, and duration fields |
+| Snapshot artifact publication | `operation = 'contract_rank_snapshot_r2_artifact_published'`; require `compact`, `columnar_v1`, and `columnar_v2` before promotion |
+| Snapshot retry recovery | `operation IN ('contract_rank_refresh_dispatch_retry', 'contract_rank_snapshot_dispatch_retry')`; correlate with the terminal refresh result for the same window |
 
 Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself. Repeated Durable Object CPU-limit resets during scheduled Contract Rank snapshot refreshes are serving-layer build failures when ClickHouse source and `mv_contract_rank_flow` stay current.
+
+For retry events, inspect the terminal outcome rather than counting the retry as a failure. A retry followed by all three artifact-publication events and `contract_rank_snapshot_refresh_completed` is a recovered transient failure. A retry followed by `refresh_failed`, an abandoned checkpoint, or a missing artifact family remains an incident.
 
 Queue diagnosis:
 
@@ -469,13 +473,57 @@ Run after nightly `OptionChainTable` ingest when the question is pricing model, 
 
 ```bash
 cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
-bun scripts/check-greeks-parity.ts --date "$DATE" --phase a --symbols SPY,NVDA,AAPL --strict
+bun scripts/check-greeks-parity.ts --date "$DATE" --phase a --symbols SPY,NVDA,AAPL
+# Add --strict only when the target date and live vendor snapshot timing are comparable.
+bun scripts/check-greeks-parity.ts --date "$DATE" --phase b --strict
 ```
 
 Active scope:
 
-- `OptionChainTable` vs Massive raw `implied_volatility`, Greeks, and close.
-- Retired scope: old `Phase B` against `mv_contract_day_flow`. Do not run it.
+- Phase A: `OptionChainTable` vs Massive raw `implied_volatility`, Greeks, and close.
+- Phase B: same-date `mv_contract_rank_flow` vs finalized `OptionChainTable`.
+- Retired scope: the old Phase B query against `mv_contract_day_flow`. Do not use that table.
+
+Phase A calls Massive's current live snapshot. Use strict mode only when the target date and vendor snapshot timing are comparable. A prior-session `OptionChainTable` row compared with a next-session live Massive quote will commonly fail close, IV, or delta thresholds because the market moved; that is temporal drift, not pipeline evidence. For a historical target, run Phase A as diagnostic evidence and use same-date Phase B plus hard contract identity checks for the correctness verdict.
+
+For an independent bounded same-date cross-check, run the SQL below. Keep output aliases distinct from source column names; ClickHouse alias substitution can otherwise pass a finalized `String` or `Float32` back into a `*Merge` function.
+
+```sql
+WITH mart AS (
+  SELECT
+    option_symbol,
+    argMaxMerge(iv) AS mart_iv,
+    argMaxMerge(delta) AS mart_delta,
+    sumMerge(trade_count) AS mart_trade_count,
+    sumIfMerge(ask_premium)
+      + sumIfMerge(bid_premium)
+      + sumIfMerge(mid_premium) AS mart_premium
+  FROM mv_contract_rank_flow
+  WHERE date = toDate('YYYY-MM-DD')
+  GROUP BY option_symbol
+  HAVING mart_trade_count > 0
+  ORDER BY mart_premium DESC, mart_trade_count DESC
+  LIMIT 50
+),
+chain AS (
+  SELECT
+    option_symbol,
+    argMax(iv, updated_timestamp) AS chain_iv,
+    argMax(delta, updated_timestamp) AS chain_delta
+  FROM OptionChainTable
+  WHERE date = toDate('YYYY-MM-DD')
+  GROUP BY option_symbol
+)
+SELECT
+  count() AS compared,
+  countIf(abs(mart_iv - chain_iv) > 0.08) AS iv_breaches,
+  countIf(abs(mart_delta - chain_delta) > 0.12) AS delta_breaches,
+  round(max(abs(mart_iv - chain_iv)), 6) AS max_iv_abs_diff,
+  round(max(abs(mart_delta - chain_delta)), 6) AS max_delta_abs_diff
+FROM mart
+INNER JOIN chain USING (option_symbol)
+FORMAT JSONEachRow
+```
 
 Expected non-bug differences:
 

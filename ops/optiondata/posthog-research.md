@@ -50,9 +50,8 @@ Last updated: 2026-07-25
 
 - [ ] Confirm project `90561` still displays as `optiondata`; never substitute another TradingFlow PostHog project.
 - [ ] Revalidate traffic quality before reporting growth. Project test-traffic filters now exclude localhost and a suspicious one-page browser signature observed on 2026-07-25, but that signature can drift. Report both raw and test-filtered baselines, and confirm the filter still removes automation without suppressing legitimate traffic.
-- [ ] Recheck `subscription_checkout`, `subscription_activated`, `invoice_paid`, `demo_run`, `$dead_click`, and `$web_vitals`. Source now sends normalized demo outcomes and signed, idempotent Stripe revenue events in addition to dead-click, web-vitals, and beacon checkout intent, but these changes require deployment and fresh production events before the signals can be called healthy.
-- [ ] Complete the revenue deployment gate: set `STRIPE_WEBHOOK_SECRET`, deploy the portal webhook, register `/api/stripe/webhook` in the matching Stripe environment for `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, and `invoice.paid`, then verify one test-mode delivery before relying on live mode.
-- [ ] Audit `OptionData conversion & behavior` (`1280223`), which is now the primary pinned dashboard. The three added insights — `OptionData demo to paid revenue funnel` (`FInZ59hD`), `OptionData recognized subscription revenue` (`OOOIZUzd`), and `OptionData demo outcomes by surface` (`cjC0sDOD`) — were attached with `Filter test accounts` enabled and live-mode filters on authoritative revenue steps on 2026-07-25. Confirm they render and receive fresh events after deployment. Generic dashboard `225257` is unpinned.
+- [ ] Recheck `subscription_checkout`, `demo_run`, `$dead_click`, and `$web_vitals`. Source now sends normalized demo outcomes, beacon checkout-session creation, and a deduplicated `returned_success` browser estimate after Stripe returns to billing, but these changes require deployment and fresh production events before the signals can be called healthy.
+- [ ] Audit `OptionData conversion & behavior` (`1280223`), which is now the primary pinned dashboard. The three added insights — `OptionData estimated demo-to-checkout return funnel` (`FInZ59hD`), `OptionData estimated successful checkout returns` (`OOOIZUzd`), and `OptionData demo outcomes by surface` (`cjC0sDOD`) — have `Filter test accounts` enabled as of 2026-07-25. Confirm they render and receive fresh events after deployment. Generic dashboard `225257` is unpinned.
 - [ ] Recheck saved heatmaps and replay coverage. Screenshot heatmaps now exist for homepage, survey, realtime data, historical data, and billing, with internal/test-user filtering enabled. Replays can expose identity and typed-content fields, which must remain out of reports.
 - [ ] Recheck Installation Health. Authorized URLs now include `www.optiondata.io`, `optiondata.io`, and `portal.optiondata.io`; reverse proxying remains unconfigured, and `$web_vitals` cannot pass until the source change is deployed and production events arrive.
 - [ ] When using PostHog's read-only APIs for aggregate analysis, return only explicitly allowlisted fields. Never log raw project, person, session, replay, cookie, or token payloads.
@@ -293,8 +292,8 @@ Open dashboard `1280223` and verify its live title and description.
 The 2026-07-25 inspection found these expected tiles:
 
 - `OptionData demo outcomes by surface`
-- `OptionData recognized subscription revenue`
-- `OptionData demo to paid revenue funnel`
+- `OptionData estimated successful checkout returns`
+- `OptionData estimated demo-to-checkout return funnel`
 - `OptionData custom event volume`
 - `OptionData activation funnel with checkout`
 - `OptionData browser error signals`
@@ -329,8 +328,6 @@ Expected OptionData event families include:
 - `api_key_action`
 - `survey_completed`
 - `subscription_checkout`
-- `subscription_activated`
-- `invoice_paid`
 - `demo_run`
 - `realtime_connection`
 - `historical_query_executed`
@@ -349,12 +346,11 @@ Analyze the strongest measurable journeys:
 2. CTA or getting-started action.
 3. Survey or account activation.
 4. Normalized successful demo (`demo_run`, `status = succeeded`).
-5. Checkout creation and signed Stripe completion.
-6. Signed subscription activation and paid invoice.
-7. API-key action.
-8. Realtime connection.
-9. Historical or option-chain query.
-10. Repeat core action in a later session/day/week.
+5. Checkout start, session creation, and successful browser return.
+6. API-key action.
+7. Realtime connection.
+8. Historical or option-chain query.
+9. Repeat core action in a later session/day/week.
 
 For each funnel:
 
@@ -368,12 +364,11 @@ For each funnel:
 
 For monetization analysis:
 
-- Treat browser `subscription_checkout` statuses `started` and `session_created` as intent and redirect health, not revenue.
-- Treat signed `subscription_checkout` status `completed`, `subscription_activated`, and `invoice_paid` as authoritative Stripe outcomes.
-- Filter authoritative revenue steps to `livemode = true`; Stripe test-mode events are not filtered by browser user-agent or host rules.
-- Use `sum($revenue)` on `invoice_paid` with `$currency = USD` and `amount_paid_cents > 0` for recognized USD invoice value. Do not sum Checkout totals.
+- Treat `subscription_checkout` statuses `started` and `session_created` as intent and redirect health.
+- Treat `subscription_checkout` status `returned_success` with `estimate = true` as a browser-observed checkout-return estimate only.
+- Do not call `returned_success` payment confirmation, subscription activation, recognized revenue, or MRR. Use Stripe reporting when financial truth is required.
+- A missing `returned_success` can mean abandonment, a closed tab, blocked analytics, or a return that never rendered; a present event can be replayed despite client-side deduplication.
 - Use `demo_run` for cross-surface comparison. Break down by `surface`, `mode`, and `status`; use the older surface-specific events only for detailed diagnostics.
-- Do not add `$host`, browser, device, or user-agent filters to server revenue events unless live properties prove those fields exist.
 
 ### 6. Review Engagement, Lifecycle, And Retention
 

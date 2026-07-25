@@ -1,6 +1,6 @@
 ---
 name: posthog-research
-description: Reviews TradingFlow web traffic, user behavior, event instrumentation, and PostHog dashboard setup using the PostHog MCP/plugin. Produces an evidence-backed report and recommendations without changing tracking or dashboards unless explicitly asked.
+description: Reviews TradingFlow web traffic, user behavior, heatmaps, event instrumentation, and PostHog dashboard setup using the PostHog MCP/plugin. Produces an evidence-backed report and recommendations without changing tracking or dashboards unless explicitly asked.
 disable-model-invocation: true
 ---
 
@@ -18,11 +18,12 @@ Use `/goal` for each analytics review:
 
 ## Agent Handoff
 
-Last updated: 2026-07-21
+Last updated: 2026-07-25
 
 ### Look First
 
 - [ ] Revisit every active item in [Long-Term Issue Watchlist](#long-term-issue-watchlist) before broad exploration; mark each `worse`, `unchanged`, `improved`, `resolved`, or `blocked`, and prune/revise only with current evidence.
+- [ ] Include a heatmap review in user-behavior analysis: inspect available PostHog heatmaps for top product routes and PH-W6 routes, summarize click/scroll patterns, and connect findings to dead-click, rage-click, replay, and funnel evidence.
 - [ ] Start PH-W1 with active `$exception` issue classes around dynamic import/load failures, snapshot timeout errors, fetch/load failures, missing server secrets, and recent console-error-heavy recordings.
 - [ ] Start PH-W3 by checking Product health dashboard SQL/user-count hygiene. The `2026-07-21` run found at least one SQL tile using `uniq(distinct_id)` despite person-on-events being enabled, plus dashboard references to retired or not-yet-observed events.
 - [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, portal-session creation, and source-code return handlers, but next runs must verify live `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` events.
@@ -76,7 +77,7 @@ Seeded from the `2026-06-16` PostHog MCP run:
 | PH-W3 | Dashboard staleness | Re-check whether old dashboards still query retired events/properties and whether Product health became the canonical dashboard. | `2026-07-21` run: Product health was useful but still had dashboard drift: one SQL tile used `uniq(distinct_id)`, and some tiles referenced retired or not-yet-observed events such as `routine_action_clicked`, `notebooks_run_open_clicked`, `billing_upgrade_cta_clicked`, and missing Market/GEX dashboard events. |
 | PH-W4 | Monetization and paywall funnel | Track whether paywall-to-CTA-to-checkout volume improves and whether checkout events are visible in the same funnel as frontend paywall actions. | `2026-07-21` run: last 30d showed `170` premium-gate users -> `21` paywall-shown users -> `1` paywall CTA/checkout user. `paywall_suppressed`, `paywall_plan_selected`, `billing_checkout_redirect_started`, and attempt/context properties were live; `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` were not observed in taxonomy/results. |
 | PH-W5 | Acquisition attribution quality | Check whether source, referrer, and UTM coverage improved beyond direct and same-site attribution. | `2026-07-21` run: attribution was still dominated by direct and same-site traffic. External sources were tiny compared with `$direct`, and Google/account referrers represented small user counts. |
-| PH-W6 | Mobile and product-friction paths | Re-check mobile share, dead clicks, rageclicks, console errors, and route-specific friction for top product paths. | `2026-07-21` run: mobile remained material, and dead/rage clicks still clustered around `/app/option-trades/live`, `/app/option-trades/historical`, `/app/rank/contracts`, and `/app/rank/symbols`; recent replay samples confirmed console-error-heavy sessions on `/app/option-trades/live` and `/app/home`. |
+| PH-W6 | Mobile, heatmap, and product-friction paths | Re-check mobile share, heatmap coverage, dead clicks, rageclicks, console errors, and route-specific friction for top product paths. Summarize click/scroll concentration, ignored primary controls, repeated non-interactive clicks, and whether heatmap evidence agrees with replay/funnel signals. | `2026-07-21` run: mobile remained material, and dead/rage clicks still clustered around `/app/option-trades/live`, `/app/option-trades/historical`, `/app/rank/contracts`, and `/app/rank/symbols`; recent replay samples confirmed console-error-heavy sessions on `/app/option-trades/live` and `/app/home`. Next runs should establish a heatmap baseline for these routes when PostHog exposes usable heatmap data. |
 | PH-W7 | Test/internal filtering | Check whether reusable internal/test cohorts or documented standard filters now exist, and whether key dashboards consistently use them. | `2026-07-21` run: `system.cohorts` returned no active cohorts. Filtering still depends on project settings and per-insight `filterTestAccounts`; Market Recap dashboard included low-volume tiles with `filterTestAccounts=false`, which may be intentional but should be rechecked. |
 | PH-W8 | Tracking docs and taxonomy | Check whether missing or stale local PostHog automation/taxonomy docs were restored or removed. | `2026-07-21` run: this runbook exists at `ops/webappp-fullstack/posthog-research.md`, but local app-repo taxonomy docs and dashboard-event contracts still need verification because dashboard queries are ahead of some observed events. |
 
@@ -132,7 +133,7 @@ The review is complete only when all applicable checks pass:
 
 1. **Project confirmed** - The report names the PostHog organization/project, host, date range, timezone, and filters actually used.
 2. **Traffic reviewed** - Page views, unique users, sessions, top entry pages, top routes, referrers/sources, device/browser mix, and trend versus comparison period are summarized.
-3. **Behavior reviewed** - Activation/conversion paths, drop-offs, retention or returning behavior, high-friction routes, rage/dead clicks if available, and representative session replay findings are summarized.
+3. **Behavior reviewed** - Activation/conversion paths, drop-offs, retention or returning behavior, high-friction routes, heatmap findings, rage/dead clicks if available, and representative session replay findings are summarized.
 4. **Event inventory checked** - High-volume and product-specific events are listed with counts, users, first/last seen, and obvious gaps or duplicates.
 5. **Repo tracking inspected** - The webapp tracking code is searched for PostHog initialization, `capture`, `identify`, `alias`, `reset`, route tracking, production gating, and event property conventions.
 6. **Tracking reasonableness judged** - The report states whether events cover acquisition, activation, engagement, monetization, retention, and error/product friction. It also flags naming, property, PII, environment, or dedupe problems.
@@ -180,6 +181,7 @@ Use the plugin to discover what is available:
 - Event names and event definitions if the plugin exposes them.
 - Cohorts and groups relevant to internal/test filtering.
 - Session replay availability.
+- Heatmap availability, heatmap IDs/URLs, covered routes, sample/snapshot counts, and date ranges where exposed.
 - Data management or schema views for event/property definitions.
 
 Record the exact tool names used in the final report.
@@ -229,16 +231,26 @@ Do not paste raw query output. Summarize the top movers and suspicious gaps.
 
 ### 3. Review user behavior
 
-Use a mix of aggregated PostHog queries and, where available, session replays:
+Use a mix of aggregated PostHog queries and, where available, heatmaps and session replays:
 
 - Main paths users take after landing or login.
 - Conversion or activation funnels for key product actions.
 - Drop-off points in signup, login, paywall/subscription, dashboard loading, scanner usage, watchlist, alerts, or other high-value flows present in the app.
 - Retention/stickiness for core product actions, not only `$pageview`.
 - Repeated visits to error, empty-state, billing, or auth pages.
+- Heatmap-visible behavior on top routes and watchlist routes: where users click, where they stop scrolling, whether primary controls are ignored, and whether users repeatedly click non-interactive areas.
 - Rage clicks, dead clicks, console errors, slow page loads, and replay-visible friction if PostHog exposes them.
 
 If funnels already exist, inspect them first. If not, build temporary read-only queries or propose the missing funnel definitions in the report.
+
+Heatmap review is required when PostHog exposes heatmaps for the target project. Inspect at least the top traffic route, the top logged-in product route, the active PH-W6 routes, and any feature route named by the user. For each relevant heatmap, capture:
+
+- Heatmap name or ID, URL/data URL, date range, route filter, and sample or snapshot count.
+- Click concentration: primary controls versus non-interactive areas, repeated dead areas, or controls receiving unexpected attention.
+- Scroll or attention patterns if available: where users stop, what sections or CTAs appear ignored, and whether important content sits below common drop-off points.
+- Relationship to funnels, dead clicks, rage clicks, console errors, and representative replays.
+
+If heatmap data is unavailable, state the exact blocker and use replay/dead-click/rage-click evidence as fallback. Add or revise a watchlist item when heatmap coverage itself needs follow-up.
 
 Behavior findings should distinguish:
 
@@ -351,6 +363,7 @@ Use this structure:
 - Main paths:
 - Conversion or activation:
 - Retention / repeat usage:
+- Heatmap findings:
 - Friction from replay or behavior signals:
 
 ## Event Tracking Review
@@ -397,6 +410,7 @@ Use this structure:
 - Include links to PostHog dashboards, insights, recordings, or queries when the plugin returns URLs.
 - Cite the event names and properties used for each conclusion.
 - When using session replay, summarize patterns across several recordings; do not overgeneralize from one replay unless it is clearly a defect.
+- When using heatmaps, summarize patterns by route, control, and page area; do not paste raw screenshots, coordinates, or user-identifying details.
 - Mark any answer as `blocked` when the necessary event/property/dashboard data does not exist.
 - In CLI-only mode, cite the exact `posthog-cli` command category used (`exp query`, `exp schema`, `exp endpoints`) and separate hard query results from schema/metadata-only evidence.
 
@@ -436,6 +450,7 @@ When maintenance is performed, include a short `Runbook maintenance` note in the
 - Charts use inconsistent time windows or filters, so dashboard tiles disagree.
 - Old dashboards still point at renamed events or deprecated properties.
 - Backend/server conversion events are hidden by web-only `$host` filters or generic bot exclusions.
+- Heatmap coverage is missing or not tied to the routes with the most funnel drop-off, dead clicks, rage clicks, or replay-visible friction.
 - MCP active-project context drifts between calls, producing false empty taxonomy/event results until `switch-project` is rerun.
 - Query examples or dashboards assume stale properties such as `$virt_is_bot`, `$virt_traffic_type`, or `$utm_source`, causing warnings or misleading source/bot splits.
 - Dashboard SQL uses `distinct_id` for users in a person-on-events project; prefer `person_id` for user counts unless distinct browser/device identities are explicitly intended.

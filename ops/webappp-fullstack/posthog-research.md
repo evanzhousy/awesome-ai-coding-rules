@@ -18,7 +18,13 @@ Use `/goal` for each analytics review:
 
 ## Agent Handoff
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
+
+Source now implements a bounded public-site acquisition handoff and
+backend-authoritative account registration event. A same-day live schema check
+of project `300646` found neither `marketing_handoff_landed` nor
+`account_registration_completed`; treat both as deployment-pending and do not
+create an empty acquisition funnel until they ingest.
 
 ### Look First
 
@@ -29,6 +35,16 @@ Last updated: 2026-07-25
 - [ ] Start PH-W4 with the paywall/billing return boundary: current tracking reaches paywall actions, checkout-session creation, portal-session creation, and source-code return handlers, but next runs must verify live `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` events.
 - [ ] Start PH-W7/PH-W8 by checking for active internal/test cohorts and local tracking taxonomy docs. This runbook exists in this repo now, but reusable PostHog taxonomy docs and standard filter cohorts still need live verification.
 - [ ] Before applying bot or acquisition filters, verify the live property names with `read-data-schema` and run a small with/without-filter baseline. The `2026-07-21` run saw `$virt_traffic_type` / `$virt_is_bot` values in schema, but SQL still emitted taxonomy warnings for `$virt_traffic_type`; use `utm_source` / login `initial_utm_source` where present.
+- [ ] After the next app deployment, verify the bounded public-site handoff:
+  `marketing_handoff_landed` should emit once per new session attribution,
+  marketing URL parameters should be removed after capture, and login plus
+  billing-return events should carry the same bounded context.
+- [ ] Verify `account_registration_completed` is backend-authoritative: one
+  event for a genuinely new account created with a verified Clerk identity,
+  none for a returning login or legacy no-token provisioning call. Then build
+  the app-project acquisition funnel from `marketing_handoff_landed` through
+  registration to `billing_subscription_activated`; do not merge project
+  `344580` landing counts into project `300646`.
 
 ## Goal
 
@@ -76,10 +92,10 @@ Seeded from the `2026-06-16` PostHog MCP run:
 | PH-W2 | Backend conversion visibility | Verify backend conversion events are included in monetization reports with channel-aware filters and are not hidden by `$host` or generic bot exclusions. | `2026-07-21` run: `billing_checkout_session_created` and `billing_customer_portal_session_created` remained visible when queried without web-only `$host` filters. App code still sends backend events through `captureBackendPostHogEvent` with checkout and portal context. |
 | PH-W3 | Dashboard staleness | Re-check whether old dashboards still query retired events/properties and whether Product health became the canonical dashboard. | `2026-07-21` run: Product health was useful but still had dashboard drift: one SQL tile used `uniq(distinct_id)`, and some tiles referenced retired or not-yet-observed events such as `routine_action_clicked`, `notebooks_run_open_clicked`, `billing_upgrade_cta_clicked`, and missing Market/GEX dashboard events. |
 | PH-W4 | Monetization and paywall funnel | Track whether paywall-to-CTA-to-checkout volume improves and whether checkout events are visible in the same funnel as frontend paywall actions. | `2026-07-21` run: last 30d showed `170` premium-gate users -> `21` paywall-shown users -> `1` paywall CTA/checkout user. `paywall_suppressed`, `paywall_plan_selected`, `billing_checkout_redirect_started`, and attempt/context properties were live; `billing_checkout_returned_success`, `billing_checkout_returned_cancel`, and `billing_subscription_activated` were not observed in taxonomy/results. |
-| PH-W5 | Acquisition attribution quality | Check whether source, referrer, and UTM coverage improved beyond direct and same-site attribution. | `2026-07-21` run: attribution was still dominated by direct and same-site traffic. External sources were tiny compared with `$direct`, and Google/account referrers represented small user counts. |
+| PH-W5 | Acquisition attribution quality | Verify the bounded public-site handoff, app-side URL cleanup, and registration-to-billing attribution. Compare `marketing_handoff_landed` with direct/referrer acquisition without treating separate PostHog projects as one identity space. | `2026-07-26` source now emits `marketing_handoff_landed`, carries bounded attribution through login/billing return, and emits backend `account_registration_completed` only for a verified newly created account. Live ingestion and the end-to-end funnel remain deployment-dependent. |
 | PH-W6 | Mobile, heatmap, and product-friction paths | Re-check mobile share, heatmap coverage, dead clicks, rageclicks, console errors, and route-specific friction for top product paths. Summarize click/scroll concentration, ignored primary controls, repeated non-interactive clicks, and whether heatmap evidence agrees with replay/funnel signals. | `2026-07-21` run: mobile remained material, and dead/rage clicks still clustered around `/app/option-trades/live`, `/app/option-trades/historical`, `/app/rank/contracts`, and `/app/rank/symbols`; recent replay samples confirmed console-error-heavy sessions on `/app/option-trades/live` and `/app/home`. Next runs should establish a heatmap baseline for these routes when PostHog exposes usable heatmap data. |
 | PH-W7 | Test/internal filtering | Check whether reusable internal/test cohorts or documented standard filters now exist, and whether key dashboards consistently use them. | `2026-07-21` run: `system.cohorts` returned no active cohorts. Filtering still depends on project settings and per-insight `filterTestAccounts`; Market Recap dashboard included low-volume tiles with `filterTestAccounts=false`, which may be intentional but should be rechecked. |
-| PH-W8 | Tracking docs and taxonomy | Check whether missing or stale local PostHog automation/taxonomy docs were restored or removed. | `2026-07-21` run: this runbook exists at `ops/webappp-fullstack/posthog-research.md`, but local app-repo taxonomy docs and dashboard-event contracts still need verification because dashboard queries are ahead of some observed events. |
+| PH-W8 | Tracking docs and taxonomy | Check whether source event contracts still match live PostHog schema and dashboards. | `2026-07-26` app repo canonical docs now cover the bounded public-site handoff and authoritative registration event; live schema/dashboard verification remains deployment-dependent. |
 
 When a new run finds a recurring issue that needs follow-up, add it to this table with a stable ID and concise baseline. When an item is resolved, mark it in the run report and either keep one final resolved note or remove it only if it no longer needs tracking.
 

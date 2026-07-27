@@ -31,11 +31,12 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-07-23
+Last updated: 2026-07-27
 
 ### Look First
 
 - [ ] Deploy the current `tradingflow-cfworker-service` Contract Rank reliability change, then verify one full trading session. Success requires no terminal `contract_rank_snapshot_refresh_failed`, no abandoned build left unresolved, all three `contract_rank_snapshot_r2_artifact_published` artifacts before promotion, and a current advertised V2 object. A retry event followed by successful publication is recovered degradation, not a failed refresh.
+- [ ] Deploy the Worker-owned Market Structure builder first. No process-service deployment or ClickHouse migration is required: the process service only prepares source tables. Verify a checkpointed current-date build, atomic promotion, two successful intraday flow-plus-GEX cycles, and self-recovery of a missed preopen build during the next in-session cadence before deploying webapp/portal consumers.
 
 Current durable guidance from recent runs:
 
@@ -43,6 +44,8 @@ Current durable guidance from recent runs:
 - Current `tradingflow-cfworker-service` code has retired Worker UW ingestion: `/uw-ingestion/*` and `/ingest` should return `404` after the removal deploy. If production still returns `200` for `/uw-ingestion/status` or emits `uw_ingestion_*` logs, treat that as stale Worker deployment / deploy skew first, then verify with `npx wrangler deployments list --env production`.
 - Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
 - For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
+- Market Structure is Worker-owned. Process-service prepares `OptionChainTable`, `SymbolMetaData`, and `mv_contract_rank_flow`; `MarketStructureSnapshotDO` independently schedules checkpointed builds, writes immutable R2 artifacts, and promotes only a validated manifest. Fresh source tables plus an old `/api/v1/market-structure` date therefore point to the Worker build/promotion path, not an EC2 upload callback.
+- Worker Market Structure runs preopen at 08:45 ET, final at 17:50 ET, and refreshes the intraday flow-plus-GEX overlay every five minutes from 09:30-16:00 ET. Each in-session cadence first idempotently ensures the current-date preopen snapshot, so a missed preopen trigger self-recovers without a process-service callback.
 - Current contract-rank metadata can advertise both `columnarV2ObjectPath` and the V1 `columnarObjectPath`. Prefer a bounded `GET` to the advertised V2 path when present: expect `200`, a `columns-v2` `x-contract-rank-r2-key`, matching content-version/digest headers, and immutable cache headers. Keep `/api/v1/contract-rank/latest-snapshot?format=columns` as the V1 compatibility check; it should redirect to `columns-v1.json`. Do not use `HEAD`; columnar routes can return `405`.
 - If `cf-service` logs repeatedly show `scheduled Contract Rank snapshot branch failed: Durable Object exceeded its CPU time limit and was reset`, and ClickHouse plus `mv_contract_rank_flow` are current, classify it as a Worker snapshot-builder CPU/time-budget failure. Do not call it producer ingest loss; prove the mart freshness with the Phase 6 SQL and then fix the snapshot build path or split the refresh workload.
 - If the inner refresh reports `Durable Object's isolate exceeded its memory limit and was reset` at a repeatable row checkpoint while ClickHouse remains current, classify it as live builder-state retention. Inspect aggregate writer buffers and JavaScript object/string shape before blaming R2 object size; the final immutable object can be healthy and much smaller than the transient heap.
@@ -287,8 +290,12 @@ Resolve the `cf-service` Better Stack source at runtime. Event predicates to che
 | Snapshot refresh | `contract_rank_snapshot_refresh_completed` / failure events, `payloadBytes`, `snapshotDate`, and duration fields |
 | Snapshot artifact publication | `operation = 'contract_rank_snapshot_r2_artifact_published'`; require `compact`, `columnar_v1`, and `columnar_v2` before promotion |
 | Snapshot retry recovery | `operation IN ('contract_rank_refresh_dispatch_retry', 'contract_rank_snapshot_dispatch_retry')`; correlate with the terminal refresh result for the same window |
+| Market Structure base snapshot | `operation IN ('market_structure_snapshot_refresh_completed', 'market_structure_snapshot_batch_retry', 'market_structure_snapshot_refresh_failed')`; require a terminal current-date completion and no unresolved build failure |
+| Market Structure intraday overlay | `operation IN ('market_structure_intraday_refresh_completed', 'market_structure_intraday_refresh_failed')`; for completion verify `durationMs`, `queryDurationMs`, `sourceSymbolCount`, `matchedSymbolCount`, and `missingSymbolCount`. Scheduled HTTP `409` means no active current-date base snapshot exists yet, and the same cadence should also have dispatched an idempotent base-snapshot ensure. |
 
 Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself. Repeated Durable Object CPU-limit resets during scheduled Contract Rank snapshot refreshes are serving-layer build failures when ClickHouse source and `mv_contract_rank_flow` stay current.
+
+For Market Structure, capture `effective_date`, `structure_as_of`, `flow_as_of`, `intraday_gex_as_of`, row count, and intraday-GEX coverage before any recovery attempt. After a failed intraday query, artifact validation, or promotion, repeat the same read and require the previously promoted catalog to remain available with unchanged provenance. An empty intraday result must fail rather than publish an all-zero catalog; a partial result may promote only if unmatched catalog rows are preserved.
 
 For retry events, inspect the terminal outcome rather than counting the retry as a failure. A retry followed by all three artifact-publication events and `contract_rank_snapshot_refresh_completed` is a recovered transient failure. A retry followed by `refresh_failed`, an abandoned checkpoint, or a missing artifact family remains an incident.
 
@@ -308,6 +315,16 @@ curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" | jq .
 curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/meta" | jq .
 curl -sS "$WORKER_ORIGIN/api/v1/available-dates" | jq .
 curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
+curl -sS --max-time 30 "$WORKER_ORIGIN/api/v1/market-structure" \
+  | jq '{
+      schema_version,
+      effective_date,
+      structure_as_of,
+      flow_as_of,
+      intraday_gex_as_of,
+      symbol_count:(.rows|length),
+      intraday_gex_count:([.rows[] | select(.intraday_gex != null)] | length)
+    }'
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
 
@@ -352,6 +369,7 @@ Serving-layer interpretation:
 | `/canary` fails | Worker availability/deploy/routing. |
 | Snapshot meta old, ClickHouse current | Snapshot cron, DO refresh, R2/KV write/read, payload-size guardrail, or cache invalidation. |
 | Snapshot meta old, mart current, and DO CPU-limit reset logs | Contract Rank snapshot builder exceeded Worker/Durable Object CPU budget; fix or split the build path, not source ingest. |
+| Market Structure endpoint old, option chain and contract coverage current | Worker `MarketStructureSnapshotDO` build, checkpoint retry, R2 candidate validation, or atomic promotion failed; inspect Worker operations and build status. Do not debug a process-service artifact upload. |
 | Snapshot meta current, UI old | Webapp route/cache/client state. |
 | `available-dates` missing latest date, ClickHouse has rows | Worker date-retention or refresh path. |
 | Snapshot payload near Cloudflare limits | Size/serialization guardrail; check `payloadBytes` trend and KV object sizes. |
@@ -592,6 +610,7 @@ Impact radius language:
 - snapshot meta/date:
 - `/api/v1/available-dates`:
 - `/api/v1/symbol-meta/latest/meta`:
+- `/api/v1/market-structure` date/status:
 - relevant log events:
 - payload/size risk:
 

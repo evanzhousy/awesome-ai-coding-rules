@@ -31,12 +31,13 @@ A single agent can run this end to end. A master/subagent split is useful only f
 
 ## Agent Handoff
 
-Last updated: 2026-07-27
+Last updated: 2026-07-29
 
 ### Look First
 
-- [ ] Deploy the current `tradingflow-cfworker-service` Contract Rank reliability change, then verify one full trading session. Success requires no terminal `contract_rank_snapshot_refresh_failed`, no abandoned build left unresolved, all three `contract_rank_snapshot_r2_artifact_published` artifacts before promotion, and a current advertised V2 object. A retry event followed by successful publication is recovered degradation, not a failed refresh.
-- [ ] Deploy the Worker-owned Market Structure builder first. No process-service deployment or ClickHouse migration is required: the process service only prepares source tables. Verify a checkpointed current-date build, atomic promotion, two successful intraday flow-plus-GEX cycles, and self-recovery of a missed preopen build during the next in-session cadence before deploying webapp/portal consumers.
+- [x] Contract Rank reliability is live in production (verified 2026-07-29 RTH). Expect recurring `contract_rank_snapshot_refresh_completed` with `REBUILT`, three `contract_rank_snapshot_r2_artifact_published` artifacts per cycle, and a current advertised V2 object. A retry followed by successful publication is recovered degradation, not a failed refresh. Re-open only if terminal `refresh_failed` / abandoned builds recur while ClickHouse stays current.
+- [x] Worker-owned Market Structure builder is live (verified 2026-07-29 RTH). Expect current-date `/api/v1/market-structure`, recurring `market_structure_intraday_refresh_completed`, and no unresolved `market_structure_*_refresh_failed`. Process-service still only prepares source tables; stale endpoint date with fresh CH points at Worker build/promotion.
+- [x] Process-service Market Structure publish jobs are retired and rebuilt in production (verified 2026-07-29). Running `dist/app.js` must not schedule `MarketStructureFlowOverlay` / `publishMarketStructure*`. `ContractRankEodFinalize` stays (ClickHouse chain refetch + mart fill only). If Better Stack still shows `Market structure artifact service returned 410`, treat it as stale EC2 `dist` / forever process, not Worker outage: compare host `git rev-parse HEAD` with `grep MarketStructureFlowOverlay dist/app.js` and rebuild via `./run_process_service.sh` only with explicit deploy authorization.
 
 Current durable guidance from recent runs:
 
@@ -45,6 +46,7 @@ Current durable guidance from recent runs:
 - Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
 - For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
 - Market Structure is Worker-owned. Process-service prepares `OptionChainTable`, `SymbolMetaData`, and `mv_contract_rank_flow`; `MarketStructureSnapshotDO` independently schedules checkpointed builds, writes immutable R2 artifacts, and promotes only a validated manifest. Fresh source tables plus an old `/api/v1/market-structure` date therefore point to the Worker build/promotion path, not an EC2 upload callback.
+- Process-service `Market structure artifact service returned 410` on `MarketStructureFlowOverlay`, `MarketStructureSnapshot`, or `ContractRankEodFinalize` means a pre-cutover EC2 build is still calling the retired publish path (old `ContractRankEodFinalize` chained `publishMarketStructureSnapshot(..., "final")`). Current source has no MS publish module; Worker MS staying current while these errors fire is expected. Fix is rebuild/restart process-service off current master, not Worker remediation.
 - Worker Market Structure runs preopen at 08:45 ET, final at 17:50 ET, and refreshes the intraday flow-plus-GEX overlay every five minutes from 09:30-16:00 ET. Each in-session cadence first idempotently ensures the current-date preopen snapshot, so a missed preopen trigger self-recovers without a process-service callback.
 - Current contract-rank metadata can advertise both `columnarV2ObjectPath` and the V1 `columnarObjectPath`. Prefer a bounded `GET` to the advertised V2 path when present: expect `200`, a `columns-v2` `x-contract-rank-r2-key`, matching content-version/digest headers, and immutable cache headers. Keep `/api/v1/contract-rank/latest-snapshot?format=columns` as the V1 compatibility check; it should redirect to `columns-v1.json`. Do not use `HEAD`; columnar routes can return `405`.
 - If `cf-service` logs repeatedly show `scheduled Contract Rank snapshot branch failed: Durable Object exceeded its CPU time limit and was reset`, and ClickHouse plus `mv_contract_rank_flow` are current, classify it as a Worker snapshot-builder CPU/time-budget failure. Do not call it producer ingest loss; prove the mart freshness with the Phase 6 SQL and then fix the snapshot build path or split the refresh workload.
@@ -137,8 +139,8 @@ Resolve sources at runtime. Do not rely on old IDs or table names.
 
 For process-service uptime, resolve by name rather than trusting old IDs:
 
-- Push heartbeat: `Process Service SyncUw Ingestion Heartbeats`.
-- Pull monitor: `ProcessServiceCanary`.
+- Push heartbeat: `Process Service SyncUw Ingestion Heartbeats` via Better Stack **heartbeats** (not the status-monitors list).
+- Pull monitor: `ProcessServiceCanary` via Better Stack **monitors**.
 
 ### Cloudflare Worker
 

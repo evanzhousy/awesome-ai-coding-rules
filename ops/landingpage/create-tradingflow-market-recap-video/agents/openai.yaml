@@ -1,0 +1,4 @@
+interface:
+  display_name: "TradingFlow Market Recap Video"
+  short_description: "Build verified TradingFlow market recap videos"
+  default_prompt: "Use $create-tradingflow-market-recap-video to turn a TradingFlow daily recap into a verified 60-second HyperFrames video."

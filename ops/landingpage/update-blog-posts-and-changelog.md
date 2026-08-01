@@ -12,16 +12,22 @@ This combined skill covers maintenance of three closely related release surfaces
 Use `/goal` for product-ship or content-refresh runs:
 
 - Objective: update the requested blog posts, screenshots, changelog releases, and Featurebase Updates sync without drifting from the current product contract.
-- Success criteria: involved worktrees are checked before edits, screenshots/covers/changelog cards are verified with the documented commands, sibling webapp Featurebase Product Updates sync is handled or explicitly deferred, and this runbook is updated for reusable drift.
+- Success criteria: involved worktrees are checked before edits, screenshots/covers/changelog cards are verified with the documented commands, sibling webapp Featurebase Product Updates sync is handled through Featurebase's **Updates** module with `ego-browser` dashboard/app verification or explicitly deferred, and this runbook is updated for reusable drift.
 - Stop condition: all requested content artifacts pass verification, or a blocker identifies the exact missing repo access, login, screenshot, locale, or test condition.
 
 ## Agent Handoff
 
-Last updated: 2026-07-25
+Last updated: 2026-07-30
+
+2026-07-30 run: published Featurebase Update `Home, Rank, and access are clearer` for the matching landing changelog card, with public page/body verified and email disabled. Later maintenance on 2026-07-30 added nontechnical-audience guidance for engineering-heavy source evidence, then republished the same Featurebase Update with simpler story-level copy. The previous 2026-07-25 Featurebase publication blocker is obsolete because the dashboard now contains that live update.
+
+2026-07-30 follow-up flag audit: verified the July 30 changelog/Featurebase copy against `src/human/featureFlags.ts` and live PostHog flags in project `300646`. Internal-only PostHog flags remain targeted to `email contains @tradingflow.com` (`recipe-edit-enabled`, Assistant Channels flags, `ai-credit-pack-purchase-enabled`), so recipe editing, assistant channels, and credit-pack purchasing must stay out of public copy until those flags are public.
+
+2026-07-30 GEX flow evidence run: published `GEX walls now include session flow evidence` through the Featurebase dashboard with email disabled, verified the public detail and cache-busted changelog index, then signed in to production and confirmed the footer `data-featurebase-changelog` trigger reopens the Featurebase-owned story.
 
 ### Look First
 
-- [ ] Featurebase Update publication is deferred for landing changelog card `2026-07-ai-market-data-rank-structure` until dashboard access or an API-capable Featurebase plan is available. On 2026-07-25, the REST duplicate check returned `403` with `Only Professional plan & up can call this endpoint`, `requiresPlanUpgrade: true`, and `requiresTierCode: t2`. After publishing, verify live state, English publication, `sendEmail:false`, public URL `200`, and signed-in footer **Updates** behavior.
+No active handoff items.
 
 ## When to use
 
@@ -172,6 +178,7 @@ Blog work for a product ship should be coordinated with public changelog and sig
 
 After capture/MDX edits:
 - For every user-visible release card or product walkthrough refresh, decide whether a matching **Featurebase Update** should be created or refreshed. Featurebase is the signed-in Product Updates source of truth; the landing changelog remains the public source of truth.
+- Use `ego-browser` for the Featurebase dashboard path. Go to the TradingFlow Featurebase workspace, open the **Updates** module, and create or edit the matching Update there when API access is unavailable, insufficient, or less reliable than the dashboard. Do not stop after changing the landing changelog unless Featurebase is explicitly deferred with the blocker.
 - Keep Featurebase Update copy simple and story-level. Do not mirror detailed changelog bullets or explain implementation internals.
 - Current webapp contract: `FeaturebaseAppProvider` mounts once at the app root; `FeaturebaseSurfaces` owns the Updates dropdown and unread card; the footer trigger is `data-featurebase-changelog`; Product feedback lives at `/user/product-feedback`; legacy `/app/portal` redirects there.
 - Read webapp `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` under **Product Updates ("What's New")** before changing Product Updates behavior or link policy.
@@ -179,6 +186,8 @@ After capture/MDX edits:
 - Do **not** add or update `src/config/featureAnnouncement.config.ts`, `src/config/featureAnnouncement.test.ts`, or `public/feature-announcement/*.svg` for current production Product Updates; those belong only to retired/legacy branches that still mount the custom modal.
 - Featurebase workspace evidence: current app id is in webapp `APP_CONFIGS.FEATUREBASE_APP_ID`, and the live workspace is documented in `src/human/appConfigs.ts` as `https://tradingflowcom.featurebase.app`.
 - If publishing through Featurebase dashboard/API, verify the Update appears from the signed-in app footer **Updates** control and that Featurebase owns unread/read state. Do not add a competing app-side dismissal store.
+- If using the authenticated dashboard API from `ego-browser`, the save endpoint requires the org `csrfToken` from `__NEXT_DATA__.props.pageProps.fallback["/v1/organization"].csrfToken`. Send only the editor payload fields (`id`, `title`, `content`, `date`, optional string `featuredImage`, `sendNotification`, `allowedSegmentIds`, `changelogCategories`, `locale`, `hideFromBoardAndWidgets`); read-only fields such as `commentCount` and null `featuredImage` values are rejected.
+- After publishing, reload or cache-bust the public `/changelog` index before verification. A reused browser tab can keep the older body even when the detail page and dashboard list API are already updated.
 
 ### Verification (blog)
 ```bash
@@ -187,6 +196,17 @@ bun run lint
 bun run build:dev
 ```
 Use `bun run build` when you need production image optimizer hash refresh (see `AGENTS.md`).
+
+If `bun run build:dev` remains silent after Next prints `Creating an optimized production build ...`, distinguish an incomplete build from a completed export whose Turbopack process did not exit:
+
+```bash
+cat .next/export-detail.json
+stat -f '%Sm %N' -t '%Y-%m-%d %H:%M:%S' .next/BUILD_ID out/index.html
+./node_modules/.bin/next build --webpack
+./node_modules/.bin/pagefind --site out --output-path public/pagefind
+```
+
+Treat the fallback as successful only when `export-detail.json` reports `"success": true`, the generated timestamps are current, and both checked-in binaries exit `0`. Report the non-exiting Turbopack parent process separately; do not call a silent command successful merely because artifacts exist.
 
 ---
 
@@ -228,15 +248,20 @@ Changing only release copy or adding cards usually touches **only** `productChan
 ### Scope (what belongs in the changelog)
 Only behavior that **shipped** to real users in production (or the intended hosted product).
 
+**Audience:** The public changelog and Featurebase Updates are for general users, not engineers. Engineering work can be source evidence, but publish it only when it creates a shipped user-visible outcome. Translate implementation into the user benefit: what became easier, clearer, faster, calmer, more reliable, or newly possible. If there is no user-visible effect, omit it.
+
 **Exclude:**
 - Local-only routes, dev-only features, CI-only work, pure internal refactors (no user-visible outcome).
 - Bullets that read like commit subjects or ticket dumps.
 - Docs-only, E2E harness-only, `.cursor`/skills-only, pure `chore:` bumps with no UX change.
 - Internal observability renames or doc moves (unless user-visible, e.g. clearer error UI).
 - Notebook/wiki-only, SQL/metadata tweaks with no clear user-visible outcome.
+- Engineering-only implementation detail, including refactors, migrations, dependency updates, build/test/tooling changes, cache rewrites, schema plumbing, service-token changes, PostHog/Featurebase wiring, observability internals, or route plumbing unless it directly changes what a user sees or can do.
 - Commit hashes, ticket IDs, branch names, subsystem codenames.
 
 **Prefer to include:** glossary-named surfaces, localization users see, filters/tables/live mode, ranking/lookup behavior, Product Updates / footer UX, real user-visible **Fixed** items.
+
+For engineering-related fixes that do qualify, write the outcome in plain language. For example, use "public previews stay stable while sign-in resolves" instead of "fixed auth race in entitlement query", or "updates now show the intended body text" instead of "patched the Featurebase content serializer".
 
 **Locales:** New cards should ship with both `en` and `zh` (`title`, `summary`, parallel bullet arrays) unless explicitly backfilling English only (add `zh` later).
 
@@ -271,11 +296,14 @@ Use `git` as a hint, not copy-paste. Default evidence is the **hosted app**:
 
 ### Workflow
 1. **Gather** — App-facing: dated `git log` on `tradingflow-webapp-fullstack origin/main`. Landing-only: same on `tradingflow-web-landingpage`. Map to glossary surface names.
-2. **Flag / rollout check** — Before drafting each candidate bullet, verify it is enabled for the intended production audience, not merely implemented or merged. Check `src/human/featureFlags.ts`, module config helpers, route/access guards, and every PostHog rollout gate referenced by the feature.
+2. **Flag / rollout check** — Before drafting or republishing each candidate bullet, verify it is enabled for the intended production audience, not merely implemented or merged. Check `src/human/featureFlags.ts`, module config helpers, route/access guards, and every PostHog rollout gate referenced by the feature.
+   - This check applies to both the landing changelog card and the matching Featurebase Update body.
+   - Treat `src/human/appConfig.shared.ts` `*_POSTHOG_FLAG_KEY` values, hooks such as `useRecipeEditEnabled()` / `useAiCreditPackPurchaseEnabled()`, and server helpers such as `isRecipeEditEnabled()` / `isAiCreditPackPurchaseEnabled()` as live-rollout evidence that requires a PostHog dashboard/tool check.
    - For PostHog-gated features, use the connected PostHog tool or dashboard to inspect the live flag definition before publishing changelog or Featurebase copy. Code comments are a useful hint, but the live PostHog definition is the launch authority.
    - Publish only features that are enabled for the public production audience. If a PostHog flag is limited to `@tradingflow.com`, internal cohorts, beta testers, specific persons, or any narrow rollout, omit that feature from public changelog cards and Featurebase Updates. Do not "scope" it into public release copy as an internal-audience note.
-3. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history) and any feature that is implemented but not enabled.
-4. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible.
+   - If the PostHog MCP connector advertises tools but rejects calls, use the authenticated PostHog dashboard/API in `ego-browser` for project `300646`. If neither route can verify the flag, omit or defer the flagged feature.
+3. **Filter** — Drop non-shipped, non-user-visible noise (see Scope + Git history) and any feature that is implemented but not enabled. For engineering-heavy evidence, first identify the observable user outcome; if you cannot state one plainly, omit it.
+4. **Draft** — Edit `src/lib/productChangelog.ts`: prepend at top of `PRODUCT_CHANGELOG_RELEASES`; keep `id` / `publishedAt` / sort valid. Add both locales when possible. Keep copy understandable to nontechnical product users.
 5. **Featurebase Updates** — After new/updated cards, create or refresh the matching signed-in Featurebase Update unless explicitly deferred with a reason (see “Featurebase Updates sync” below). Do **not** duplicate the releases array into the webapp.
 6. **Verify** — `bun test src/lib/productChangelog.test.ts`. After UI/i18n changes also `bun run lint && bun run build:dev`.
 7. **Wiki (webapp)** — If you change business-visible policy (page promises, link policy, URL behavior), update the sibling `doc/domain-knowledge/shared/domain-invariants.md` and `doc/domain-knowledge/shared/functionality.md` as applicable (per its `AGENTS.md`).
@@ -289,8 +317,13 @@ After editing `productChangelog.ts`, keep signed-in Product Updates aligned:
    - `title` / short body = story-level, not a dense release-note dump.
    - Link to the most useful app route or public blog/changelog page only when it helps the user act.
    - Keep implementation details, commit IDs, branch names, and raw URLs out of user-facing copy.
+   - Use the same nontechnical audience rule as the public changelog: engineering changes belong only as plain-language user outcomes.
    - Re-check live PostHog flag definitions for every included feature immediately before publishing. If any included feature is not public, remove it from both the public changelog and Featurebase Update draft before continuing.
-3. Publish or update the Featurebase Update through the approved Featurebase dashboard/API path for `https://tradingflowcom.featurebase.app`. If you cannot access Featurebase, explicitly report `Featurebase Update deferred` with the blocker.
+3. Publish or update the Featurebase Update through the approved Featurebase dashboard/API path for `https://tradingflowcom.featurebase.app`. The default dashboard path must use `ego-browser`, not manual guesswork:
+   - Use a task space dedicated to the release update, for example `useOrCreateTaskSpace('publish featurebase update')`.
+   - Open the Featurebase dashboard, navigate to the **Updates** module, and create or edit the matching Update in place.
+   - Use the semantic `snapshotText()` workflow for normal forms and buttons. If the editor behaves like a rich editor, perform a tiny write probe and verify it visually before pasting substantial copy.
+   - If login, captcha, billing plan limits, or missing permissions block the dashboard path, hand off the `ego-browser` task space to the user or explicitly report `Featurebase Update deferred` with the blocker.
    - REST reference: `https://docs.featurebase.app/rest-api/changelogs/createchangelog` (`https://do.featurebase.app/v2/changelogs`, `Featurebase-Version: 2026-01-01.nova`).
    - Before creating, query for likely duplicates with `GET /v2/changelogs?state=all&limit=20&q=<short title phrase>`.
    - Use `FEATUREBASE_API_KEY` only from the local shell or exact variable extraction; do not source a full `.env.local` if unrelated unquoted values make it parse-unsafe.
@@ -299,7 +332,10 @@ After editing `productChangelog.ts`, keep signed-in Product Updates aligned:
    - `categories` are optional and must already exist in the workspace. Do not assume `Fixed` exists just because the public changelog has a `fixed` section.
    - Verify the create response. If it returns `state: "draft"`, an empty slug, or `isPublished: false`, call `POST /v2/changelogs/{id}/publish` with `{"sendEmail":false,"locales":["en"]}` before reporting publication complete.
    - After publish/update, verify `state: "live"`, `isPublished: true`, `publishedLocales` includes `en`, `emailSentToSubscribers: false`, and the public URL returns HTTP 200.
+   - Public URL `200` is not enough. Verify the public update page and public changelog index both show the intended title and body text. A dashboard rich editor can display body text that has not serialized into the live record; the authenticated dashboard list API exposes that failure as `content:"<p></p>"`.
+   - If the dashboard rich editor fails to serialize, the dashboard app uses `PATCH /api/v1/changelog` with `{id,title,content,date,sendNotification:false,allowedSegmentIds,changelogCategories,locale,hideFromBoardAndWidgets:false}` and then `POST /api/v1/changelog/publish` with `{id,locales:[{locale:"en",sendEmail:false}]}`. Preserve existing category objects, website/widget visibility, and email-disabled state. Do not add unsupported cache parameters such as `_` to the admin changelog list query.
 4. Verify in the app, not only in the dashboard:
+   - Use `ego-browser` for signed-in app verification: open the webapp, click the footer **Updates** trigger, and confirm the Featurebase-owned dropdown shows the newly published/updated story.
    - Signed-in user sees the footer **Updates** control only after Featurebase identity reaches `identified`.
    - The trigger has `data-featurebase-changelog` and opens the Featurebase Updates dropdown.
    - Featurebase owns unread/read state and any non-blocking unread card.
@@ -332,6 +368,7 @@ This runbook is part of the workflow. Update it in the same pass when a real run
 
 ### Anti-patterns
 - Pasting commit subjects as bullets.
+- Mentioning engineering mechanisms such as refactors, caches, schemas, flags, SDKs, serializers, migrations, or internal services when the user-visible outcome can be stated directly.
 - One noisy release per day.
 - Raw URLs or “read the docs at …” in bullets (forbidden by tests).
 - Duplicate `publishedAt`, wrong sort order, reused `id`.
@@ -367,8 +404,10 @@ Implementation:
 - Screenshots: fix readiness gates and recapture if any PNG shows loading; for dense Contract-level analysis screenshots, run `bun run annotate-blog-ui contract-rank` after clean capture.
 - Changelog: edit ONLY src/lib/productChangelog.ts (prepend to PRODUCT_CHANGELOG_RELEASES). Use newest-first, unique id, YYYY-MM-DD publishedAt, optional area, sections new|improved|fixed as Localized<string[]>, at least one bullet total, no http(s) in bullets, omit empty sections.
 - For “update from main”: default to git log on tradingflow-webapp-fullstack origin/main for product ships; use landing main only for pure marketing ships. Cluster into meaningful cards.
+- The changelog is for general users, not engineers. Treat engineering work as evidence only when it creates a visible user outcome, then write that outcome plainly; otherwise omit it.
 - Before announcing a feature, verify it is enabled for the intended production audience via feature flags, live PostHog rollout definitions, route guards, and access gates. If a PostHog flag is not public, omit that feature from the public changelog and Featurebase Update entirely.
 - After new release cards or blog ships that affect Product Updates: create or refresh the matching Featurebase Update in the TradingFlow Featurebase workspace, or explicitly defer it with the access/blocker. Do not edit retired featureAnnouncement config/tests/SVG covers unless maintaining a legacy branch that still mounts the old modal.
+- Use `ego-browser` for the Featurebase dashboard path: open the TradingFlow Featurebase workspace, go to the **Updates** module, create/edit the matching Update, and verify the signed-in app footer Updates dropdown shows it. If REST is plan-blocked, switch to the dashboard path instead of retrying the API.
 - If the run reveals drift in these instructions, update this runbook in the same pass with the exact selector, command, warning, or acceptance check.
 - After blog MDX/image changes: run `bun run letter-blog-covers` when cover copy/assets changed, then `bun run lint && bun run build:dev` (or build for prod hashes).
 - After changelog changes: cd tradingflow-web-landingpage && bun test src/lib/productChangelog.test.ts; then verify the signed-in Featurebase Updates dropdown or report why Featurebase publication/verification was deferred.

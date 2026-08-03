@@ -8,8 +8,9 @@ when you change the automation at cursor.com/automations, paste this content as 
 
 Environment the automation needs (set on the Cursor automation's environment — **no Anthropic / LLM key**):
 `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`;
-`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` (the bucket name is the code constant
-`APP_CONFIGS.MARKET_RECAP_R2_BUCKET`, and the ClickHouse database comes from the URL);
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` (the bucket is the code constant
+`APP_CONFIGS.MARKET_RECAP_R2_BUCKET` = `tradingflow-market-recap`; do not set a bucket environment variable,
+and the ClickHouse database comes from the URL);
 optional `DATABASE_URL`/`NEON_DATABASE_URL` for the best-effort Neon mirror.
 Allowed tools: `Bash, Read, Write, WebSearch, WebFetch`.
 

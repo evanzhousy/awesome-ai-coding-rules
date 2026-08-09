@@ -1,192 +1,334 @@
 ---
 name: ai-chat-e2e
 description: >-
-  Browser E2E runbook for an AI agent (with the claude-in-chrome MCP tools) to exercise the unified
-  TradingFlow AI sidebar end-to-end: the global toggle, explain-the-page mode on a data page, build/edit a
-  cookbook recipe, create a new recipe, ANNOTATE recipe elements as focused context (the "Select element"
-  Cursor-design-mode flow), and the non-thinking assistant stream. Use when asked to smoke-test or
-  regression-test the AI chat feature after a change to the sidebar, the AssistantChatProvider/sync-loop, the
-  /api/ai/chat endpoint, the assistant runtime (streamText + tools), the recipe workspace, the element picker
-  (RecipeElementPicker), or the assistant stream. Runs against a LOCAL dev server (AI is gated by AI_ENABLED).
+  Browser E2E runbook for all in-app TradingFlow AI features: global sidebar shell,
+  explain/attach (Rank, Option Trades, drawers, Portfolio), AI Insight, Home Customize
+  with AI → Build as Recipe, cookbook build/new/Edit with AI, Select element picker,
+  render_view, thread/stop/feedback, consent + credits, Skills, Messaging-apps link
+  mint, and optional memory/schedule chat tools. Use when smoke- or regression-testing
+  AI after changes to the sidebar, AssistantChatProvider, /api/ai/chat, assistant tools,
+  recipe workspace, ElementPicker, Home workflows, Skills, or Assistant Channels settings.
+  Runs against a LOCAL dev server (AI gated by AI_ENABLED). Out of band: Market Recap
+  Cursor automation, scheduled digest delivery, live Slack/Telegram/Discord bot turns.
+disable-model-invocation: true
 ---
 
-# AI Chat — Browser E2E Runbook
+# AI Features — Browser E2E Runbook
 
-This runbook drives the **one** AI surface — the global docked **"TradingFlow AI"** sidebar (left side) — through
-its three jobs: (1) answer/explain the on-screen data, (2) build a recipe, (3) edit a recipe in the workspace.
-It is written for an autonomous agent using the `mcp__claude-in-chrome__*` tools.
+Work directly in the current session. No `/goal` or Master/Subagent loop — scope the flows,
+run them, report pass/fail, and clean up test recipes / skills / threads.
 
-## What you are testing
+This runbook covers **every in-app AI product surface** that a user reaches through the Browser
+plugin (`cursor-ide-browser`). The primary UI is the global docked **"TradingFlow AI"** sidebar
+(left), plus cookbook / Home / Settings entry points that open or feed that sidebar. Do not use
+`claude-in-chrome`, Playwright scripts, or the non-AI `ops/browser-e2e-product-review.md` for LLM
+turns (that runbook explicitly routes AI here).
 
-- **Sidebar shell** — a header toggle (`✦ AI`) opens a left-docked panel ("TradingFlow AI"); a close (`✕`)
-  button closes it and the close must **stick** (regression: it used to reopen itself).
-- **Explain mode** — on a data page (`/app/rank/contracts`, Option Trades, drawers) the sidebar auto-attaches
-  the page's snapshot (an "attach this view" chip) and the agent answers grounded in it.
-- **Build mode** — "build a recipe from this" → the agent calls `propose_recipe` → an inline preview card with
-  **Apply** / **Open in workspace** on a data page.
-- **Workspace mode** — `/app/cookbooks/<slug>/edit` (fork) or `/app/cookbooks/new` (create): the sidebar is the
-  chat, the main pane is a live `RecipeRenderer` preview that updates as the agent proposes/patches.
-- **Annotate mode** — an **always-visible "Select element"** toggle in the sidebar composer drives ONE global
-  picker (Cursor design-mode): click any element on **any** page → each becomes a removable **pill** → prompt
-  against them. A recipe block carries its data rows; a data-page element carries its text + the page's bundled
-  surface snapshot — both as a focused `recipeElements` context.
-- **Fast non-thinking stream** — assistant thinking is intentionally disabled. Turns should stream text/tool
-  updates without a `reasoning` part or AI-Elements `<Reasoning>` panel.
+Canonical owner: `ops/ai-chat-e2e/SKILL.md` (rules copy:
+`ops/webappp-fullstack/ai-chat-e2e/SKILL.md`).
 
-## Prerequisites (verify before driving the browser)
+Domain truth (read the rows in scope before driving):
 
-1. **Dev server up** on `http://localhost:8000` (`pnpm dev`). The AI surface is gated by `AI_ENABLED`
-   (`src/domain/ai/config.ts` = `import.meta.env.DEV || import.meta.env.VITE_ENABLE_AI === 'true'`): ON in
-   `pnpm dev` and the `pnpm build:test` test build (which sets `VITE_ENABLE_AI=true`), OFF in the prod
-   `pnpm build` until the deploy sets `VITE_ENABLE_AI=true`. If `✦ AI` is missing from the header, AI is
-   disabled (a prod build without the flag).
-2. **Paid test account.** Opening the sidebar runs `requirePaidAction`; use the standard test login
-   (from `AGENTS.md` / `tests/e2e/fixtures/auth.ts`):
-   - Email `active+clerk_test@example.com` · OTP/verification code `424242`.
-3. Backend reachable (ClickHouse + Neon) so the agent's `run_read_only_sql` + thread memory work.
+| Area | Docs |
+| --- | --- |
+| AI Assistants overview | `doc/domain-knowledge/shared/functionality.md` (AI Assistants) |
+| Cookbooks AI Insight / Edit with AI | `doc/domain-knowledge/cookbooks/domain-invariants.md`, `functionality.md` |
+| Assistant Channels | `doc/domain-knowledge/assistant-channels/domain-invariants.md`, `functionality.md` |
+| Skills | `doc/domain-knowledge/skills/domain-invariants.md`, `functionality.md` |
+| Schedules (chat tools only) | `doc/domain-knowledge/schedules/domain-invariants.md` |
+
+## Feature map (what this runbook covers)
+
+| ID | Feature | Primary entry | Browser success (short) |
+| --- | --- | --- | --- |
+| **0** | Sidebar shell | Header `✦ AI` / `✕` Close assistant | Opens; close **sticks** |
+| **A** | Explain / attach | Open AI on Rank / Option Trades | Attach chip; grounded answer; `/api/ai/chat` ≠ 404 |
+| **B** | Build recipe from surface | “Build a recipe from this view” | `propose_recipe` + Apply / Open in workspace |
+| **C** | New recipe workspace | `/app/cookbooks` → `+ New recipe` | Create→edit flip; Save |
+| **D** | Edit with AI | Report `Edit with AI` | Fork; `patch_recipe` updates preview |
+| **E** | Select element picker | Composer `Select element` | Pills; `recipeElements` (+ rows or bundled snapshot) |
+| **F** | Non-thinking stream | Any turn | Text/tool parts; **no** Reasoning panel |
+| **G** | Thread / Stop / feedback | Sidebar new/clear/history; Stop; Retry/Copy/rate | Transcript swaps; abort no charge; actions work |
+| **H** | `/app/ai` guide | `/app/ai` | Guide/catalog loads (not a chat turn) |
+| **I** | Ask AI (drawers) | Drawer header `Ask AI` (+ Select) | Sidebar opens with that drawer snapshot |
+| **J** | Product / knowledge Q&A | Any page, no surface | How-to / glossary answer without recipe tools |
+| **K** | `render_view` | Ranking/chart question in chat | Inline chart/table/KPI; optional Save as recipe |
+| **L** | AI Insight | Cookbook report `AI Insight` | Read-only insight; no recipe mutation |
+| **M** | Consent + credits + billing | First open; credits pill; `/app/billing` | Consent gate; meter/OOC; usage history |
+| **N** | Messaging apps mint | Settings → Messaging apps | Generate link code / list (when flag on) |
+| **O** | Skills | Settings → Skills; in-chat save_skill | CRUD + next-turn injection (when flag on) |
+| **P** | Home Customize with AI | `/app/home` → `Customize with AI` | Clarification (0 credits) → proposal → Build as Recipe |
+| **Q** | Memory / tools (optional) | Chat remember / watchlist / portfolio / Massive | Visible tool outcome |
+| **R** | Schedule via chat (optional) | Chat create/list schedule | Settings list updates; delivery itself is OUT |
+
+## Scope presets
+
+**Default smoke** (run unless the user narrows further): **0, A (Rank + one OT route), B, C, D, E, F, L, P, M (consent + credits pill visible).**
+
+**Full AI suite:** default + **G, H, I, J, K**, and when flags allow **N, O**. Optional **Q, R** only if the user asks.
+
+**Always out of this runbook:**
+
+1. **Market Recap authoring** — Cursor automation out-of-band; `/app/market-recap` is published prose (use `ops/browser-e2e-product-review.md` for freshness).
+2. **Scheduled digest delivery runner** — data-only, no LLM / credits / consent.
+3. **Live platform assistant turns** — Slack / Telegram / Discord / Messenger webhooks need bot credentials; Browser covers Settings mint only (**N**).
+4. **MCP / published API skills** — unwired product surface.
+5. **PostHog analytics correctness** — not a user-visible Browser outcome.
+6. **Stripe credit-pack webhook reconciliation** — backend ops, not sidebar smoke.
+
+## Shared gates (every LLM turn)
+
+Order: **paid entitlement** → **AI consent** (`users.ai_consent`) → **rate limit** → **credits**.
+
+| Gate | Visible / network signal |
+| --- | --- |
+| `AI_ENABLED` | Missing `✦ AI` in header; `/api/ai/chat` → `404 FEATURE_DISABLED` |
+| Unpaid / guest | Paywall / login; no premium AI send |
+| Consent | `AIConsentGate` Agree / Decline before composer |
+| Credits | Sidebar credits pill; out-of-credits replaces composer; Retry disabled when OOC |
+| Recipe edit (prod) | `@tradingflow.com` + PostHog `recipe-edit-enabled`; **always on in local/dev/test** |
+| Channels | `ASSISTANT_CHANNELS_ENABLED` (prod often off) + per-platform PostHog |
+| Skills | `USER_SKILLS_ENABLED` (prod often off); on in local/dev when flag allows |
+
+Kill switch: `FEATURE_FLAGS.AI_ASSISTANT_ENABLED` / `isAiAssistantEnabled()` — document as prereq; do not matrix every combo unless asked.
+
+## Prerequisites
+
+1. **Dev server** on `http://localhost:8000` (`pnpm dev`). AI is ON in `pnpm dev` and `pnpm build:test`
+   (`VITE_ENABLE_AI=true`); OFF in prod `pnpm build` until `VITE_ENABLE_AI=true` / flag. Source:
+   `src/domain/ai/config.ts`.
+2. **Paid test account** — `active+clerk_test@example.com` · OTP `424242`
+   (`tests/e2e/fixtures/auth.ts` / `AGENTS.md`).
+3. Backend reachable (ClickHouse + Neon) so `run_read_only_sql`, threads, and recipe save work.
+4. Prefer local over testapp when exercising LLM turns (credits + kill-switch control). If the user
+   forces testapp, confirm AI is enabled there first.
 
 ## Setup
 
-Load the browser tools in ONE call:
+Use the Cursor Browser plugin (`cursor-ide-browser`):
 
-```
-ToolSearch select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__read_console_messages,mcp__claude-in-chrome__read_network_requests
-```
+1. Navigate to `http://localhost:8000/app/rank/contracts`. Wait for first load (~8s).
+2. Prefer a fresh tab unless a `localhost:8000` tab is already signed in.
+3. If redirected to sign-in: test email → OTP `424242`.
+4. Snapshot / screenshots for UI; CDP/`Runtime.evaluate` for fiber parts, request-body interception,
+   console/network (see [Verifying agent state](#verifying-agent-state-techniques)).
 
-1. `tabs_context_mcp` first. Create a fresh tab (`tabs_create_mcp`) rather than reusing one, unless a
-   `localhost:8000` tab is already signed in.
-2. `navigate` to `http://localhost:8000/app/rank/contracts`. `wait` ~8s for first load.
-3. If redirected to sign-in: enter the test email, submit, enter OTP `424242`. (Do **not** type real
-   credentials — these are the shared test ones.)
+---
 
-## Flow 0 — Sidebar open / close (the regression gate; run this first)
+## Flow 0 — Sidebar open / close (regression gate; run first)
 
-1. Screenshot. Confirm `✦ AI` is in the **top-right header**.
-2. Click `✦ AI`. The left-docked **"TradingFlow AI"** panel opens (header with new/clear/history/`✕`, an input
-   "Ask about this page, or build a recipe…", a disclaimer footer).
-3. **Click the `✕` close button** (header, `aria-label="Close assistant"`). The panel must close **and stay
-   closed** — re-screenshot after ~1s. ❌ If it reopens, the sync-loop/auto-open regression is back
-   (`RecipeWorkspace`/`AssistantChatProvider` once re-fired open on every context-value change).
-4. Re-open with `✦ AI` for the next flows.
+1. Confirm `✦ AI` in the **top-right header**.
+2. Click `✦ AI`. Left-docked **"TradingFlow AI"** opens (header new/clear/history/`✕`, composer, disclaimer).
+3. Click `✕` (`aria-label="Close assistant"`). Panel must close **and stay closed** (~1s).
+4. Re-open with `✦ AI` for later flows.
 
-## Flow A — Explain the data on /rank
+---
 
-1. With the sidebar open on `/app/rank/contracts`, confirm an **attach chip** is shown (e.g. `✦ Rank · Contracts`)
-   — the page's surface auto-attached on open.
-2. Confirm the **context suggestions**: "What does this mean?" and "Build a recipe from this view" (these appear
-   only when a surface is attached; general chat shows "Top 10 symbols by total premium today" etc.).
-3. Send **"What does this mean?"** (click the suggestion, or type + Enter — see *Driving input*).
-4. Verify (see *Verifying agent state*): the request hits `POST /api/ai/chat` and returns 200/streaming (NOT
-   404 — 404 means `AI_ENABLED`/the gate is off). The attach chip flips to the re-attach state
-   ("Attach this view: …") — the surface was consumed (`onContextSent`).
-5. The agent streams a grounded, plain-language **explanation** (no `propose_recipe` tool call — explain mode).
-   Cold start can still take time, but a multi-minute wait is no longer expected now that thinking is disabled.
+## Flow A — Explain / attach (Rank + Option Trades)
+
+1. On `/app/rank/contracts`, open the sidebar. Confirm attach chip (e.g. `✦ Rank · Contracts`).
+2. Confirm suggestions: “What does this mean?” / “Build a recipe from this view” when a surface is attached.
+3. Send **“What does this mean?”**.
+4. Verify `POST /api/ai/chat` is 200/streaming (not 404). Attach chip flips to re-attach after send.
+5. Agent streams a grounded explanation (**no** `propose_recipe`).
+6. Repeat attach+one short question on `/app/option-trades/historical` or `/live` (whichever loads rows).
+   Confirm a distinct Option Trades attach label and a grounded answer.
+
+---
 
 ## Flow B — Build a recipe from a data surface
 
-1. On `/app/rank/contracts`, open the sidebar, send **"Build a recipe from this view"**.
-2. The agent discovers schema, dry-runs SQL (`run_read_only_sql` tool steps), then calls **`propose_recipe`**.
-   Verify the part type `tool-propose_recipe:output-available` appears (see *Verifying agent state*).
-3. On a data page the sidebar renders an **inline ProposedRecipe card** (a `RecipeRenderer` preview + an
-   `Apply` and an `Open in workspace` button). ✅ Both buttons present.
-4. Click **Open in workspace** → it saves the recipe and navigates to `/app/cookbooks/<slug>/edit`; the
-   workspace loads with the live preview in the main pane and the sidebar still docked.
+1. On `/app/rank/contracts`, send **“Build a recipe from this view”**.
+2. Expect schema discovery / `run_read_only_sql` then **`propose_recipe`**
+   (`tool-propose_recipe:output-available` — snake_case; camelCase is a bug).
+3. Inline ProposedRecipe card: **Apply** and **Open in workspace** both present.
+4. Click **Open in workspace** → `/app/cookbooks/<id>/edit` with live preview + docked sidebar.
+5. (Optional) From a later propose card, click **Apply** once and confirm no double-insert / broken preview.
+
+---
 
 ## Flow C — New recipe (create mode)
 
-1. Navigate to `/app/cookbooks` (gallery). Confirm a **`+ New recipe`** button in the header.
-2. Click it → `/app/cookbooks/new`. The main pane shows a **create empty-state** ("New recipe" + "Describe the
-   report you want in the AI sidebar…"); the sidebar auto-opens.
-3. Send a starter, e.g. **"Top 5 symbols by total option premium today"**.
-4. On the first `propose_recipe`, the empty canvas flips to a **live preview** (create → edit). Confirm the main
-   pane now renders the proposed recipe (title + blocks). ✅ The CREATE→EDIT flip is the key check.
-5. Click **Save** → it persists; the header shows "Saved".
+1. `/app/cookbooks` → **`+ New recipe`** → `/app/cookbooks/new`.
+2. Empty state + sidebar auto-open. Send e.g. **“Top 5 symbols by total option premium today”**.
+3. First `propose_recipe` flips canvas to **live preview** (create→edit). ✅
+4. **Save** → header shows Saved.
 
-## Flow D — Edit with AI (fork an existing recipe)
+---
 
-1. Navigate to a recipe report, e.g. `/app/cookbooks/zero-gamma-flip`. Confirm an **"Edit with AI"** button.
-2. Click it → `/app/cookbooks/zero-gamma-flip/edit`. The workspace forks the recipe (live preview in main pane).
-3. Send a non-SQL edit: **`Rename the recipe title to "QA Test Title".`**
-4. The agent calls **`patch_recipe`** (no dry-run). Verify the part `tool-patch_recipe:output-available` AND the
-   **main-pane preview title updates** to "QA Test Title" (this is the end-to-end proof: agent → sync loop →
-   `applyPatch` → preview re-render). A compact in-thread note "✓ Updated the recipe — see the live preview."
-   appears in the sidebar (no inline card in the workspace).
-5. (Optional) Use **Select** (the workspace header toggle) → click a preview block → confirm an attach chip
-   ("Table #N" / "Chart · …") and that the next message targets that block. (This is the older single-block
-   workspace select; the report's multi-element picker is **Flow E**.)
+## Flow D — Edit with AI (fork)
 
-## Flow E — Global "Select element" picker (Cursor design-mode, any page)
+1. Open a template report, e.g. `/app/cookbooks/zero-gamma-flip`. Confirm **Edit with AI**.
+2. Click → `/edit` workspace (fork). Send: **`Rename the recipe title to "QA Test Title".`**
+3. Expect **`patch_recipe`** and main-pane title → “QA Test Title” (agent → sync → `applyPatch` → preview).
+4. Optional: workspace header Select → one block chip (multi-element picker is Flow E).
 
-The picker is **global**: ONE `ElementPicker` mounted in the sidebar, driven by an **always-visible**
-`Select element` toggle in the composer (NOT a header button, NOT gated to recipes). It works on **any** page,
-with two channels over the one picker:
-- **Recipe surface** (`RecipeReportView` report OR `RecipeWorkspace` `/edit`) — the page registers
-  `annotateData { recipe, datasets }` on the provider; a click inside a `[data-block-index]` maps to that block
-  and attaches its trimmed `rows` (≤12) — the rich path.
-- **Data page** (`/app/rank/*`, `/app/option-trades`, drawers — generic rows, no stable ids) — the click
-  captures the element's text/identity via agentation (`identifyElement`/`getNearbyText`) and **bundles the
-  page's active surface snapshot** (`getActiveContext().buildSnapshot()`) as the data.
+---
 
-> **Heavy-page caveat (recipe template reports).** A chart-heavy report (`market-recap` ≈30 charts) makes
-> full-page **screenshots / `javascript_tool` time out** and can **freeze while a turn streams**. Drive the
-> picker in short JS bursts **between** turns, assert on the intercepted `/api/ai/chat` body + DOM counts, and
-> confirm completion via the **server-side thread poll** (see *Verifying*); recover with a `navigate` away and
-> back. Data pages (a table, not 30 charts) and the light `quick-test/edit` workspace do NOT freeze — prefer
-> them for picker checks.
+## Flow E — Global “Select element” picker
 
-1. **Gating (E0).** With the sidebar **open** on ANY `/app` page, the **`Select element`** toggle is in the
-   composer (above the input) — including data pages with **0** `[data-block-index]`. It's absent only when the
-   sidebar is closed. There is **NO "Annotate"/"Select" button** in any page header (the entry is the chatbot).
-2. **Activate (E1).** Click `Select element` → label flips to **`Selecting — click any element`**
-   (`aria-pressed=true`); **`document.body`** gets `data-tf-annotating` and `cursor:crosshair`. Recipe blocks
-   highlight via the **pure-CSS** rule (`[data-tf-annotating] [data-block-index]:hover > *`); generic elements
-   get a lightweight **rAF-throttled `.tf-annotate-hover`** class (paint-only — no overlay / `getBoundingClientRect`
-   thrash; that froze the heavy report before). The sidebar (`[data-ai-sidebar]`) + top `header` are excluded so
-   chat + nav still work while selecting.
-3. **Single select (E2).** Click any element → it's added **immediately** as a removable **pill** (no popover).
-   Each pill has `[aria-label="Remove element"]`. Label = the recipe block (`Chart · <title>`, `Table`, …) or,
-   for a generic element, the pointed-at text (the cell value).
-4. **Multi-select + per-element removal (E3).** Click more → one pill each. Remove one pill → only it drops,
-   order preserved. Removing the **last** pill clears the `recipeElements` context (the pill row disappears).
-5. **Send — recipe channel (E4a).** On a recipe surface, the `POST /api/ai/chat` body carries
-   `attachedContext { kind:'recipeElements', elements:[{ blockIndex, blockType, label, selectedText?, rows? }] }`
-   — a data block's `rows` ≤12; a markdown / no-query block has `rows` undefined; **no** `snapshot`. Pills clear
-   after send (`onContextSent`).
-6. **Send — data-page channel (E4b).** On `/app/rank/*` or `/app/option-trades`, a pick sends
-   `attachedContext { kind:'recipeElements', elements:[{ label, selectedText, nearbyText, surfaceLabel }],
-   snapshot:{ surfaceId, surfaceLabel, data } }` — **no** `blockIndex`/`rows` (generic), `surfaceLabel` = the
-   page (e.g. "Rank · Contracts"), and the bundled `snapshot` IS the page's surface data. The agent answers
-   about the element grounded in that page data (surface mode → streams text/tool updates, Flow F).
-7. **Escape / toggle-off (E5).** `Escape` exits annotate mode (label → `Select element`; existing pills
-   **retained**). Clicking the toggle again while `Selecting` also exits; mode off → clicks add nothing. Picks
-   are self-contained (rows / snapshot captured at click time), so they **persist validly across navigation** —
-   there is no stale-clear (that earlier report-unmount clear was removed with the global picker).
+ONE global picker in the sidebar composer (not a page-header Annotate button). Works on any `/app` page.
+
+**Channels:**
+
+- **Recipe** (report or `/edit`): `annotateData` + `[data-block-index]` → element with `rows` ≤12, no `snapshot`.
+- **Data page** (Rank / Option Trades / drawers): element text + bundled page `snapshot`, no `blockIndex`/`rows`.
+
+**Heavy-page caveat:** chart-heavy reports (e.g. `market-recap`) can freeze screenshots/JS during streams.
+Drive picks between turns; assert intercepted `/api/ai/chat` body + DOM; recover with navigate away/back.
+Prefer light `quick-test/edit` or Rank for picker checks.
+
+1. **E0** — Sidebar open → composer shows **Select element** on data pages too (0 blocks OK). No header Annotate.
+2. **E1** — Click → **Selecting — click any element** (`aria-pressed`); `document.body` has `data-tf-annotating` + crosshair.
+3. **E2** — Click element → removable pill immediately (`[aria-label="Remove element"]`).
+4. **E3** — Multi-select; remove one pill; last pill clears context.
+5. **E4a** — Recipe send body: `attachedContext.kind === 'recipeElements'` with `rows` where applicable, **no** `snapshot`.
+6. **E4b** — Data-page send: elements + `surfaceLabel` + bundled `snapshot`, **no** `rows`/`blockIndex`.
+7. **E5** — Escape / toggle-off exits selecting; pills retained; picks stay valid across navigation.
+
+---
 
 ## Flow F — Fast non-thinking stream
 
-Assistant thinking is intentionally disabled for now to keep Netlify-hosted turns fast. The assistant still uses
-the raw Vercel AI SDK `streamText` tool loop, but `getAssistantThinkingProviderOptions()` returns `undefined`
-and `getAssistantLanguageModel()` resolves the fast non-thinking model path. `sendReasoning: true` remains in
-`chat.ts` for compatibility, but no `reasoning` parts should be emitted.
+Thinking is disabled (`getAssistantThinkingProviderOptions()` → `undefined`).
 
-1. Run any turn (e.g. Flow E's send, or a Flow D rename).
-2. While streaming, the sidebar should show normal assistant progress: tool parts and/or answer text. The
-   `<Reasoning>` panel should not appear.
-3. Verify the assistant completes and, when applicable, emits the expected text/tool part types. A missing
-   `reasoning` part is expected.
+1. Run any turn (E send or D rename).
+2. Sidebar shows tool/text progress; **no** `<Reasoning>` panel.
+3. Completion emits expected text/tool parts; missing `reasoning` is correct.
+
+---
+
+## Flow G — Thread controls, Stop, response actions
+
+1. With a completed turn visible, use sidebar **new / clear / history** — transcript swaps; no crash.
+2. Start a longer turn; click **Stop** while streaming — stream ends; aborted turn must **not** consume credits
+   (credits pill unchanged vs pre-send, within normal refresh lag).
+3. On an assistant reply, exercise **Copy**, **Retry**, and Helpful / Not helpful when visible. Retry disabled
+   when out of credits.
+
+---
+
+## Flow H — `/app/ai` guide
+
+1. Open `/app/ai`.
+2. Guide / catalog / gallery content renders without console errors from `components/ai/*`.
+3. Optional: open sidebar from here and send one general question (ties to Flow J).
+
+---
+
+## Flow I — Ask AI from drawers
+
+1. `/app/rank/symbols` → open a symbol drawer (e.g. SPY) → settle Overview/GEX.
+2. Click drawer header **Ask AI** — sidebar opens with that drawer/surface attached.
+3. Send a short “What am I looking at?” — grounded answer; no recipe mutation.
+4. Optional: drawer **Select element** uses the same global picker as Flow E.
+5. Optional: Contract drawer Ask AI; Portfolio dashboard attach if `PORTFOLIO_ENABLED`.
+
+---
+
+## Flow J — Product / knowledge Q&A
+
+1. On any page with sidebar open and **no** special recipe edit intent, ask a product question
+   (e.g. “What is Net DEX?” or “How do I open Live Option Trades?”).
+2. Expect a markdown answer (glossary / knowledge tools OK). Should **not** call `propose_recipe` /
+   `patch_recipe` unless the user asked to build/edit.
+
+---
+
+## Flow K — `render_view` + Save as recipe
+
+1. Ask for a small ranked table or chart (e.g. “Show a table of top 5 symbols by total premium today”).
+2. Expect an inline **`render_view`** (or equivalent) chart/table/KPI **in the thread**.
+3. Heavy turns may cost **2 credits** — note pill delta.
+4. If **Save as recipe** appears, click once → workspace/save path without double-create. Skip if rollout hides it.
+
+---
+
+## Flow L — AI Insight (cookbook report)
+
+1. Open an official template report (prefer a light template, not `market-recap` for this flow).
+2. Click **AI Insight** (paid). Sidebar opens with recipe outline + trimmed run data attached.
+3. Insight streams read-only analysis. Confirm **no** `patch_recipe` / `propose_recipe` mutation of the template.
+4. Guest/unpaid: AI Insight must paywall, not silently fail.
+
+---
+
+## Flow M — Consent, credits, billing
+
+1. **Consent** — On a fresh test identity (or cleared consent if available), open `✦ AI`. Agree unlocks composer;
+   Decline keeps chat blocked. Do not burn the seeded `active+` account’s consent without a restore plan.
+2. **Credits pill** — After a successful turn, pill updates (or stays consistent with balance).
+3. **Out of credits** — Only when the user authorizes draining/using an OOC fixture: composer replaced by OOC
+   panel; View billing / Buy when enabled; `/api/ai/chat` returns quota error.
+4. **`/app/billing`** — AI Credits balance + Usage History rows (date, credits, source) when the account has usage.
+5. **Credit pack purchase** — optional; only with explicit user auth (Stripe test mode).
+
+---
+
+## Flow N — Messaging apps (Settings mint only)
+
+Run only when Messaging apps UI is visible (`ASSISTANT_CHANNELS_ENABLED` / PostHog).
+
+1. Settings → **Messaging apps**.
+2. **Generate link code** for an enabled platform; code appears; list/unlink works.
+3. Optional: ask sidebar “connect Telegram” → `create_channel_link_code` shows a code in-thread.
+4. Do **not** require a live Telegram/Slack message round-trip in this runbook.
+
+---
+
+## Flow O — Skills
+
+Run only when Skills UI is visible (`USER_SKILLS_ENABLED`).
+
+1. Settings → **Skills** — create a temporary skill (clear name like `QA E2E skill <date>`), edit, pause, delete.
+2. Or in chat: “Always prefer weekly GEX when I ask about walls” → `save_skill`; confirm it appears in Settings.
+3. Next turn should reflect the skill when enabled. Delete the QA skill before finishing.
+
+---
+
+## Flow P — Home Customize with AI → Build as Recipe
+
+1. `/app/home` → pick a guided template → selected-template **Customize with AI** (aside primary; Current Build footer is the edited-sequence entry).
+2. Left sidebar opens. First clarification phase is **code-owned (0 credits)** — answer the clarifying question.
+3. Ordered proposal appears (**0 credits**, no model authoring of the workflow itself).
+4. Choose **Build this as a Recipe** (exact post-proposal action) → one forced `propose_recipe` conversion.
+5. Preview card; user must **Apply** / **Open in workspace** — **no auto-save**.
+6. Clean up any saved QA recipe.
+
+---
+
+## Flow Q — Memory / data tools (optional)
+
+Only when the user asks:
+
+- **Memory:** “Remember that I trade 0DTE SPY” → later turn uses it; “Forget …” clears.
+- **Watchlist / portfolio tools:** ask about the user’s lists or portfolio when connected.
+- **Massive market data:** quote/profile questions when `MASSIVE_MARKET_DATA_ENABLED`.
+
+Record tool part types; do not treat missing optional tools as a product FAIL if the flag is off.
+
+---
+
+## Flow R — Schedule via chat (optional)
+
+Only when the user asks and schedules are enabled:
+
+1. Ask the sidebar to create/list/delete a recipe schedule for a **user** recipe (not a parameterized template
+   that schedules reject).
+2. Confirm Settings → Scheduled deliveries updates.
+3. Do **not** wait for cron delivery or assert digest email/content here (non-LLM runner = OUT).
+
+---
 
 ## Verifying agent state (techniques)
 
-**Network** — confirm the endpoint, not 404:
-- `read_network_requests` with `urlPattern: "/api/ai/chat"` (call it BEFORE sending — tracking starts on first
-  call). Streaming POSTs may not show resource timing until complete; a missing/404 entry with an error chip in
-  the sidebar = the gate is off.
+**Network** — track `/api/ai/chat` before send. Streaming POSTs may lack timing until complete; missing/404 +
+error chip ⇒ gate off.
 
-**Console** — `read_console_messages` with `onlyErrors: true, pattern: "AgentContext|AssistantChat|api/ai|hook|Cannot"`.
-  Ignore pre-existing `MissingTranslationError` for `zh-CN` (unrelated i18n fallbacks).
+**Console** — errors matching `AgentContext|AssistantChat|api/ai|hook|Cannot`. Ignore pre-existing
+`MissingTranslationError` for `zh-CN`.
 
-**Agent message parts (React fiber)** — the most reliable signal for tool calls/streaming. Walk
-`__reactFiber$…` from the chat textarea to the `messages[]` array and read each part's `type[:state]`:
+**Agent message parts (React fiber)** — walk `__reactFiber$…` from the chat textarea to `messages[].parts`:
 
 ```js
 function getFiber(el){const k=Object.keys(el).find(k=>k.startsWith('__reactFiber$'));return k?el[k]:null;}
@@ -196,45 +338,26 @@ while(f&&hops<60&&!found){for(const c of [f.memoizedProps,f.memoizedState]){if(c
 JSON.stringify(found?found.flatMap(m=>(m.parts||[]).map(p=>p.type+(p.state?(':'+p.state):''))):null);
 ```
 
-Expected part types: `text`, `step-start`,
-`tool-run_read_only_sql:output-available`, `tool-propose_recipe:output-available`,
-`tool-patch_recipe:output-available`, `tool-get_recipe:output-available`. The tool names are **snake_case**
-(the AI-SDK message part type is `tool-<agent-tools-object-key>`); `tool-proposeRecipe` (camelCase) is a
-**bug** — the commit/preview won't fire. `reasoning` is not expected while assistant thinking is disabled.
+Expected: `text`, `step-start`, `tool-run_read_only_sql:output-available`, `tool-propose_recipe:output-available`,
+`tool-patch_recipe:output-available`, `tool-get_recipe:output-available`, plus channel/skill tools when in scope.
+Tool names are **snake_case** (`tool-proposeRecipe` camelCase is a bug). `reasoning` unexpected while thinking off.
 
-**Preview title flip** — to confirm an edit landed in the workspace preview, read the rendered title node
-(not the chat) before/after; it should change to the requested value.
+**Preview title flip** — read the workspace title node, not the chat, before/after edits.
 
-**Annotation DOM + request body (Flow E)** — the picker has no React-fiber message of its own, so assert on the
-DOM + the intercepted request:
-- Toggle: a `button` whose text matches `/Select element|Selecting — click recipe/`. Pills:
-  `[aria-label="Remove element"]` (count = #selected). Annotate-active: `[data-tf-annotating]` on the recipe
-  container. Blocks: `[data-block-index]` / `[data-block-type]`.
-- Dispatch a pick (the picker listens on `document` in **capture** phase and maps via
-  `closest('[data-block-index]')`): on a descendant of a `[data-block-type="…"]` element,
-  `el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}))`.
-- Intercept the send body BEFORE submitting, then read it after:
-  ```js
-  window.__b=null;const of=window.fetch;
-  window.fetch=function(u,o){try{if(String(u).includes('/api/ai/chat')&&o?.body)window.__b=JSON.parse(o.body);}catch(e){}return of.apply(this,arguments);};
-  // …submit… then: window.__b.attachedContext  →  { kind:'recipeElements', elements:[{blockIndex,blockType,label,selectedText?,rows?}] }
-  ```
+**Annotation DOM + request body (Flow E)** — toggle text `/Select element|Selecting/`; pills
+`[aria-label="Remove element"]`; `[data-tf-annotating]`; intercept fetch body for `attachedContext`.
 
-**Server-side thread poll (when the renderer freezes mid-stream, or to check completion)** — every finished
-turn persists to Neon `chat_threads`, so you can confirm completion + the assistant parts WITHOUT touching a
-frozen page. Query the latest thread by a snippet of its first user message and read the assistant parts:
-```sql
-SELECT messages FROM chat_threads WHERE title ILIKE '%<prompt snippet>%' ORDER BY updated_at DESC LIMIT 1;
+```js
+window.__b=null;const of=window.fetch;
+window.fetch=function(u,o){try{if(String(u).includes('/api/ai/chat')&&o?.body)window.__b=JSON.parse(o.body);}catch(e){}return of.apply(this,arguments);};
 ```
-Use the project's Neon creds (`.env.local` `DATABASE_URL` + `@neondatabase/serverless`). The assistant message's
-`parts[].type` should include the relevant `text` / `tool-*` parts. A thread only persists on `onFinish`, so a
-**network-failed turn never appears** — distinguish "still streaming" from "failed" by tailing the dev log for
-`AI_APICallError` / `socket disconnected before secure TLS`.
 
-## Driving input (when clicking the send button is flaky)
+**Server-side thread poll** — when the renderer freezes, query Neon `chat_threads` for the prompt snippet and
+read assistant `parts` (thread persists on `onFinish` only).
 
-Set the textarea value via the native setter, fire `input`, then submit the form — in **two** `javascript_tool`
-calls (top-level `await` isn't supported, and React needs the input event before submit):
+## Driving input (when Send is flaky)
+
+Two separate page evaluations (React needs `input` before submit):
 
 ```js
 // call 1
@@ -252,50 +375,87 @@ document.querySelector('textarea[placeholder*="Ask about this page"], textarea[p
 
 ## Known gotchas
 
-- **Latency without thinking.** The assistant runs on the **raw Vercel AI SDK** (`streamText` + tools, no
-  Mastra). Thinking is disabled, so minutes-long pre-answer waits are no longer expected. Poll the fiber
-  `partTypes` / the server-side thread poll to distinguish active tool work from a provider/network/runtime
-  failure.
-- **Heavy report freezes the renderer.** `market-recap`-class **template reports** (the annotation feature's
-  only surface) freeze screenshots and `javascript_tool` during streaming (the page never idles). Drive the
-  picker in short JS bursts **between** turns, assert via the intercepted request body + the server-side thread
-  poll, and recover a frozen renderer with a `navigate` away and back. The light workspace pages
-  (`/app/cookbooks/<slug>/edit`) do not freeze — use them for Flow F stream checks.
-- **Intermittent Moonshot / Neon network.** A turn can fail with
-  `AI_APICallError: … Client network socket disconnected before secure TLS connection was established` (or Neon
-  `fetch failed` on a cold start) — a transient VPN/endpoint flake, **not the code**. A failed turn never
-  persists; just resend. A dev-server restart clears a stale Neon connection pool.
-- **HMR reloads kill the stream.** Editing source while a turn streams triggers a Vite full reload that drops
-  the SSE connection. Don't edit files mid-turn; if a turn dies, resend.
-- **Sidebar auto-opens once** per workspace entry (by design) and then respects the toggle — re-verify Flow 0
-  if the close button ever seems stuck.
-- **`crypto.randomUUID` thread ids** + per-context memory: switching pages/threads via the sidebar's thread
-  controls can desync the transcript from the workspace preview (a known limitation, not a crash).
-- **Mic / attachment buttons are intentionally removed** from the sidebar input — their absence is expected.
-- **Don't trigger native `alert/confirm`** via clicks (e.g. a delete-with-confirm) — it freezes the extension.
+- **Latency without thinking.** Raw `streamText` + tools; minutes-long pre-answer waits are unexpected. Poll
+  fiber parts / Neon thread to distinguish work from provider failure.
+- **Heavy report freezes.** Prefer Rank / light workspace for E/F/L; recover with navigate.
+- **Intermittent Moonshot / Neon network.** Resend; failed turns do not persist.
+- **HMR kills streams.** Do not edit source mid-turn.
+- **Sidebar auto-opens once** per workspace entry, then respects toggle — re-check Flow 0 if close sticks fail.
+- **Thread switch desync** with workspace preview is a known limitation, not a crash.
+- **Mic / attachment buttons removed** — absence expected.
+- **Native `alert`/`confirm`** freezes the extension — avoid delete-confirm paths or use app UI carefully.
+- **Recipe-edit rollout** differs in prod; local/dev should always show Edit / New recipe when AI is on.
+- **Channels / Skills** may be flag-off in prod builds — mark `not-in-scope` / `blocked`, not FAIL.
 
 ## Pass / fail
 
-PASS when: Flow 0 close sticks; Flow A returns a grounded answer with no error chip and `/api/ai/chat` is not
-404; Flow B reaches `tool-propose_recipe:output-available` + shows the inline card; Flow C flips create→edit and
-saves; Flow D's `patch_recipe` updates the preview title; **Flow E** — the `Select element` toggle is in the
-sidebar on **every** page (incl. data pages, none in any header), a click adds an instant pill (no popover),
-multi-select + per-element removal work, the send body carries `attachedContext.kind === 'recipeElements'`
-**with `rows`+no snapshot on a recipe surface** AND **with `surfaceLabel`+bundled `snapshot`+no rows on a data
-page** (`/rank`, `/option-trades`), and pills clear after send; **Flow F** — the assistant completes with
-text/tool parts and no required `reasoning` part, including in recipe edit.
+Report a matrix of flow ID → `pass` / `fail` / `blocked` / `not-in-scope`.
 
-FAIL (and report with the fiber `partTypes` / the persisted thread parts, the request body, the network status,
-and a screenshot or DOM dump) on: a 404 from `/api/ai/chat`; a reopening close button; a `propose_recipe` that
-never updates the preview; a hook/runtime error in the console from `components/ai/*`; a **`Select`/`Annotate`
-button in a page header** (it must live in the sidebar); the toggle **missing on a data page** (it must be
-always-visible); a **JS hover overlay or a renderer freeze on hover** in annotate mode (block highlight must be
-pure CSS, generic highlight the rAF `.tf-annotate-hover` class); a data-page pick **missing its bundled
-`snapshot`**; a turn stuck with no text/tool progress; or tests still requiring `reasoning` while assistant
-thinking is disabled.
+**Default smoke PASS when:**
+
+- **0** close sticks; **A** grounded Rank (+ OT) answer, `/api/ai/chat` ≠ 404;
+- **B** `propose_recipe` + card; **C** create→edit + Save; **D** `patch_recipe` updates title;
+- **E** global Select element + correct `attachedContext` shapes; **F** no Reasoning panel;
+- **L** AI Insight read-only; **P** Home Customize → Build as Recipe without auto-save;
+- **M** consent/credits UX consistent with gates (at least pill + no false OOC on a paid test account).
+
+**FAIL (with fiber `partTypes` / request body / network / screenshot) on:**
+
+- 404 from `/api/ai/chat` when AI should be on; reopening close button;
+- `propose_recipe` / `patch_recipe` that never updates preview;
+- AI Insight or Ask AI mutating a template;
+- Select/Annotate living in a **page header** instead of the sidebar;
+- Select missing on a data page; JS hover overlay thrash / freeze in annotate mode;
+- data-page pick missing bundled `snapshot`;
+- Home Customize charging credits for the code-owned clarification phase;
+- Build-as-Recipe auto-saving without Apply;
+- hook/runtime errors from `components/ai/*`;
+- tests requiring `reasoning` while thinking is disabled.
 
 ## Cleanup
 
-Delete any recipes saved during the run (Flow B/C) from **"My recipes"** on `/app/cookbooks` (or
-`deleteMyRecipe`) so the gallery isn't polluted. Clear the chat thread (the sidebar's clear control) if reusing
-the tab.
+- Delete recipes created in B/C/P from **My recipes** (`/app/cookbooks` or `deleteMyRecipe`).
+- Delete QA skills from Settings → Skills (**O**).
+- Clear or leave a clean chat thread if reusing the tab.
+- Unlink any Messaging-apps test codes created in **N**.
+- Do not leave Stripe/credit-pack purchases hanging unless the user owns cleanup.
+
+## Report shape
+
+```markdown
+## AI E2E Report
+- Environment: localhost:8000 / build / AI_ENABLED
+- Persona: active+clerk_test@…
+- Scope preset: default smoke | full suite | custom
+- Flow matrix: id → status + one-line evidence
+- Material failures:
+- Credits / consent notes:
+- Cleanup:
+- Runbook maintenance: no change | <what changed>
+```
+
+## When to switch runbooks
+
+| Ask | Use |
+| --- | --- |
+| Non-AI product walkthrough (Rank, OT, Market Recap freshness, billing UI without LLM) | `ops/browser-e2e-product-review.md` |
+| Market Recap scheduled publish / authoring automation | `ops/market-recap/routine-prompt.md` + domain docs |
+| Live Slack/Telegram/Discord assistant delivery | Separate channels integration runbook (not this file) |
+| PostHog AI event quality | `ops/posthog-research.md` |
+
+## Runbook self-maintenance
+
+At end of run, update this file only for reusable drift (routes, entry labels, gates, new AI surfaces).
+One-off numeric results and screenshots stay in the session report.
+
+Update when:
+
+- A new AI entry point ships (Ask AI, Insight, Home, Skills, Channels, credits UX).
+- Tool names, attach-context shapes, or credit costs change.
+- Flags flip default visibility for Skills / Channels / recipe-edit.
+- Verification techniques stop working (fiber walk, fetch intercept).
+
+Do not update for one-off flake retries or single-run numeric answers.
+
+**Runbook maintenance:** expanded from sidebar/cookbook-only coverage to the full in-app AI feature map
+(Flows G–R + scope presets + OUT list) after product inventory of shared/cookbooks/channels/skills docs.

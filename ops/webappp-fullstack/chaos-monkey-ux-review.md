@@ -155,6 +155,8 @@ If the plan is not written first, the round has not started.
 
 Use `[@Browser](plugin://browser@openai-bundled)` for every TradingFlow interaction.
 
+If Browser execution starts or resumes after the plan's time-dependent state has changed—for example, the market opened, the represented latest session changed, authentication expired, or the visible build changed—preserve the original plan and add an explicit execution-time adjustment to the round. Continue only when the same user job, safety boundary, and evidence question remain coherent; otherwise record the partial/blocker evidence and choose a new round. Never describe the planned state as though Browser actually observed it.
+
 For each journey:
 
 1. Start from the entry a real first-time user can reach; do not begin from a hidden deep link unless deep-link recovery is the test.

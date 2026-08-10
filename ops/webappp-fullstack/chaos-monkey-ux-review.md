@@ -42,9 +42,7 @@ Use ops/webappp-fullstack/chaos-monkey-ux-review.md as the runbook and ops/webap
 
 Last updated: 2026-08-10
 
-- [ ] The first operational run should read the living report, confirm that no completed round exists, and execute `Round 001` against `https://testapp.tradingflow.com` unless the user specifies another environment.
-
-This was a documentation-authoring pass only. No Browser walkthrough or product check was executed, and no application code was changed.
+No open runbook-maintenance items. For every operational continuation, read the living report's `Report Status`, `Coverage Ledger`, `Finding Register`, and latest completed round; that report is the sole owner of the next-round handoff. Do not duplicate round numbers, current findings, or transient coverage state here.
 
 ## Role: The Safe Chaos Monkey
 

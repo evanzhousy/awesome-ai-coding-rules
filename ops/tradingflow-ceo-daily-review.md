@@ -166,6 +166,7 @@ ToolAccess:
 | Webapp | `ops/webappp-fullstack/webapp-check-error.md` | Correlating recent production errors across PostHog Error Tracking and Better Stack. |
 | Webapp | `ops/webappp-fullstack/posthog-research.md` | Running product analytics, event quality, dashboard, and behavior reviews in PostHog. |
 | Webapp | `ops/webappp-fullstack/browser-e2e-product-review.md` | Walking webapp UI journeys with `@Browser` for manual E2E product testing, UI defects, and PM/trader UX findings. |
+| Webapp | `ops/webappp-fullstack/chaos-monkey-ux-review.md` | Running a continuing `/goal`, review-only UX exploration as a first-time novice trader with product-manager judgment, with all rounds recorded in one living Chaos Monkey Report. |
 | Landing | `ops/landingpage/browser-e2e-test.md` | Simulating user journeys while doing E2E maintenance and product review. |
 | Landing | `ops/landingpage/create-landing-hero-video.md` | Creating or refreshing the homepage hero product video from real local webapp screenshots with HyperFrames and WebM-first delivery. |
 | Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts (`content/posts/**`), screenshots, public changelog, and What's New sync. |

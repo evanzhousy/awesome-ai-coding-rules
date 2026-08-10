@@ -6,12 +6,12 @@ Preserve completed round narratives. Update the status, coverage ledger, and fin
 
 ## Report Status
 
-- Last updated: 2026-08-10 06:08 EDT (UTC-04:00)
-- Last completed round: Round 003
+- Last updated: 2026-08-10 06:19 EDT (UTC-04:00)
+- Last completed round: Round 004
 - Environment: `https://testapp.tradingflow.com`; visible build `v0.2.1+01ad1e9`
-- Overall state: Round 003 complete; planned coverage remains in progress
-- Next recommended round: Round 004 — active desktop Rank Contracts first-research loop and Option Trades handoff
-- Residual unknowns: Post-auth guest-intent restoration, unpaid/canceled access, mobile entry and core journeys, Live market-hours streaming/reconnect/stale states, alert enablement, Rank, secondary surfaces, Saved Filter Sets, watchlist scope, export, the Option Trades ticker-tape transport cause, and most loading/error/degraded states remain untested
+- Overall state: Four rounds completed; the completion gate remains open
+- Next recommended round: Round 005 — active desktop Rank Symbols first-research loop across GEX, volatility, chain context, and the offered Option Trades handoff
+- Residual unknowns: Post-auth guest-intent restoration, unpaid/canceled access, mobile entry and core journeys, Live market-hours streaming/reconnect/stale states, alert enablement, Rank Symbols, Rank Contracts access/mobile/filter/error states, exact-contract handoff persistence across refresh or copied URLs, secondary surfaces, Saved Filter Sets, watchlist scope, export, the Option Trades ticker-tape transport cause, and most loading/error/degraded states remain untested
 
 ## Coverage Ledger
 
@@ -30,7 +30,7 @@ Preserve completed round narratives. Update the status, coverage ledger, and fin
 | Option Trades Historical | Active plus guest/unpaid gate where relevant | Mobile plus remaining desktop states | Mobile, unpaid gate, Saved Filter Sets, scope, pagination, export, other errors | `untested` | — |
 | Option Trades Live | Active | Desktop | Market closed / latest snapshot / disabled controls / mode handoff / route-away return | `findings` | Round 003; `CM-UX-004`, `CM-UX-006`, `CM-UX-007`, `CM-UX-008` |
 | Option Trades Live | Active plus guest/unpaid gate where relevant | Desktop / mobile | Market-open streaming, reconnect, stale/error, mobile, and access gates | `untested` | — |
-| Rank Contracts | Active plus guest/unpaid gate where relevant | Desktop / mobile | Discover, rank, inspect drawer, interpret freshness, handoff | `untested` | — |
+| Rank Contracts | Active plus guest/unpaid gate where relevant | Desktop / mobile | Discover, rank, inspect drawer, interpret freshness, handoff | `findings` | Round 004; `CM-UX-009`; active desktop success path and exact handoff tested |
 | Rank Symbols | Active plus guest/unpaid gate where relevant | Desktop / mobile | Discover, inspect structure/vol/chain, interpret caveats, handoff | `untested` | — |
 | Market Recap | Available persona | Desktop / mobile as materially different | Discover, understand date/freshness, follow offered actions | `untested` | — |
 | Portfolio | Active | Desktop / mobile as materially different | Discover, understand value, empty/success without durable mutation | `untested` | — |
@@ -40,6 +40,7 @@ Preserve completed round narratives. Update the status, coverage ledger, and fin
 | Assistant Skills | Active | Desktop / mobile as materially different | Discover, understand purpose and state without editing | `untested` | — |
 | Cross-surface continuity and recovery | Guest | Desktop | Home workflow to premium step / gate dismiss | `findings` | Round 001; `CM-UX-003` |
 | Option Trades mode and route continuity | Active | Desktop | Market-closed Live → Historical → Live / Home → Live fresh mount | `good` | Round 003; same first row, no visible loading state, filters remained `Default` |
+| Rank Contracts exact-contract continuity | Active | Desktop | Latest-session contract drawer → Historical exact identity → Browser Back | `good` | Round 004; GTIM 2026-12-18 CALL $2.5, session 2026-08-07, 46 matching rows, drawer restored |
 | Cross-surface continuity and recovery | Relevant signed-in persona | Desktop / mobile as materially different | Back, reload, drawer/route handoff, interrupted flow outside the tested Option Trades path | `untested` | — |
 | Final holistic free-exploration sweep | Mixed, within safe read-only boundary | Desktop and mobile | Unscripted but hypothesis-led | `untested` | — |
 
@@ -55,6 +56,7 @@ Preserve completed round narratives. Update the status, coverage ledger, and fin
 | `CM-UX-006` | Medium | Open | Option Trades single-trade interpretation / accessibility | 002 | 003 | Historical and Live direct users to hover non-focusable Side values, and Live also puts sentiment logic behind a non-focusable row badge. |
 | `CM-UX-007` | Medium | Open | Live off-hours snapshot freshness | 003 | 003 | Live says only `Latest trading day`; on pre-market 2026-08-10 it showed `08-07` row dates but no explicit `2026-08-07` session or snapshot as-of label. |
 | `CM-UX-008` | Medium | Open | Option Trades degraded third-party ticker tape | 003 | 003 | A failed TradingView ticker-tape iframe persisted as an unlabeled 72-pixel full-width gray band with a broken-image icon and no fallback; transport cause remains unverified. |
+| `CM-UX-009` | Critical | Open | Rank Contracts GEX interpretation | 004 | 004 | Rank mechanically maps symbol-level GEX regime plus contract moneyness to `Support`, `Resistance`, `Bullish Target`, and `Bearish Target`, turning context into forecast-like trading levels. |
 
 ## Round Entry Template
 
@@ -289,3 +291,54 @@ Copy this structure under `Completed Rounds`. Write the plan before Browser inte
 - Next recommended round: Round 004 — test the active desktop Rank Contracts first-research loop: discover the ranked evidence, interpret freshness and metric uncertainty, inspect one contract drawer, follow the offered Option Trades handoff, and verify the settled destination preserves the intended contract/symbol context without changing saved state.
 - Repository Playwright E2E scripts were not run.
 - Runbook maintenance: no change. Round planning, Browser evidence types, deduplication, environment-scoped degraded-state handling, and the completion gate remained clear.
+
+### Round 004 — Active desktop Rank Contracts first-research loop and exact-contract handoff
+
+#### Round Test Plan
+
+- Date/time and timezone: 2026-08-10 06:11:54 EDT (UTC-04:00)
+- Environment and build/version if visible: `https://testapp.tradingflow.com`; prior visible build `v0.2.1+01ad1e9`, to be rechecked if visible
+- Why this round is next: Rank Contracts is an uncovered core discovery job and the report's named next round. It is also the first tested cross-product journey where the user must understand why a contract is ranked, inspect its mixed-horizon evidence, and trust that Option Trades receives the exact contract rather than a loose symbol guess.
+- User job: Find one noteworthy option contract from the latest completed session, understand why it ranks and what its evidence cannot prove, inspect its structural details, then validate that exact contract in Option Trades without manually rebuilding filters.
+- Surface and entry point: Continue from the signed-in active-user Option Trades Live handoff, enter Rank through visible primary navigation, and use the Contracts leaf reached by the product rather than starting from a hidden deep link.
+- Persona/account proof: Existing test user `active+clerk_test@example.com`; prove the session through `User menu` plus rendered paid Rank rows/drawer and the entitled Option Trades destination, not from prior-round memory alone.
+- Viewport and state(s): Desktop at approximately `1280 × 720`; pre-market latest-session Contracts success state, visible ranking/help state, one contract drawer, exact-contract Option Trades handoff, and browser-return context.
+- Greenfield first-use hypothesis: Contract discovery should form one auditable chain—name the session and scope, explain the ranking metric and liquidity boundary, expose observed flow separately from settled structure, let the trader inspect one contract, and hand the exact identity to tape validation without suggesting a forecast or dealer intent.
+- Novice expectation: Know the represented session and freshness, what made the first contract noteworthy, whether direction and impact are observations or heuristics, which data is intraday versus structural/T+1, what one drawer tab is for, and whether the downstream rows match the chosen symbol, date, put/call, expiration, and strike.
+- Journeys and safe actions:
+  1. Enter Rank from primary navigation, wait for the paid Contracts list to settle, and inventory page identity, latest session/freshness, off-hours status, active Saved View, scope, effective filters, Contract Opportunity Brief, table order, row count, and metric explanations. Open only read-only help controls.
+  2. Open the first visible contract through its ordinary row/Inspect affordance, record the selected contract identity, drawer default tab and available tabs, structure snapshot date/provenance, metric explanations, and the visible path to Option Trades. Close or return only if required to restore context.
+  3. Activate the drawer's `Open in Option Trades` action, wait for the destination to settle, and verify the route, committed date, symbol, put/call, expiration, strike, and matching rows. Use browser back once to judge whether Rank returns to the same session/list/drawer context.
+- Domain sources read by the operator: `AGENTS.md`; `knowledge/basic_concepts.md`; `doc/domain-knowledge/rank/domain-invariants.md`; `doc/domain-knowledge/rank/functionality.md`; the chaos-monkey runbook; companion Browser setup/safety guidance; current runbook-maintainer, greenfield, and in-app Browser skills.
+- Evidence to collect: Host and signed-in proof; visible build; settled Rank route; session, countdown/freshness, Saved View, scope/filter, KPI/card, total/page, and first-row text; exact help copy; viewport screenshots for hierarchy/density; drawer URL/identity/tab/provenance and screenshot; destination route and committed filter chips/rows; back-navigation state; loading/empty/error copy encountered naturally; console only as corroboration.
+- Explicit non-goals: No filter/date/scope/Saved View/column/sort/watchlist/export mutation, no AI or element-picker action, no Flow consent/load unless the exact-contract default journey requires it, no notification/billing/account mutation, no mobile/guest/unpaid/production claim, no repository Playwright execution, and no application-code or product-doc change.
+
+#### Browser Execution
+
+| Journey | Starting state and expectation | Browser action | Settled visible result | Evidence | Status |
+| --- | --- | --- | --- | --- | --- |
+| Enter Rank and understand the default ranked universe | Signed-in entitled Option Trades Live with `User menu`; expected primary navigation to reach a clearly dated, bounded contract-discovery surface without changing saved state. | Activated the visible primary `Rank New` control, waited through the shell-only load, then read the settled page and opened only calculation/header help. | `/app/rank/contracts` settled with `User menu`, build `v0.2.1+01ad1e9`, `Session 2026-08-07`, `Last trade 3d ago`, exact last-trade timestamp, market-open countdown, `Default · 0`, disabled `Clear filters`, `378145 ranked contracts`, 50 visible rows, and `Page 1 of 7563`. The page explicitly said it mixes intraday delayed flow with prior-session OI and daily volume context. Opportunity cards disclosed eligible, thin-excluded, and unknown counts, while calculation controls explained the formulas and liquidity floor. The table's `GEX Sentiment` values included `Resistance` and `Support`; its help explicitly defined POSITIVE-regime OTM calls/puts as `Resistance`/`Support (walls)` and NEGATIVE-regime OTM calls/puts as `Bullish Target`/`Bearish Target (acceleration targets)`, even though the regime is symbol-level and same-side OTM contracts share a label. | `R004-D1`: route, user proof, session/freshness text, saved-view/filter state, card values/help, record/page counts, first rows, and exact GEX Sentiment help. Two viewport screenshot attempts timed out, so no visual density or clipping conclusion is made. | Finding: `CM-UX-009` |
+| Inspect one ranked contract and separate flow from structure | Settled default Contracts list; expected a normal row action to preserve exact identity, default to Tradeability, and expose structural provenance rather than blending it into the ranking signal. | Opened the first visible contract through a non-action row cell, then inspected the drawer identity, selected tab, caveat, snapshot label, and available handoff without activating AI, selection, history load, or watchlist controls. | The drawer URL encoded `selectedOptionSymbol=GTIM261218C00002500&drawerTab=tradeability`; its header showed `GTIM $2.5 Call · 2026-12-18 (133d)`, `STOCK`, `OTM`, latest session `2026-08-07`, and refresh time. `Tradeability` was selected by default beside `Flow` and `Positioning`. It labeled `Latest structure snapshot · 2026-08-07` and warned that OI, quotes, and greeks were the most recent session snapshot, not the intraday flow that ranked the contract. | `R004-D2`: drawer URL, exact OCC identity, selected-tab state, caveat, structural snapshot copy, metrics, and available `Open Option Trades` link. | Good design |
+| Validate exact identity in Option Trades and return | GTIM 2026-12-18 CALL $2.5 Tradeability drawer; expected the offered handoff to commit symbol, Rank session, put/call, expiry, and strike—but not moneyness—and Back to restore the inspected context. | Activated `Open Option Trades`, waited for Historical to finish loading, compared the applied summary and rows with the drawer identity, then used Browser Back once. | Historical settled on date `2026-08-07` with ticker `GTIM` and Applied Filters `Expiry: 2026-12-18`, `Type: CALL`, and `Strike Price: 2.5 to 2.5`; no moneyness filter was applied. It rendered 46 records, and the observed rows matched GTIM, CALL, 2026-12-18, and $2.5. Back restored the Rank query, same GTIM drawer, selected Tradeability tab, session/list content, and 51 table rows including the header. The destination address remained the generic `/app/option-trades/historical`, so refresh/share durability was not inferred. | `R004-D3`: before/destination/return routes; settled date, ticker, applied-filter text, total and row identities; restored drawer text, selected tab, and row count. | Good design; refresh/share persistence untested |
+
+#### What is good
+
+- Keep the top-level provenance chain. Rank names the completed session, last-trade age and timestamp, market countdown, mixed-horizon caveat, eligible/excluded counts, and formula definitions before the user opens a contract.
+- Keep Tradeability as the ordinary row-click default and retain the drawer's stronger structural warning: it gives the exact contract identity, snapshot date, and a plain statement that OI, quotes, and greeks are not the intraday flow that produced the rank.
+- Keep the exact-contract handoff behavior. It committed symbol, date, call/put, expiry, and strike without leaking moneyness, returned 46 matching tape rows, and Browser Back restored the inspected Rank context.
+
+#### Bad — highlighted findings
+
+> [!IMPORTANT]
+> **CM-UX-009 · Critical · Rank turns a contextual GEX regime into support, resistance, and price targets**
+> The default table already labels OTM contracts `Support` or `Resistance`. Its own visible help says a symbol-level POSITIVE regime makes OTM calls `Resistance` and OTM puts `Support (walls)`, while a NEGATIVE regime makes them `Bullish Target` or `Bearish Target (acceleration targets)`; it also admits that every same-side OTM contract for a symbol shares the label. This is unreasonable for a novice because a mechanical regime-plus-moneyness mapping is presented as an actionable level and directional destination, encouraging the trader to infer dealer intent, causality, or a forecast that the evidence does not establish. Greenfield target: describe only the observed structural regime and the contract's relative location, with an explicit non-forecast boundary. Acceptance signal: no Rank UI, table value, or help copy derives `support`, `resistance`, `bullish`, `bearish`, `target`, `wall`, or equivalent prediction language from this mapping; the explanation states what is measured, its date, and what cannot be inferred.
+
+#### Round Conclusion
+
+- Greenfield verdict: The session/provenance design, drawer boundary, and exact-contract handoff form a strong auditable research chain, but the semantic layer fails the safety bar by converting contextual GEX structure into forecast-like walls and targets. Preserve the evidence plumbing and redesign that interpretation before treating Rank Contracts as safe first-use guidance.
+- Findings added or strengthened: Added `CM-UX-009` (Critical).
+- Coverage rows updated: Rank Contracts active desktop success path is now `findings`; Rank Contracts → Option Trades exact-contract continuity is `good`. Mobile, access gates, state mutation, refresh/share persistence, and error/degraded paths remain untested.
+- What remains unknown: Whether the exact filters survive a destination reload or copied generic URL; Rank Contracts mobile and guest/unpaid gates; Saved Views, filter/scope changes, columns, sorting, pagination, export, alternate sessions, negative-regime target rows in context, and natural empty/error/degraded states.
+- Next recommended round: Round 005 — test the active desktop Rank Symbols first-research loop across GEX, volatility, and chain context, including freshness/non-forecast explanations and any offered Option Trades handoff, without changing saved or durable state.
+- Repository Playwright E2E scripts were not run.
+- Runbook maintenance: no change. The plan-before-Browser gate, evidence ladder, highlighted-finding format, deduplication rule, and completion criteria remained clear during execution.

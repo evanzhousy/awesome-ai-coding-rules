@@ -1,127 +1,139 @@
 ---
 name: datapipeline-error-check
-description: End-to-end TradingFlow production data-pipeline error check that combines process-service Better Stack error triage, cf-service producer health, Cloudflare Worker Durable Object/R2/KV serving health, and ClickHouse data-quality checks. Use when the user asks why contract-rank/option-flow data is stale, lagging, missing, delayed, not refreshed, or whether UW ingest, Worker snapshots, Durable Objects, R2 objects, or ClickHouse source data are healthy.
+description: End-to-end TradingFlow production data-pipeline and rendered data-quality check that combines process-service Better Stack error triage, cf-service producer health, Cloudflare Worker Durable Object/R2/KV serving health, ClickHouse data-quality checks, and optional Rank GEX/IV comparisons against InsiderFinance and Barchart. Use when contract-rank/option-flow data is stale, lagging, missing, delayed, not refreshed, or when rendered GEX/IV values need same-ticker, same-session vendor comparison.
 disable-model-invocation: true
 ---
 
-# Data Pipeline Error Check - process-service + cf-service + ClickHouse
+# Data Pipeline and Rendered Data-Quality Check
 
-This is the canonical replacement for the retired process-service error runbook and the retired cf-service producer, Durable Object/KV status, and data-quality runbooks.
+Use this runbook to investigate production data health and, when relevant, compare
+the rendered Rank product with external vendor references. It covers five layers:
 
-Those source files were consolidated here and removed. Keep this runbook self-contained; do not add new links back to retired paths.
+1. **Producer ownership and liveness** — which service is writing UW/option-flow rows
+2. **Process-service errors and heartbeats** — EC2 backend jobs, cron, legacy producer health
+3. **cf-service Worker, Durable Objects, R2, and KV** — serving endpoints, DO/R2/KV state, snapshots, Worker logs
+4. **ClickHouse source data** — freshness, completeness, latency, metadata, contract-rank, Greeks parity
+5. **Rendered product evidence** — same-ticker/session GEX comparison with InsiderFinance and IV-family comparison with Barchart
 
-Use it when the question spans more than one layer of the TradingFlow data path:
+External vendors are methodology references, not canonical truth. Rendered
+comparison evidence can narrow a product or presentation discrepancy, but it
+does not replace source, producer, or serving-layer proof.
 
-1. **Producer ownership and liveness** - which service is writing UW/option-flow rows.
-2. **Process-service errors and heartbeats** - EC2 backend jobs, cron, and legacy producer health.
-3. **cf-service Worker, Durable Objects, R2, and KV** - public serving endpoints, DO/R2/KV state, snapshots, and Worker logs.
-4. **ClickHouse source data** - row freshness, completeness, latency, metadata enrichment, contract-rank correctness, and Greeks parity.
+## Objective
 
-This runbook is read-only by default. Do not deploy, mutate Cloudflare KV/DO state, send heartbeat pings manually, force snapshot refreshes, run backfills, or change Better Stack monitors unless the user explicitly authorizes that exact action.
+Produce a current, evidence-backed verdict for the selected execution mode.
+Success means the run identifies the narrowest proven failing layer or rendered
+discrepancy bucket, states data-loss risk and access limits, records the relevant
+dates/timestamps, and gives a bounded next action without crossing the read-only
+boundary.
 
-## Recommended Invocation
+Expected operator: an AI agent with repo access and the tools required by the
+selected mode—Better Stack/Cloudflare/ClickHouse access for pipeline work, or
+browser automation and the local TradingFlow test session for rendered vendor
+comparison.
 
-Use `/goal` for broad production investigations.
+## How to run
 
-- **Objective:** produce an evidence-backed data-pipeline health verdict for the requested window or trading date, from producer logs through Worker serving and ClickHouse source quality.
-- **Success criteria:** active writer is resolved, Better Stack source/table IDs are resolved at runtime, process-service and cf-service evidence are checked, Cloudflare serving endpoints are compared against ClickHouse source freshness, data-quality scripts or bounded SQL verify row health, and the report states impact radius, likely root cause, data-loss risk, and next action.
-- **Stop condition:** the pipeline is proven healthy, the failing layer is isolated with evidence, access to a required source is explicitly blocked, or the next step would require a production mutation.
+Work directly in the current session. Do not invent a `/goal` or Master/Subagent loop.
 
-A single agent can run this end to end. A master/subagent split is useful only for longer incident reviews: the master owns scope, verdict, and risk; subagents gather bounded Better Stack, Worker, and ClickHouse evidence.
+| Mode | Use when | Run |
+| --- | --- | --- |
+| **Pipeline** (default) | Data is stale, missing, delayed, or wrong | Phase 0, the relevant Phases 1-7, then Phase 9 |
+| **GEX** | TradingFlow GEX needs comparison with InsiderFinance | Phase 0, Phase 8A, then Phase 9 |
+| **IV** | TradingFlow IV-family metrics need comparison with Barchart | Phase 0, Phase 8B, then Phase 9 |
+| **Combined** | A rendered mismatch may originate in the pipeline | Prove pipeline health first, then run the relevant Phase 8 branch and Phase 9 |
+
+1. Record the symptom, ticker if relevant, trading date, market state, and evidence window.
+2. Run only the phases needed to prove or rule out the suspected layer; do not mechanically run every phase.
+3. Resolve live IDs, writer ownership, deployment state, and vendor timestamps at runtime.
+4. Classify the narrowest proven layer or discrepancy in Phase 9.
+5. Write the report using the template. `Highlights` must be the first report section after the title.
+
+Do not change code, production state, accounts, billing, or provider data unless
+the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-07-29
+Last updated: 2026-08-16
 
-### Look First
+This pass simplified the runbook and made `Highlights` the first report section. No production checks were executed.
 
-- [x] Contract Rank reliability is live in production (verified 2026-07-29 RTH). Expect recurring `contract_rank_snapshot_refresh_completed` with `REBUILT`, three `contract_rank_snapshot_r2_artifact_published` artifacts per cycle, and a current advertised V2 object. A retry followed by successful publication is recovered degradation, not a failed refresh. Re-open only if terminal `refresh_failed` / abandoned builds recur while ClickHouse stays current.
-- [x] Worker-owned Market Structure builder is live (verified 2026-07-29 RTH). Expect current-date `/api/v1/market-structure`, recurring `market_structure_intraday_refresh_completed`, and no unresolved `market_structure_*_refresh_failed`. Process-service still only prepares source tables; stale endpoint date with fresh CH points at Worker build/promotion.
-- [x] Process-service Market Structure publish jobs are retired and rebuilt in production (verified 2026-07-29). Running `dist/app.js` must not schedule `MarketStructureFlowOverlay` / `publishMarketStructure*`. `ContractRankEodFinalize` stays (ClickHouse chain refetch + mart fill only). If Better Stack still shows `Market structure artifact service returned 410`, treat it as stale EC2 `dist` / forever process, not Worker outage: compare host `git rev-parse HEAD` with `grep MarketStructureFlowOverlay dist/app.js` and rebuild via `./run_process_service.sh` only with explicit deploy authorization.
+- [ ] After a separately authorized process-service deploy, verify one regular-session summary exposes reason-specific aggregate omissions; confirm eligible SPEQW/MXWLD buckets reach `AggregatedOptionTrades` when their reference quote is fresh, while XSPBX/XSPBW remain intentionally raw-only.
 
-Current durable guidance from recent runs:
+## Operating Invariants
 
-- Resolve the **active writer** before interpreting logs. Production Worker `UW_ENABLED=true` means `tradingflow-cfworker-service` owns live UW ingest and Better Stack source `cf-service` is primary; otherwise process-service `syncUwData` and `Process Service[Production]` are primary.
-- Current `tradingflow-cfworker-service` code has retired Worker UW ingestion: `/uw-ingestion/*` and `/ingest` should return `404` after the removal deploy. If production still returns `200` for `/uw-ingestion/status` or emits `uw_ingestion_*` logs, treat that as stale Worker deployment / deploy skew first, then verify with `npx wrangler deployments list --env production`.
-- Worker `/uw-ingestion/status` can show `enabled:false` / `connected:false` while ClickHouse and snapshots are current. Treat that as writer ownership or intentional disablement until ClickHouse freshness and the active writer are checked.
-- For contract-rank staleness, separate **ClickHouse source freshness** from **Worker snapshot freshness**. Fresh ClickHouse with stale `/api/v1/contract-rank/latest-snapshot/meta` or `/api/v1/contract-rank/snapshots/meta` points at snapshot refresh, DO, KV, or cache serving; stale ClickHouse points at producer/source ingest.
-- Market Structure is Worker-owned. Process-service prepares `OptionChainTable`, `SymbolMetaData`, and `mv_contract_rank_flow`; `MarketStructureSnapshotDO` independently schedules checkpointed builds, writes immutable R2 artifacts, and promotes only a validated manifest. Fresh source tables plus an old `/api/v1/market-structure` date therefore point to the Worker build/promotion path, not an EC2 upload callback.
-- Process-service `Market structure artifact service returned 410` on `MarketStructureFlowOverlay`, `MarketStructureSnapshot`, or `ContractRankEodFinalize` means a pre-cutover EC2 build is still calling the retired publish path (old `ContractRankEodFinalize` chained `publishMarketStructureSnapshot(..., "final")`). Current source has no MS publish module; Worker MS staying current while these errors fire is expected. Fix is rebuild/restart process-service off current master, not Worker remediation.
-- Worker Market Structure runs preopen at 08:45 ET, final at 17:50 ET, and refreshes the intraday flow-plus-GEX overlay every five minutes from 09:30-16:00 ET. Each in-session cadence first idempotently ensures the current-date preopen snapshot, so a missed preopen trigger self-recovers without a process-service callback.
-- Current contract-rank metadata can advertise both `columnarV2ObjectPath` and the V1 `columnarObjectPath`. Prefer a bounded `GET` to the advertised V2 path when present: expect `200`, a `columns-v2` `x-contract-rank-r2-key`, matching content-version/digest headers, and immutable cache headers. Keep `/api/v1/contract-rank/latest-snapshot?format=columns` as the V1 compatibility check; it should redirect to `columns-v1.json`. Do not use `HEAD`; columnar routes can return `405`.
-- If `cf-service` logs repeatedly show `scheduled Contract Rank snapshot branch failed: Durable Object exceeded its CPU time limit and was reset`, and ClickHouse plus `mv_contract_rank_flow` are current, classify it as a Worker snapshot-builder CPU/time-budget failure. Do not call it producer ingest loss; prove the mart freshness with the Phase 6 SQL and then fix the snapshot build path or split the refresh workload.
-- If the inner refresh reports `Durable Object's isolate exceeded its memory limit and was reset` at a repeatable row checkpoint while ClickHouse remains current, classify it as live builder-state retention. Inspect aggregate writer buffers and JavaScript object/string shape before blaming R2 object size; the final immutable object can be healthy and much smaller than the transient heap.
-- If Better Stack only has the outer scheduled HTTP 502, use the next attempt's `contract_rank_snapshot_build_abandoned` checkpoint as failure-stage evidence. Repeated `stage=row_query` at the same checkpoint row count with zero column chunks means interruption before artifact promotion; compare that row count with the checkpoint interval and current mart cardinality. Do not classify this signature as R2 failure when the advertised last-good object still validates.
-- Treat R2 `10001` internal errors, network loss, overload, reset, and timeout messages as transient only when a bounded retry succeeds. Staging and immutable artifact operations are idempotent; retry them locally, recreate immutable upload streams per attempt, and promote no snapshot pointer until compact, columnar V1, and columnar V2 all exist. A coordinator reset may reclaim only the exact same `scheduledTime`, and that recovery dispatch must bypass the snapshot attempt throttle without turning a normal refresh into a hard rebuild.
-- When one pass builds multiple transport projections concurrently, multiply the per-writer flush threshold by the number of pending writers before raising CPU limits. Contract Rank has 33 concurrent text buffers; a 4 MiB threshold permitted 132 MiB of pending text before JSON and encoder overhead, while 512 KiB caps the same nominal budget at 16.5 MiB.
-- Do not treat the nominal pending-text total as the JavaScript heap total. Repeated `pending += fragment` appends form a live V8 rope node per cell; the Contract Rank writer reproduced about 184 MiB of heap at 100,000 rows with only 13.5 MiB of visible pending text. Keep value fragments periodically joined into bounded batches, expose fragment/segment counts in progress telemetry, and validate in a real Cloudflare isolate. A local high-memory Node scale test alone will not catch this failure mode.
-- Before the 09:30 ET open, current-day option-flow tables can legitimately have zero rows and strict data-quality scripts can report row-count breaches. Treat those as pre-open guardrails, not an outage, unless Better Stack lifecycle/heartbeat evidence also shows producer failure. Re-run current-day flow freshness after the first RTH window, usually 09:35 ET or later.
-- Do not treat all DEI zero rows as data loss. Split raw zero-DEI rows from actionable rows after SymbolMetaData join; precision or rounding can produce false positives.
-- A broken opening stream is P0 when websocket open fails, first trades are missing after join acknowledgement, heartbeat delivery fails, or live fanout transport is broken. Per-record normalization noise is usually P1 unless it blocks ingestion.
+Re-resolve dated state during every run. Keep these rules stable:
+
+| Rule | Interpretation |
+| --- | --- |
+| Writer first | Resolve the active writer before interpreting logs; retired Worker UW routes returning `404` are expected after the removal deploy. |
+| Access is not health | `401 AUTHENTICATION_REQUIRED` on protected reads proves access control, not an outage. Corroborate with permitted telemetry and ClickHouse. |
+| Source vs serving | Stale ClickHouse points to ingest/source; fresh ClickHouse with stale Worker metadata points to snapshot/DO/R2/KV/cache; both fresh with stale UI points to webapp. |
+| Terminal outcome wins | A retry followed by all required artifacts and completion is recovered degradation; an unresolved failure, abandoned checkpoint, or missing artifact family is an incident. |
+| Market state matters | Before 09:30 ET, current-day flow can legitimately be empty. Prefer the latest fully closed session for full audits and recheck live flow after 09:35 ET. |
+| Market Structure is Worker-owned | Process-service prepares source tables only. A retired artifact-service `410` indicates stale process-service deployment when Worker output is current. |
+| Product policy is explicit | Use `src/shared/option-product-capabilities.ts` and reason-specific omission counters; do not infer lateness from legacy aggregate-drop totals. |
+| Vendors are references | Align ticker, session, spot time, expiry universe, scope, scale, and methodology. Vendor differences alone do not prove a TradingFlow defect. |
 
 ## Runbook Self-Maintenance
 
 At the end of each run:
 
-1. Decide whether the incident exposed a durable new rule for writer ownership, Better Stack predicates, Worker endpoint interpretation, ClickHouse thresholds, contract-rank checks, or remediation safety.
-2. Update this runbook when source names, monitor names, endpoint paths, Worker env flags, ClickHouse schema, script names, thresholds, or report templates drift.
-3. Keep one-off counts, temporary row totals, and completed incident notes out of the durable sections unless they change future routing.
-4. If old references to the retired source runbooks reappear, replace them with this canonical runbook and move any durable missing procedure into this file.
-5. State `Runbook maintenance: no change` in the final report when no durable doc change was needed.
+1. Decide whether the run revealed reusable procedure drift.
+2. Promote durable changes to prerequisites, commands, routes, fields, thresholds, comparison rules, verification, or troubleshooting.
+3. Keep transient incidents and unresolved next actions only in `Agent Handoff`; prune completed or obsolete items first.
+4. Keep one-off counts, screenshots, raw logs, and current comparison values out of durable sections.
+5. If nothing durable changed, state `Runbook maintenance: no change` in the final report.
+
+Update this file when source names, monitors, endpoints, Worker flags,
+ClickHouse schema, scripts, Rank routes/fields, vendor page contracts,
+comparison rules, thresholds, or report shape drift. Do not update it for a
+single incident or speculative product idea.
+
+Keep the canonical file at `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md` and the process-service mirror at `ops/datapipeline-error-check.md` byte-identical. Validate with `diff -u` after either copy changes.
+
 
 ## Workspace Map
 
 | Area | Repo / path | Use |
 | --- | --- | --- |
-| Runbooks | `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules` | This file and source runbooks. |
+| Runbooks | `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules` | Canonical file: `ops/process-service/datapipeline-error-check.md`; keep the process-service mirror byte-identical. |
 | Process service | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2` | EC2 backend, ClickHouse scripts, process-service logs, symbol-meta, option-chain and Greeks checks. |
 | Cloudflare Worker | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service` | Worker production config, Durable Objects, R2/KV bindings, Wrangler, UW ingest Worker code. |
-| Webapp | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack` | Contract-rank consumers, UI stale-data symptoms, mart diagnostics. |
+| Webapp | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack` | Contract-rank consumers, UI stale-data symptoms, mart diagnostics, and rendered Rank GEX/IV capture. |
+| Vendor references | InsiderFinance and Barchart public pages | Same-ticker/session GEX and IV methodology comparison; never canonical pipeline truth. |
 
 ## Read-Only Boundary
 
 Allowed by default:
 
 - Better Stack telemetry and uptime reads.
-- Public HTTP `GET` checks against production Worker endpoints.
+- Unauthenticated Worker status probes, plus authenticated read-only `GET` checks when an existing caller-authorized edge-access token is available.
 - Repo-local `npx wrangler` read-only commands such as deployments list, KV key read/list, and bounded tail when needed.
 - Existing ClickHouse read-only scripts and bounded SELECT queries through repo `.env`.
 - Small provider probes only when a data-quality symptom requires them.
+- Read-only browser navigation, visible-text capture, and screenshots using an existing local TradingFlow test session and public vendor pages.
 
 Requires explicit user authorization:
 
 - `wrangler deploy`, `wrangler kv key put/delete`, Durable Object migrations, or production env changes.
 - Force-refresh endpoints, backfills, ClickHouse mutations, queue purge/replay, monitor edits, or heartbeat-token changes.
 - Any command that prints raw secrets, full env files, webhook URLs, or API keys.
+- Product code changes or vendor/account mutations discovered during a rendered comparison.
 
-## Fast Triage Decision Tree
+## Pipeline Starting Point
 
-1. **Identify the symptom.**
-   - UI stale/lagging: start with Worker snapshot and ClickHouse freshness.
-   - Missing rows or low counts: start with active writer and ClickHouse data quality.
-   - Error spike: start with Better Stack process/cf logs.
-   - Contract-rank wrong: run ClickHouse data-quality, contract-rank parity, then Worker serving checks.
+| Symptom | Start | Then |
+| --- | --- | --- |
+| Missing or low row counts | Phase 1 writer ownership and Phase 5 data quality | Follow the first breached layer |
+| Error spike | Phase 2 process-service and Phase 3 Worker logs | Correlate with source freshness before assigning impact |
+| Stale UI or snapshot | Phase 4 serving and Phase 5 ClickHouse | Fresh source plus stale serving is not ingest loss |
+| Wrong contract-rank values | Phases 5-7 | Check serving only after source/mart parity |
+| GEX or IV vendor mismatch | Relevant Phase 8 branch | Align session and methodology before defect classification |
 
-2. **Resolve the trading date and market state.**
-   - For current-day checks, establish the New York trading date and whether the US session is pre-open, open, after-hours, or closed.
-   - For full data-quality audits, prefer the most recent fully closed ET trading session. If today is open, use the prior trading day unless the user explicitly asks for live intraday latency.
-
-3. **Resolve the active writer.**
-   - Check current Worker code/config and production deployment age before interpreting `/uw-ingestion/status`.
-   - In the current cfworker architecture, `/uw-ingestion/*` is retired and should return `404` once the removal deploy is live. A production `200` on `/uw-ingestion/status` means an older Worker bundle is still serving.
-   - If the currently deployed Worker still includes UW ingestion, use `/uw-ingestion/status` to decide whether Worker or process-service owns ingest.
-   - If Worker UW ingest is enabled and active, use `cf-service` logs for producer health.
-   - If Worker UW ingest is disabled but ClickHouse is current, use process-service logs and scripts for active writer evidence.
-
-4. **Split source vs serving.**
-   - ClickHouse stale or thin: producer/source ingest problem.
-   - ClickHouse current but Worker snapshot stale: Worker cron, DO/KV, payload-size, or cache problem.
-   - Both current but web UI stale: webapp cache, route, query, or browser/client problem.
-
-5. **Assess impact radius.**
-   - Compare target date row counts and hourly coverage to a healthy baseline.
-   - Check whether gaps affect all symbols, one source/provider, one class of contracts, one symbol family/alias, or only derived fields.
-   - State whether evidence shows data loss, delayed ingestion, derived-field drift, or serving staleness.
+For every path, record the market state, compare against a healthy session when
+appropriate, bound the affected rows/symbols/fields, and distinguish permanent
+loss from delay, repairable derived data, or presentation-only drift.
 
 ## Tool and Source Resolution
 
@@ -178,6 +190,36 @@ Preferred scripts:
 - `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase b --strict`
 
 Use bounded custom SQL only when scripts do not answer the question.
+
+### Rendered Rank and Vendor References
+
+Work from the webapp repository for browser comparisons:
+
+```bash
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack
+pnpm dev
+```
+
+Use `http://127.0.0.1:8000/app/rank/symbols` unless the dev server reports a
+different port. Before interpreting product behavior, read:
+
+- `knowledge/basic_concepts.md` if present; state explicitly when it is absent.
+- `doc/domain-knowledge/rank/domain-invariants.md`
+- `doc/domain-knowledge/rank/functionality.md`
+
+Prefer an existing authenticated browser session. If authentication is needed,
+use only the repo's documented local paid test account; do not create an
+account, change billing, or expose credentials in the report.
+
+Vendor routes:
+
+- GEX: `https://www.insiderfinance.io/gamma-exposure/<TICKER>`
+- Barchart IV list: `https://www.barchart.com/options/iv-rank-percentile/high?orderBy=optionsImpliedVolatilityRank1y&orderDir=desc`
+- Barchart low-IV list: `https://www.barchart.com/options/iv-rank-percentile/low?orderBy=optionsImpliedVolatilityRank1y&orderDir=asc`
+- Broad ETF fallback when the free list does not expose the ticker: `https://www.barchart.com/etfs-funds/quotes/<TICKER>/volatility-charts`
+
+Capture only visibly rendered fields. Do not infer hidden/paywalled values, use
+scraped mirrors, or recompute a vendor metric and label it as vendor evidence.
 
 ## Execution Checklist
 
@@ -307,17 +349,30 @@ Queue diagnosis:
 - Before tuning queue `max_batch_size` or concurrency, check whether each queue message is inserted separately. Combining messages into larger ClickHouse insert batches may be the real fix.
 - If Worker ingest is disabled and no queue events exist, do not keep debugging queue mode as the active incident path.
 
+Expected Market Structure cadence is preopen at 08:45 ET, final at 17:50 ET,
+and every five minutes during 09:30-16:00 ET for the intraday overlay.
+
 ### Phase 4 - Worker Serving, Durable Object, R2, and KV Status
 
-Use public HTTP first:
+Use unauthenticated status probes first:
 
 ```bash
-curl -sS "$WORKER_ORIGIN/canary" | jq .
-curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" | jq .
-curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/meta" | jq .
+curl -sS "$WORKER_ORIGIN/canary" # plain-text Success
 curl -sS "$WORKER_ORIGIN/api/v1/available-dates" | jq .
 curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
-curl -sS --max-time 30 "$WORKER_ORIGIN/api/v1/market-structure" \
+curl -sS "$WORKER_ORIGIN/uw-ingestion/status" # expected 404 after retirement
+```
+
+Contract Rank, Market Structure, and advertised snapshot-object reads require an existing caller-authorized edge-access JWT. Do not mint a token, reuse another user's token, or print it during an audit:
+
+```bash
+# EDGE_ACCESS_TOKEN must already be present in the shell.
+curl -sS -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
+  "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" | jq .
+curl -sS -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
+  "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/meta" | jq .
+curl -sS --max-time 30 -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
+  "$WORKER_ORIGIN/api/v1/market-structure" \
   | jq '{
       schema_version,
       effective_date,
@@ -327,13 +382,15 @@ curl -sS --max-time 30 "$WORKER_ORIGIN/api/v1/market-structure" \
       symbol_count:(.rows|length),
       intraday_gex_count:([.rows[] | select(.intraday_gex != null)] | length)
     }'
-curl -sS "$WORKER_ORIGIN/uw-ingestion/status" | jq .
 ```
+
+Without authorized edge access, record the protected routes as `401 AUTHENTICATION_REQUIRED`, mark direct payload/R2 verification blocked in `ToolAccess`, and use terminal Better Stack publication/build events plus ClickHouse freshness for the bounded serving verdict.
 
 For R2-backed columnar contract-rank reads, inspect metadata first and prefer V2 when advertised:
 
 ```bash
-curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" \
+curl -sS -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
+  "$WORKER_ORIGIN/api/v1/contract-rank/latest-snapshot/meta" \
   -o /tmp/contract-rank-meta.json
 jq '{effectiveDate,rowCount,asOf,latestTradeTime,columnarV2ObjectPath,columnarObjectPath}' \
   /tmp/contract-rank-meta.json
@@ -341,6 +398,7 @@ jq '{effectiveDate,rowCount,asOf,latestTradeTime,columnarV2ObjectPath,columnarOb
 # Use columnarV2ObjectPath from metadata when present; otherwise use columnarObjectPath.
 OBJECT_PATH="$(jq -r '.columnarV2ObjectPath // .columnarObjectPath' /tmp/contract-rank-meta.json)"
 curl -sS -L --compressed --max-time 30 \
+  -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
   -D /tmp/contract-rank-columns.headers \
   "$WORKER_ORIGIN$OBJECT_PATH" \
   -o /tmp/contract-rank-columns.json
@@ -359,7 +417,9 @@ Expected healthy evidence:
 For full snapshot size and date checks:
 
 ```bash
-curl -sS "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/YYYY-MM-DD" -o /tmp/contract-rank-snapshot.json
+curl -sS -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
+  "$WORKER_ORIGIN/api/v1/contract-rank/snapshots/YYYY-MM-DD" \
+  -o /tmp/contract-rank-snapshot.json
 wc -c /tmp/contract-rank-snapshot.json
 jq '{date: (.date // .effectiveDate // .d), generatedAt: (.generatedAt // .asOf // .as), rowCount: (.rowCount // .rc // (.data // .rows // .r // [] | length))}' /tmp/contract-rank-snapshot.json
 ```
@@ -377,6 +437,9 @@ Serving-layer interpretation:
 | Snapshot payload near Cloudflare limits | Size/serialization guardrail; check `payloadBytes` trend and KV object sizes. |
 | Columnar metadata present but no R2 redirect/key | R2 upload, binding, object lookup, or fallback path. |
 | Worker ingest disabled but snapshots current | Not necessarily unhealthy; active writer is elsewhere. |
+| Repeatable DO memory reset at one checkpoint while ClickHouse is current | Snapshot-builder state retention; inspect writer buffers/object shape, not source ingest. |
+| Outer 502 followed by `contract_rank_snapshot_build_abandoned` at `row_query` with no chunks | Pre-promotion builder interruption; the last-good R2 object can remain healthy. |
+| R2 `10001`/timeout/reset | Transient only if a bounded retry publishes all required artifact families and completes promotion. |
 
 Use Wrangler read-only commands when HTTP indicates a serving issue:
 
@@ -554,7 +617,158 @@ Expected non-bug differences:
 
 Hard fail in strict mode is currently `>= 3` symbols flagged. One or two isolated symbols usually require alias/provider/input-price drilldown rather than a broad pipeline outage conclusion.
 
-### Phase 8 - Correlate and Classify
+### Phase 8 - Rendered GEX and IV Vendor Comparison
+
+Run this phase only for **GEX comparison**, **IV comparison**, or after the
+pipeline portion of a **combined investigation**. Do not use a vendor page as a
+substitute for Phases 1-7 when the symptom is stale or missing source data.
+
+#### Phase 8 Preflight and Capture Discipline
+
+1. Check webapp worktree state, read the Rank domain files, and verify `/app/rank/symbols` is reachable.
+2. Use a clean or known signed-in test session. When prompted, use `active+clerk_test@example.com` with OTP `424242`.
+3. Compare the same ticker and session; default to `SPY`. Record absolute timestamps, URLs, capture window, and browser in the report's Scope and ToolAccess sections.
+4. During market hours, refresh both pages when captures are more than a few minutes apart.
+5. Capture screenshots only when they materially support the conclusion; never paste raw browser state.
+
+If a vendor blocks content, changes markup, omits a timestamp, or hides a field,
+capture the visible fallback evidence and mark the field unavailable. Never
+guess or silently substitute a computed value.
+
+#### Phase 8A - GEX: TradingFlow vs InsiderFinance
+
+Open `https://www.insiderfinance.io/gamma-exposure/<TICKER>` and capture:
+
+| Area | InsiderFinance fields |
+| --- | --- |
+| Header | Ticker, spot, visible timestamp/session if present |
+| Headline | Net GEX, ratio, Call GEX, Put GEX, Total/Gross GEX |
+| Levels | Call Wall, Put Wall, Zero Gamma |
+| Expiry scope | 0DTE, Weekly, Monthly, All Expirations values and labels |
+| Heatmap/profile | Visible expiries, strike range/count, graph/table and near/all controls |
+| Signals | Volatility, magnet, squeeze, or other narrative cards; record wording without endorsing it |
+
+Then open the same ticker in TradingFlow Rank, open the symbol drawer, and use
+the **GEX** tab. Capture:
+
+| Area | TradingFlow fields |
+| --- | --- |
+| Session | Session date, last-trade timestamp, row spot, structural reference spot, structure built/resolved time |
+| Scope | All, 0DTE, Weekly, Monthly labels and percentages |
+| Headline | Net/Gross GEX, regime, ratio, Call/Put GEX, total OI, strike and expiry counts |
+| Levels | Zero-Gamma Flip, Gamma Magnet, Call Wall, Put Wall, 0DTE Flip if shown |
+| Level Map | Above/At/Below nodes, role badges, dollar/percent/ATR distances, gross-GEX share, chart-layer toggles |
+| Expiry/heatmap/profile | Bucket denominators, net/gross values, expiry counts, strike range, chart/table and net/call-put controls |
+| Extras | 0DTE Focus, GEX Ladder, Charm/Vanna section if present |
+
+Populate the report's GEX matrix with the comparable headline values. Keep
+session/spot provenance, scope, and strike/expiry breadth in the assessment.
+
+Classify each material difference as:
+
+- **Freshness/source:** different spot, session, chain roll, or page update time.
+- **Scope:** different expiry universe, bucket boundaries, near-spot filter, or denominator.
+- **Calculation semantics:** full-chain versus filtered inputs, wall definition, or flip methodology.
+- **Presentation/UX:** values broadly align but one product explains or exposes them better.
+- **Vendor/access limitation:** a field is hidden, blocked, or no longer rendered.
+- **Product defect candidate:** same-session inputs and scope align, but TradingFlow is internally inconsistent or contradicted by its governed source.
+
+Do not call a wall, flip, or total discrepancy a bug until spot timing, chain
+roll, expiry buckets, scope denominator, and formula semantics have been ruled
+out. In particular, a Friday completed-session snapshot containing 0DTE exposure
+is not directly comparable with a Saturday live chain whose first expiry is the
+following week.
+
+#### Phase 8B - IV Family: TradingFlow vs Barchart
+
+Use these definitions before judging differences:
+
+| Metric | TradingFlow contract | Barchart visible/help contract | Comparison rule |
+| --- | --- | --- | --- |
+| IV30 / implied volatility | Qualified two-sided ATM call+put IV by expiry, interpolated to 30 DTE | Average IV of the nearest monthly options contract 30 days out or more | Expect close direction, not exact parity |
+| IV Rank | Current IV30 within the high/low range of a full clean 252-observation ATM 30D window | Current ATM average IV relative to the prior one-year high/low | Normalize fraction versus percent display before comparing |
+| IV Percentile | Share of clean prior observations below current IV30, available only with the full clean window | Percentage of prior-year days with IV below current ATM IV | Compare concept and rough value; day inclusion can differ |
+| Historical volatility | TradingFlow RV20/RV30 | Barchart visible historical-volatility window | Match window and close convention before numeric parity claims |
+
+Barchart says its public IV Rank/Percentile page begins updating for a new day
+around 09:50 ET, options data is delayed roughly 25-30 minutes, and the list
+updates during the session. Capture the visible timestamp or session every run.
+
+Start with the high- or low-volatility list and select the correct Stocks, ETFs,
+or Indices scope. If the free list does not expose a broad ETF such as `SPY`, use
+the documented symbol-page fallback:
+
+```text
+https://www.barchart.com/etfs-funds/quotes/<TICKER>/volatility-charts
+```
+
+Capture only visible fields:
+
+| Area | Barchart fields |
+| --- | --- |
+| Header/session | Page date, visible update/session, delay note, asset type |
+| Filters/view | High/Low mode, asset scope, active sort and view |
+| Quote | Symbol, last/close, change, trade time, post-market quote if shown |
+| IV metrics | Implied Volatility, IV Rank, IV Percentile |
+| Adjacent context | Historical volatility window, IV/HV, option volume, OI, earnings if visible |
+| Access limits | Login wall, truncated free list, missing columns, custom-view requirement |
+
+In TradingFlow, filter Symbols to the same ticker. Capture the current row fields
+when present: `IV30`, `RV20`, `RV30`, `IV Rank`, `IV30-RV20`, `IV Percentile`,
+`25Δ Skew`, `Term Slope`, and `25Δ Bfly`. Do not require a separate `ATM IV`
+column unless the current UI visibly exposes one. Then open the **Vol** drawer
+tab and capture:
+
+- Session/vol date and spot.
+- IV30, RV20, RV30, and spread.
+- IV Rank, label, tooltip/formula, and IV Percentile.
+- 25Δ skew tenor/interpolation label, term slope, and butterfly when visible.
+- Volatility-surface measured/interpolated/unsupported coverage when the symptom involves surface quality.
+- Exact unavailable reason when Rank or Percentile is absent.
+
+Populate the report's IV matrix with the comparable values. Put quote/session
+timing, scale normalization, historical-window availability, and adjacent skew,
+term, or earnings context in the assessment.
+
+Classify IV discrepancies as:
+
+| Bucket | How to decide | Typical action |
+| --- | --- | --- |
+| Freshness/source | Session, spot, quote, or visible update time differs | Refresh and align captures; avoid code changes |
+| Methodology | Both values are plausible under interpolated-30D versus nearest-monthly construction | Document the method boundary |
+| Scale/format | Fraction versus percent or rounding differs | Normalize before judging |
+| Unavailable-by-contract | TradingFlow lacks the full clean 252-observation window | Keep unavailable and explain it |
+| Data-pipeline gap | The clean window should exist but governed rows are missing or stale | Trace `SymbolVolDaily`, metadata, and producer evidence |
+| Presentation/UX | Definition, session, update cadence, or filter scope is unclear | Recommend a specific label, tooltip, or timestamp |
+| Vendor/access limitation | Row, timestamp, or fields are hidden | Report the limit and compare visible fields only |
+
+If the Rank row and Vol drawer show different values, first check whether one is
+a selected-session scalar and the other an explicitly interpolated tenor. Treat
+unclear labeling as a presentation issue until the governed reader path proves
+an internal calculation mismatch.
+
+#### Copy Opportunities and Guardrails
+
+Recommend only patterns supported by current evidence: clearer as-of labels,
+scope labels, concise metric summaries, formulas/tooltips, or an expanded view
+when the existing interaction is insufficient. Do not duplicate an equally clear
+TradingFlow control, weaken the paid-access contract, or copy deterministic
+support/resistance, dealer-intent, squeeze-probability, or directional-IV claims
+without a separately governed product contract.
+
+Common browser/vendor blockers:
+
+| Symptom | Action |
+| --- | --- |
+| TradingFlow redirects to login or hides the drawer | Use the local paid test session and verify the premium gate; do not alter billing |
+| Local page does not load | Check the dev server, reported port, terminal, and browser console/network |
+| InsiderFinance layout or fields changed | Capture visible fallback evidence; do not infer hidden values |
+| Barchart list omits the ticker | Select the correct asset scope, try High/Low mode, then use the official symbol-page fallback |
+| Spot differs materially | Refresh both pages and align regular/live/post-market timestamps before comparing math |
+| TradingFlow Rank/Percentile unavailable | Verify the clean 252-observation window before calling it a regression |
+| Vendor data is paywalled or truncated | Record the access limitation and stop that side of the comparison |
+
+### Phase 9 - Correlate and Classify
 
 Classify the incident by the narrowest failing layer:
 
@@ -566,6 +780,8 @@ Classify the incident by the narrowest failing layer:
 | Derived mart | Source rows healthy but `mv_contract_rank_flow` wrong or stale. |
 | Worker serving | ClickHouse current but Worker snapshot/meta/dates stale or payload too large. |
 | Webapp | Worker and ClickHouse current but local/prod UI stale. |
+| Vendor/session or methodology | TradingFlow is internally consistent, but external values use a different session, expiry universe, price timestamp, or formula. |
+| Rendered product defect candidate | Pipeline and serving are current, same-session inputs align, and the governed TradingFlow source contradicts the rendered value. |
 
 Impact radius language:
 
@@ -573,41 +789,62 @@ Impact radius language:
 - **Symbols affected:** all symbols, symbol families, aliases, indexes, or isolated tickers.
 - **Fields affected:** raw trade presence, aggregate rows, metadata fields, Greeks, contract identity, snapshot payload, or UI cache.
 - **Data-loss risk:** permanent missing raw/aggregate writes, delayed/backlog catch-up, derived-field repairable by backfill, or serving-only staleness.
+- **Rendered comparison:** ticker/session alignment, vendor access limits, discrepancy bucket, and whether the issue is numeric correctness or presentation only.
 
 ## Report Template
 
-```markdown
-## Data pipeline check - {window/date}
+Every report must put `Highlights` immediately after the title. Do not place a
+preamble, scope, tool-access block, or methodology note before it. Keep it to
+three to six decision-focused bullets and move supporting metrics into
+`Detailed Evidence`. Omit detailed subsections for modes that were not run.
 
-**Verdict:** Healthy / Degraded / Down
-**Failing layer:** Upstream provider / Producer ingest / Metadata / Derived mart / Worker serving / Webapp / None proven
-**Data-loss risk:** None seen / Delayed catch-up / Repairable derived fields / Potential permanent raw-row gap
+```markdown
+# Data quality check - {mode/window/date}
+
+## Highlights
+
+- **Verdict:** Healthy / Degraded / Down / Methodology or session mismatch / Inconclusive
+- **Primary finding:** One sentence with the most important evidence-backed conclusion.
+- **Failing layer or discrepancy:** Narrowest proven layer, or `None proven`.
+- **Impact / data-loss risk:** User-visible impact and None seen / Delayed catch-up / Repairable derived fields / Potential permanent raw-row gap.
+- **Next action:** The single highest-value bounded action and owner/authorization gate.
+- **Confidence / blocker:** Confidence level and the material access or evidence limitation, if any.
+
+## Detailed Evidence
 
 ### Scope
+
+- Mode: Pipeline audit / GEX comparison / IV comparison / Combined
 - Window:
 - Trading date:
 - Market state:
 - Baseline date:
+- Ticker and capture window, if applicable:
 - User symptom:
 
 ### ToolAccess
+
 - betterstack: connected|blocked|skipped; source=<resolved name/id>; blocker=<none or error>
 - uptime: connected|blocked|skipped; monitor=<name/id>; blocker=<none or error>
 - cloudflare: connected|blocked|skipped; path=<http|wrangler>; blocker=<none or error>
 - clickhouse: connected|blocked|skipped; script_or_query=<name>; blocker=<none or error>
 - massive/alpaca/longport: connected|blocked|skipped; path=<script/sdk>; blocker=<none or error>
+- browser/vendors: connected|blocked|skipped; urls=<TradingFlow/vendor>; blocker=<none or error>
 
 ### Active writer
+
 - Owner:
 - Evidence:
 - `/uw-ingestion/status`:
 
 ### Process-service health
+
 - Error clusters:
 - Heartbeats/canary:
 - P0/P1/noise split:
 
 ### cf-service Worker and serving
+
 - `/canary`:
 - snapshot meta/date:
 - `/api/v1/available-dates`:
@@ -617,6 +854,7 @@ Impact radius language:
 - payload/size risk:
 
 ### ClickHouse data quality
+
 | Metric | Target | Baseline/threshold | Status |
 | --- | --- | --- | --- |
 | Row count | | | |
@@ -629,33 +867,73 @@ Impact radius language:
 | Actionable zero DEI with DEX | | <= 0.02 | |
 
 ### Contract-rank / Greeks
+
 - `mv_contract_rank_flow` date/rows:
 - Contract identity parity:
 - Greeks parity:
 - Timing/vendor drift caveats:
 
+### Rendered GEX comparison (optional)
+
+| Field | TradingFlow | InsiderFinance | Assessment |
+| --- | --- | --- | --- |
+| Session / spot | | | |
+| Net / Gross GEX | | | |
+| Call / Put GEX | | | |
+| Call Wall / Put Wall / Flip | | | |
+| 0DTE / Weekly / Monthly | | | |
+| Strike / expiry breadth | | | |
+
+- Discrepancy bucket:
+- Screenshot evidence:
+
+### Rendered IV comparison (optional)
+
+| Field | TradingFlow | Barchart | Assessment |
+| --- | --- | --- | --- |
+| Session / spot | | | |
+| IV30 / Implied Volatility | | | |
+| RV20/RV30 / Historical Volatility | | | |
+| IV Rank | | | |
+| IV Percentile | | | |
+| Historical-window availability | | | |
+
+- Discrepancy bucket:
+- Screenshot evidence:
+
+### Product patterns (optional)
+
+- What to copy:
+- What not to copy yet:
+- Vendor/access caveats:
+
 ### Impact radius
+
 - Rows affected:
 - Symbols/contracts affected:
 - Fields affected:
 - Are we seeing data loss?
 
 ### Likely root cause
+
 - Confidence:
 - Evidence:
 
 ### Recommended next action
+
 - Read-only verification:
 - Authorized remediation needed:
 - Success signal after fix:
 
 ### Runbook maintenance
+
 - no change / changed:
+- Canonical/mirror validation:
 ```
 
 ## Canonical Coverage Map
 
-The retired source runbooks were consolidated into these sections:
+Where to go for each need:
 
 | Need | Section |
 | --- | --- |
@@ -663,14 +941,24 @@ The retired source runbooks were consolidated into these sections:
 | Active producer logs, write-buffer/drop/queue predicates, queue diagnosis | Phases 1 and 3 |
 | Worker public endpoints, Durable Object/KV size checks, snapshot interpretation | Phase 4 |
 | ClickHouse integrity, latency, contract-rank checks, Greeks parity thresholds | Phases 5, 6, and 7 |
+| TradingFlow GEX vs InsiderFinance and IV vs Barchart capture, comparison, and UX guardrails | Phase 8 |
+| Cross-layer incident and rendered-discrepancy classification | Phase 9 |
 
-## Final Reminder
+## Documentation Verification
 
-Do not collapse every stale UI symptom into one bucket. Prove the layer:
+For maintenance-only changes, do not run production checks merely to populate
+evidence. Re-read the changed sections, then validate:
 
-1. Is ClickHouse fresh and complete?
-2. Is the active writer healthy?
-3. Is the Worker snapshot current and size-safe?
-4. Is the webapp reading the current Worker response?
+```bash
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
+git diff --check
+test -f ops/datapipeline-error-check.md
+test ! -e ops/check-data-quality.md
+test -f /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/doc/domain-knowledge/rank/domain-invariants.md
+test -f /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/doc/domain-knowledge/rank/functionality.md
+diff -u \
+  /Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md \
+  ops/datapipeline-error-check.md
+```
 
-Only call it data loss when ClickHouse raw/aggregate rows are missing after producer catch-up is ruled out. If source rows exist and only derived fields or snapshots are stale, classify it as repairable enrichment/derived/serving lag.
+Expect no output from `diff -u`.

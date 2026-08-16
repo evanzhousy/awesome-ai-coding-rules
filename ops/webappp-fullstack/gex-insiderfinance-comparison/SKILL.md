@@ -31,36 +31,17 @@ permission to use the local TradingFlow test account. The runbook is executable
 for live comparison work and maintainable as documentation without executing
 the browser workflow.
 
-Canonical owner: this file,
-`ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md`. As of 2026-06-28 there
-is no separate ops index or alias runbook for this workflow.
+Canonical owner: `ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md`.
 
-## Agent Handoff
 
-Last updated: 2026-06-28
+## How to run
 
-No open handoff items after the latest maintenance pass. This was a
-documentation maintenance update only: the comparison workflow was not executed.
-Barchart page/help semantics were checked for durable methodology guidance, but
-no live ticker comparison or local-browser TradingFlow check was run.
+Compare the same ticker and session on TradingFlow vs InsiderFinance (GEX) and/or Barchart (IV). Work directly in the current session — no `/goal` or Master/Subagent loop.
 
-## Recommended Invocation
+Default ticker: `SPY`. Produce the report template at the end; do not change code unless the user asks.
 
-```text
-/goal Objective: Compare TradingFlow Rank GEX tab against InsiderFinance Gamma Exposure for <TICKER> on the latest available session and produce a concise discrepancy report.
-Success criteria: both pages are loaded and timestamped; headline totals, wall/flip levels, scope controls, heatmap, profile chart/table, and signals are compared; discrepancies are classified as data freshness, calculation semantics, or copyable UX; no code changes unless explicitly requested.
-Stop condition: report delivered with evidence, or a blocker identifies auth, network, local server, or vendor-page failure.
-```
+Canonical path: `ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md` (rules copy: `ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md`).
 
-For IV-family checks:
-
-```text
-/goal Objective: Compare TradingFlow Rank IV-family metrics against Barchart IV Rank and Percentile for <TICKER> on the latest available session and produce a concise discrepancy report.
-Success criteria: TradingFlow IV30/ATM IV, IV Rank, IV Percentile, and historical-window availability are captured; Barchart implied volatility, IV Rank, IV Percentile, timestamp/update cadence, and visible filters are captured; differences are classified as freshness, methodology, scale/format, unavailable-by-contract, or copyable UX.
-Stop condition: report delivered with evidence, or a blocker identifies auth, network, local server, Barchart access, or missing source-window data.
-```
-
-Default ticker: `SPY`.
 
 ## Prerequisites
 
@@ -483,8 +464,7 @@ test -f doc/domain-knowledge/rank/functionality.md
 
 Then re-read the runbook and verify:
 
-- It has a clear objective, expected operator, canonical owner, and bounded
-  `Agent Handoff`.
+- It has a clear objective, expected operator, and canonical owner.
 - It tells the agent to capture timestamps and same-ticker evidence.
 - It separates freshness, formula/methodology semantics, unavailable-by-contract
   states, and UX copy opportunities.
@@ -495,16 +475,7 @@ Then re-read the runbook and verify:
 
 ## Runbook Self-Maintenance
 
-At the end of each run:
-
-1. Decide whether the run revealed a reusable lesson that should change this
-   runbook.
-2. Promote durable lessons into the procedure, prerequisites, verification, or
-   troubleshooting sections.
-3. Keep transient next-run state in `Agent Handoff` only.
-4. Prune completed or obsolete handoff items before adding new ones.
-5. If no durable rule changed, state `Runbook maintenance: no change` in the
-   final report.
+At the end of each run, update this file only for reusable procedure drift (routes, vendor fields, comparison rules). If nothing durable changed, state `Runbook maintenance: no change`.
 
 Update this runbook when:
 
@@ -518,9 +489,6 @@ Update this runbook when:
 - A repeated blocker or ambiguity slows execution.
 - A verification gate is too weak, too broad, or missing.
 - A duplicate runbook or alias needs a clearer canonical owner.
-
-If another automation index is added under `ops/webappp-fullstack/`, add this runbook
-there as part of the same maintenance pass.
 
 Do not update this runbook for:
 

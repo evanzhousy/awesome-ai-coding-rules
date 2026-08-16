@@ -1,154 +1,28 @@
 ---
 name: browser-e2e-product-review
-description: Browser-driven TradingFlow webapp product E2E walkthrough runbook. Uses the Browser plugin to manually exercise real user journeys, find UI defects, and produce PM/trader UX findings without running repository Playwright scripts.
+description: Browser-driven TradingFlow webapp product E2E walkthrough runbook against the test app at https://testapp.tradingflow.com. Uses the Browser plugin to manually exercise real user journeys, find UI defects, and produce PM/trader UX findings without running repository Playwright scripts.
 disable-model-invocation: true
 ---
 
 # Browser E2E Product Review (Webapp Fullstack)
 
-Use this runbook when the user asks an AI agent to use `@Browser` / `plugin://browser@openai-bundled` to walk the TradingFlow webapp like a real user, find UI errors, and judge product UX from a product manager and option trader perspective.
+Use this runbook when the user asks an AI agent to use the Browser plugin to walk the TradingFlow webapp like a real user, find UI errors, and judge product UX from a product manager and option trader perspective.
 
-This runbook is intentionally **browser-first**. Do not run the repository Playwright E2E suite as the review mechanism. Use existing E2E specs and automation docs as read-only journey maps, then execute the journeys interactively with the Browser plugin.
+This runbook is **browser-first**. Do not run the repository Playwright E2E suite as the review mechanism. Use existing E2E specs and automation docs as read-only journey maps, then execute the journeys interactively with the Browser plugin.
 
-## Recommended Invocation
+## How to run
 
-Use `/goal` for a full review or user-authorized review/fix loop. The loop is not "test everything once"; it is an explicit review/fix/drift-check cycle:
+1. Scope the surfaces, personas, viewports, and whether this is review-only or fix-authorized.
+2. Read required domain context for those surfaces.
+3. Open the **test app** at `https://testapp.tradingflow.com` in the Browser plugin (not local, not production, unless the user explicitly overrides).
+4. Walk the journeys in Browser; for each action, verify the settled UI result.
+5. Classify findings against domain invariants before proposing or making fixes.
+6. If the user authorizes fixes: map invariant impact → smallest fix → focused tests → Browser re-check on testapp → invariant drift check on the final diff.
+7. Report with the matrices in [Required Output](#required-output).
 
-- Objective: run a Browser-driven product E2E walkthrough for the requested TradingFlow webapp surface, finding UI defects and PM/trader UX issues without executing repository E2E scripts. When the user explicitly asks to fix findings, continue in iterative rounds: design the next test use cases, test them in Browser, fix confirmed findings, verify the fix, and check that the implementation still satisfies the relevant domain invariants before choosing the next round.
-- Success criteria: Browser plugin is used for walkthroughs, required product/domain context is read, scoped journeys are exercised for the relevant personas and viewports, each round records its use-case design before testing, confirmed findings are fixed only when implementation scope is authorized, every code fix gets a pre-edit `InvariantImpactMatrix`, focused automated verification, Browser re-check when feasible, and a post-fix `InvariantDriftCheck` proving it did not weaken documented access, persistence, live-stream, data-integrity, billing, or Watchlist contracts. Registration is tested with a real disposable email plus OTP when auth/signup is in scope, premium guards are checked across the required account states when access is in scope, Option Trades saved filters are checked with create/rename/use/persistence/delete coverage when Option Trades filters are in scope, explicitly authorized payment-capability tests prove through Browser that a user can start from the app, make a test payment, add a payment method, change payment method or billing/payment status through the user-facing flow, cancel or schedule cancellation where the UI permits it, return to the app, and see the correct billing/access result. The report must frame these as user capabilities, not as "Stripe status mutation" tests. No payment capability or payment-status change is marked passed from SDK-only mutation. Any Stripe SDK fixture mutations are restored to the original seeded state, findings use the required output tables, and this runbook is maintained if reusable friction is discovered.
-- Stop condition: scoped journeys are complete, a real browser/auth/data/local-env blocker is documented with evidence, or the user redirects scope.
+Do **not** invent a Master/Subagent loop or `/goal` ceremony. Work directly in the current session.
 
-Recommended Codex command:
-
-```text
-/goal Use ops/webappp-fullstack/browser-e2e-product-review.md as the executable runbook. Run Browser-driven rounds. For each round: design the use cases first, execute them in @Browser, classify findings against domain invariants, fix only user-authorized true defects, verify the fix, run an invariant-drift check from the final diff, then choose the next round.
-```
-
-Codex `/goal` execution contract:
-
-One `/goal` round is the unit of progress. A round is not complete when Browser testing finds an issue; it is complete only after the finding is classified, any authorized fix is verified, and any implementation diff has been checked against the domain invariants. If the user says `fix the findings`, keep working in the same round instead of starting a new engineering task or a new test area. If the user says `continue`, resume the first missing phase in the current `RoundExecutionLog` row.
-
-1. Treat a round as incomplete until it has use-case design, Browser execution evidence, finding classification, invariant-impact status, authorized-fix status, fix verification, invariant-drift status, and a next-round decision.
-2. After a code fix, do not start the next round until the changed files/functions are mapped back to the relevant domain-invariant or functionality docs and the original Browser finding is rechecked or explicitly blocked.
-3. If a finding is actually expected by the current domain contract, record it as expected behavior. If fixing it would change the product contract, stop for a product/domain decision instead of patching code silently.
-4. End the `/goal` only when the scoped matrices and invariant gates are complete, the user redirects or stops the run, or a concrete blocker prevents further Browser or implementation progress.
-5. Keep the `/goal` state in the current response or handoff as `RoundExecutionLog` rows. Do not turn this runbook into a transcript of completed rounds.
-6. If the user asks only for `what to test next`, output the next `UseCaseDesign` and wait or proceed according to the user's instruction. If the user says `continue`, execute the current round's next missing phase.
-
-Goal-mode resume rules:
-
-- At the start of a new `/goal` turn or after `continue`, read the latest `RoundExecutionLog` and resume the first missing phase of the current round. Do not restart from the top unless the user asks for a greenfield restart.
-- If the user says `fix the findings`, first run the pre-fix domain gate and `InvariantImpactMatrix` for each finding. Fix only `true_defect` findings or explicitly approved product decisions.
-- If the user says `what to test next`, choose the next round from uncovered high-risk controls and state its use-case design before opening the Browser.
-- If the user says to end testing, wrap the current round, list incomplete matrices and blockers, and avoid marking untested scope as passed.
-- If the latest turn ended after classification but before invariant-impact mapping, resume with `InvariantImpactMatrix` before editing. If it ended after a fix but before Browser re-check or invariant drift check, resume verification first. Do not design new use cases until the previous fix is proven or explicitly blocked.
-
-Codex `/goal` operator checklist:
-
-1. Start or resume exactly one active `RoundExecutionLog` row.
-2. Write `UseCaseDesign` before Browser action:
-   - route and persona;
-   - controls, filters, drawers, sorters, inputs, account states, or billing actions to exercise;
-   - expected contract from domain docs;
-   - visible evidence that will prove pass/fail;
-   - cleanup plan for any stateful test data.
-3. Execute the use cases in `@Browser`; for each action, verify the settled UI/result state, not just that the click happened.
-4. Classify every finding with `FindingGate` before implementation.
-5. If fixes are authorized, write `FixBoundary` and `InvariantImpactMatrix` before editing files.
-6. Implement the smallest domain-backed change, then run focused tests and Browser re-check the original symptom when feasible.
-7. Run `InvariantDriftCheck` from the final diff before selecting the next round.
-8. Only then set `nextRoundDecision`.
-
-Minimum per-round `/goal` packet:
-
-```text
-RoundState:
-- roundId:
-- roundState:
-- missingPhase:
-
-UseCaseDesign:
-- route/persona/account/viewport:
-- controls/inputs/sorters/drawers/actions:
-- expected domain contract:
-- pass/fail evidence to collect:
-- cleanup plan:
-
-BrowserExecution:
-- actions performed:
-- settled visible result:
-- result/table/state match:
-
-FindingGate:
-- findingId:
-- classification:
-- domain basis:
-
-FixBoundary:
-- required only when fixes are authorized:
-- smallest intended change:
-- forbidden drift:
-
-InvariantImpactMatrix:
-- required before editing:
-- invariant docs/IDs:
-- adjacent surfaces:
-- verification plan:
-
-FixVerification:
-- focused tests:
-- Browser re-check:
-
-InvariantDriftCheck:
-- final diff reviewed:
-- invariant docs re-read:
-- access/persistence/data-source/cross-surface/test-contract drift checked:
-- status:
-
-NextRoundDecision:
-- continue/stop/blocked/needs-product-decision:
-```
-
-Hard gates:
-
-- No file edits before `FindingGate`, `FixBoundary`, and `InvariantImpactMatrix` exist for the finding being fixed.
-- No next test round after a code fix until `fixVerification` and `InvariantDriftCheck` are recorded.
-- No `/goal` completion while any scoped round is still `ready-for-browser`, `finding-classified`, `ready-for-invariant-impact`, `fix-needed`, `fix-in-progress`, `ready-for-browser-recheck`, or `ready-for-invariant-drift-check`.
-- No domain-doc update to justify a fix unless the user explicitly approved the product-contract change.
-- No claim that a control passed until Browser evidence proves the action changed the intended result or left state unchanged for a gated user.
-
-Goal start packet for Codex:
-
-1. Create or continue the `/goal` objective with the pasteable objective below.
-2. Read Required Context before the first Browser action for each surface.
-3. Start the first `RoundExecutionLog` row in `ready-for-browser` state, including the use-case design and expected invariant evidence.
-4. After every user `continue`, update the same row until it reaches `round-complete`, `blocked`, or `needs-product-decision`.
-5. If product code changes, finish the current round with `InvariantImpactMatrix`, focused tests, Browser re-check, and `InvariantDriftCheck` before selecting the next test area.
-
-Per-turn `/goal` response packet:
-
-- `RoundState`: current round id and state, plus the missing phase that this turn will execute next.
-- `NextUseCases`: the concrete controls, inputs, filters, sorters, drawers, account states, and result evidence selected for the next round.
-- `BrowserResult`: what was clicked or typed in Browser, what visibly changed, and whether table/results/state matched the action.
-- `FindingGate`: classification for every issue before implementation: `true_defect`, `expected_by_domain_invariant`, `product_decision_needed`, `testability_gap`, or `environment/tooling_blocker`.
-- `InvariantImpactMatrix`: before any fix, identify the invariant docs/IDs, adjacent surfaces, forbidden drift, focused tests, and Browser re-check required for the changed behavior.
-- `FixBoundary`: only when the user has authorized fixes; state the smallest change, affected files, relevant invariants, forbidden drift, tests, and Browser re-check.
-- `InvariantDriftCheck`: after every code fix, compare the final diff against the relevant `domain-invariants.md` / `functionality.md` files before starting another round.
-- `NextRoundDecision`: continue to the next highest-risk uncovered surface, resume blocked verification, stop because scope is complete, or stop because the user redirected.
-
-Pasteable objective:
-
-```text
-Use ops/webappp-fullstack/browser-e2e-product-review.md as the runbook. Use @Browser / plugin://browser@openai-bundled to walk the requested TradingFlow webapp journeys in the browser. Do not run repository Playwright E2E scripts as the review mechanism. Use existing E2E specs only as read-only journey maps. Run iterative rounds. For each round: design the concrete use cases from domain docs, prior findings, and trader/PM risk; test those use cases in Browser; classify findings against the documented domain contract; when the user has authorized implementation, complete an InvariantImpactMatrix before editing, fix confirmed findings, verify the fix, run an invariant-drift check against the relevant domain-invariants.md/functionality.md files, then select the next round. Never start the next round after a code fix until the fix verification and invariant-drift check are recorded. When auth or registration is in scope, test a real create-account flow with a unique disposable email alias, retrieve the OTP through an approved Gmail path, and verify the new signed-in account state. When auth, billing, paid controls, or premium data are in scope, test the premium guard with guest, active, canceled, trial_no_pm, and trial_with_pm accounts. When Option Trades filter behavior is in scope, include the saved-filter lifecycle: create from an edited draft, rename, duplicate or set-default when available, use/apply, reload and account-switch persistence, cross Live/Historical sharing, delete cleanup, and gated behavior for guest/canceled accounts. When payment, add-card, change-card, cancellation, or billing-access behavior is explicitly in scope, run a Browser payment-capability review: prove whether the user can perform the app -> Stripe-hosted UI -> app-return journey and see the correct billing/access result. Do not scope or summarize the review as testing Stripe mutation. Use Stripe SDK/API mutation only to create preconditions, verify canonical state, force terminal states that the UI cannot directly create, or restore fixtures. Produce UI defect findings, ProductReviewFinding rows, RoundExecutionLog rows, ElementActionMatrix, RegistrationFlowMatrix when applicable, AccessTierGuardMatrix, SavedFilterLifecycleMatrix when applicable, BillingLifecycleMatrix when applicable, InvariantImpactMatrix rows before every fix, InvariantDriftCheck rows after every fix, TraderScorecard, BrowserJourneyCoverage, evidence index, blockers, and runbook maintenance note.
-```
-
-## Agent Handoff
-
-Last updated: 2026-07-07
-
-No open handoff items after this maintenance-only update. No Browser product review was executed in this pass. The durable `/goal` round loop now treats each round as `UseCaseDesign -> BrowserExecution -> FindingClassification -> InvariantImpactMatrix -> AuthorizedFix -> FixVerification -> InvariantDriftCheck -> NextRoundDecision`, with an explicit copy-paste `/goal` command, a fill-in per-round `/goal` packet, resumable round states, a goal-lifecycle rule for when to keep or close the active goal, and hard gates that forbid file edits before invariant impact is written or new test rounds before fix verification and drift check are recorded. The saved-filter, Watchlist, registration, premium-guard, and billing-capability rules remain encoded in the procedure below. Do not store completed round transcripts here; keep only unresolved next-run blockers with current evidence and the next action.
-
-## Goal
+## Purpose
 
 Produce an evidence-backed Browser walkthrough report that answers:
 
@@ -176,10 +50,11 @@ Produce an evidence-backed Browser walkthrough report that answers:
 
 Allowed:
 
-- Start or reuse the local dev server.
+- Navigate and exercise `https://testapp.tradingflow.com` (default target) with the Browser plugin.
 - Read docs, E2E specs, and app code for context.
-- Use `@Browser` interactions: navigate, click, type, inspect DOM, check console/network, take screenshots, switch viewports, and verify visible states.
+- Use Browser interactions: navigate, click, type, inspect DOM, check console/network, take screenshots, switch viewports, and verify visible states.
 - Use Browser's internal locator or DOM APIs as a control aid.
+- Use local (`http://localhost:8000`) or production (`https://app.tradingflow.com`) only when the user explicitly overrides the default test target.
 
 Forbidden unless the user explicitly changes scope:
 
@@ -207,7 +82,7 @@ Read in this order:
    - Option Trades: `doc/domain-knowledge/option-trades/domain-invariants.md` and `doc/domain-knowledge/option-trades/functionality.md`
    - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
    - Cookbooks when in scope: `doc/domain-knowledge/cookbooks/domain-invariants.md` and `doc/domain-knowledge/cookbooks/functionality.md`; if AI chat, recipe creation, or recipe editing is explicitly in scope, also read `ops/webappp-fullstack/ai-chat-e2e/SKILL.md` as a journey map.
-4. This runbook (`ops/webappp-fullstack/browser-e2e-product-review.md`)
+4. This runbook (`ops/browser-e2e-product-review.md`)
 5. The module-specific Playwright specs under `tests/e2e/specs/` as read-only journey maps.
 
 Path drift note: older prompts may still mention retired paths (`doc/knowledge/glossary.md`, `doc/automation/product-review/*`, `doc/automation/e2e-test/*`). Prefer webapp `doc/domain-knowledge/{shared,option-trades,rank}/...`, this runbook, and existing `tests/e2e` specs; record prompt drift in `Prompt maintenance suggestion`.
@@ -233,24 +108,22 @@ Path drift note: older prompts may still mention retired paths (`doc/knowledge/g
 
 ## Runtime Setup
 
-Local default:
+### Default target: test app
 
-```bash
-PATH=/opt/homebrew/bin:$PATH pnpm dev
-```
+**Base URL:** `https://testapp.tradingflow.com`
 
-Default URL: `http://localhost:8000`
+This is the webapp **test-branch** deployment. Use it for all Browser product reviews unless the user explicitly asks for local or production.
 
-Production mode:
+Before the first journey:
 
-- Use `https://app.tradingflow.com` as the canonical production target and record the visible footer version in the evidence index.
-- Do not use local seeded Clerk personas in production unless repo documentation explicitly confirms that those accounts exist in the production Clerk instance. Cover guest access by signing out of the documented production verification account, then restore the original account before cleanup.
-- The documented production verification account is `evanzhou@tradingflow.com`. Retrieve its one-time code from the authenticated Feishu mailbox at `https://www.feishu.cn/mail`; confirm the mailbox identity and use only the newest TradingFlow verification message generated by the current login attempt. Never print the code in the report. Do not use the stale `mail.feishu.cn` hostname.
-- Do not create accounts, complete payments, change payment methods, cancel subscriptions, or mutate Stripe/customer state in production. If a canceled, unpaid, or alternate trial persona is unavailable without mutation, mark that persona blocked instead of manufacturing the state.
-- Interpret Live results against the production market calendar. On weekends, holidays, and outside market hours, verify the latest snapshot plus explicit closed-market state; do not require a connected stream when the product contract says streaming is market-hours-only.
-- Before finishing, restore the original signed-in production identity and billing/access state, remove temporary user data created by the review, close mailbox/support tabs, and leave one deliverable app tab.
+1. Confirm the address bar is on `testapp.tradingflow.com` (not `app.tradingflow.com`, not `localhost`).
+2. Record the visible footer / build version in the evidence index when available.
+3. Sign in with the seeded Clerk test personas below. OTP defaults to `424242`.
+4. Interpret Live results against the market calendar. On weekends, holidays, and outside market hours, verify the latest snapshot plus explicit closed-market state; do not require a connected stream when the product contract says streaming is market-hours-only.
 
-Default credentials from `tests/e2e/fixtures/auth.ts`:
+### Seeded test credentials
+
+From `tests/e2e/fixtures/auth.ts` (and `doc/automation/e2e-test/README.md`). These are for **testapp / local / test Clerk**, never for production:
 
 | Persona | Email | Expected state |
 | --- | --- | --- |
@@ -262,7 +135,19 @@ Default credentials from `tests/e2e/fixtures/auth.ts`:
 
 Seeded test-account OTP defaults to `424242` unless the repo docs or user say otherwise. Fresh disposable registration must use the code actually delivered to Gmail.
 
-Before using these credentials in a Browser review, re-open `tests/e2e/fixtures/auth.ts` in the app repo and confirm the scenario labels and email defaults have not drifted. Environment overrides such as `E2E_LOGIN_EMAIL_ACTIVE` can change the actual seeded account in a local checkout.
+Before using these credentials, re-open `tests/e2e/fixtures/auth.ts` and confirm the scenario labels and email defaults have not drifted.
+
+### Optional overrides (only when the user asks)
+
+**Local** — `http://localhost:8000` after `PATH=/opt/homebrew/bin:$PATH pnpm dev`. Use when reviewing unreleased local changes that are not on the test branch yet.
+
+**Production** — `https://app.tradingflow.com`. Stricter rules apply:
+
+- Do not use seeded Clerk `*+clerk_test@example.com` personas unless repo docs explicitly confirm they exist in the production Clerk instance.
+- Cover guest access by signing out of the documented production verification account `evanzhou@tradingflow.com`, then restore it before cleanup.
+- Retrieve production OTP from Feishu Mail at `https://tradingflow.feishu.cn/mail` (not `mail.feishu.cn` / `mail.larksuite.com`). Never print the code.
+- Do not create accounts, complete payments, change payment methods, cancel subscriptions, or mutate Stripe/customer state in production. If a canceled, unpaid, or alternate trial persona is unavailable without mutation, mark that persona blocked.
+- Before finishing, restore the original signed-in production identity and billing/access state, remove temporary user data, close mailbox/support tabs, and leave one deliverable app tab.
 
 ## Browser Registration Test
 
@@ -439,16 +324,17 @@ Failure recovery:
 
 ## Browser Plugin Procedure
 
-1. Read and follow the Browser plugin skill before browser work. The required plugin is `plugin://browser@openai-bundled`.
-2. Use the in-app Browser. Keep it hidden unless the user explicitly wants to watch.
-3. Do not fall back to Chrome, standalone Playwright, Computer Use, or web search for local app testing unless `@Browser` is unavailable and the user approves the fallback.
-   - Exception: when registration testing needs an email verification code, user-approved `@Chrome` may be used only to visit Gmail and retrieve the OTP. Continue using `@Browser` for the TradingFlow app itself.
-4. Before each interaction, know the current visible state. After each click, type, navigation, filter apply, modal action, or viewport switch, collect the cheapest verification signal:
+1. Read and follow the Browser plugin skill before browser work.
+2. Navigate to `https://testapp.tradingflow.com` (or the scoped route under that host). Confirm the host before the first click.
+3. Use the Browser plugin. Keep it hidden unless the user explicitly wants to watch.
+4. Do not fall back to Chrome, standalone Playwright, Computer Use, or web search for app testing unless the Browser plugin is unavailable and the user approves the fallback.
+   - Exception: when registration testing needs an email verification code, user-approved Chrome may be used only to visit Gmail and retrieve the OTP. Continue using the Browser plugin for the TradingFlow app itself.
+5. Before each interaction, know the current visible state. After each click, type, navigation, filter apply, modal action, or viewport switch, collect the cheapest verification signal:
    - DOM/state snapshot for labels, roles, enabled state, route, modal open/closed.
    - Screenshot only when visual layout, overlap, chart rendering, table density, or mobile fit matters.
    - Console/network inspection when a UI error, blank widget, dead action, or failed load is suspected.
-5. Use a clean Browser context for guest checks. Do not confuse signed-out UI with cached Clerk/session state.
-6. Reload after code or build changes only if implementation scope was added. For review-only sessions, do not modify code.
+6. Use a clean Browser context for guest checks. Do not confuse signed-out UI with cached Clerk/session state.
+7. Reload after a new test-branch deploy when verifying a fix that should already be on testapp. For review-only sessions, do not modify code.
 
 ## Workflow
 
@@ -456,7 +342,8 @@ Failure recovery:
 
 Write a short scope block before opening the UI:
 
-- Surface(s) and routes.
+- Environment host: default `https://testapp.tradingflow.com` (override only if the user asked for local or production).
+- Surface(s) and routes (absolute URLs under the chosen host).
 - Personas: guest, active, canceled, trial, or user-specified.
 - Registration scope: whether to create a fresh disposable account, which alias pattern to use, and which approved Gmail path will retrieve the OTP.
 - Premium-guard scope: list the gated controls or data surfaces to compare across account states. If any paid control is in scope, include guest, active, and canceled at minimum; include both trial states when the user asks about Stripe/subscription status or trial UX.
@@ -487,81 +374,28 @@ Before opening the route, state:
 
 This pass prevents "the existing UI works as designed" from becoming the default answer.
 
-### 2A. `/goal` Round Loop And Invariant Gate
+### 2A. Iterative review / fix loop
 
-When this runbook is invoked through Codex `/goal`, treat the work as a sequence of explicit rounds until the scoped review is complete, the user redirects scope, or a real blocker stops progress.
+When the user asks to review and then fix findings, work in small rounds until the scoped review is complete, the user stops, or a real blocker stops progress.
 
-The round order is mandatory: `UseCaseDesign -> BrowserExecution -> FindingClassification -> InvariantImpactMatrix -> AuthorizedFix -> FixVerification -> InvariantDriftCheck -> NextRoundDecision`. Do not collapse the design and execution phases, and do not treat "fixed and tests pass" as enough to move on when the domain drift check is still missing.
+Recommended round order: design use cases → Browser execution → classify findings → (if fixes authorized) invariant impact → fix → verify → invariant drift check → choose next round.
 
-Use `RoundExecutionLog` as the live goal ledger. At the end of every turn, leave the latest round in one of these states: `ready-for-browser`, `finding-classified`, `ready-for-invariant-impact`, `fix-needed`, `fix-in-progress`, `ready-for-browser-recheck`, `ready-for-invariant-drift-check`, `round-complete`, `needs-product-decision`, or `blocked`. The next `continue` must resume from that state before doing unrelated exploration.
+Before editing code for a finding:
 
-Codex goal lifecycle rule: keep the `/goal` active while any scoped round is not `round-complete`, `needs-product-decision`, or `blocked`. Do not mark the goal complete because the latest Browser finding was fixed, because focused tests passed, or because the current response is ready. The goal is complete only when every scoped `RoundExecutionLog` row is closed and the final response includes the verification and drift-check evidence required by this runbook. If the user asks to end testing, wrap the current round honestly, mark untested scope as incomplete or user-stopped, and then close the goal only after the unfinished coverage, blockers, and invariant status are explicit.
+1. Classify it: `true_defect`, `expected_by_domain_invariant`, `product_decision_needed`, `testability_gap`, or `environment/tooling_blocker`.
+2. Write a short invariant-impact note: docs/IDs touched, adjacent surfaces, forbidden drift, verification plan.
+3. Fix only `true_defect` findings or explicitly approved product decisions.
+4. After the fix, re-check Browser when feasible and compare the final diff against the relevant `domain-invariants.md` / `functionality.md`.
 
-Round state transitions:
+A Browser finding is evidence, not the product contract. If the expected behavior is a product decision rather than a documented contract, stop for a product decision — do not patch code silently or rewrite docs to match a local fix unless the user approved the contract change.
 
-| State | Required action before moving on | Allowed next state |
-| --- | --- | --- |
-| `ready-for-browser` | Write `useCaseDesign` with route, persona, controls, expected invariant, acceptance evidence, and cleanup plan. | `finding-classified` or `blocked` |
-| `finding-classified` | Classify every issue with `FindingGate`; decide whether implementation is authorized and domain-backed. | `ready-for-invariant-impact`, `round-complete`, `needs-product-decision`, or `blocked` |
-| `ready-for-invariant-impact` | Write `InvariantImpactMatrix` and `FixBoundary` before any file edit. | `fix-needed`, `needs-product-decision`, or `blocked` |
-| `fix-needed` / `fix-in-progress` | Make the smallest domain-backed change; avoid unrelated refactors and preserve adjacent contracts. | `ready-for-browser-recheck`, `ready-for-invariant-drift-check`, or `blocked` |
-| `ready-for-browser-recheck` | Re-test the original Browser symptom or record the exact Browser/data/auth blocker. | `ready-for-invariant-drift-check` or `blocked` |
-| `ready-for-invariant-drift-check` | Compare the final diff and observed behavior against the relevant invariant/functionality docs. | `round-complete`, `needs-product-decision`, or `blocked` |
-| `round-complete` | Choose the next highest-risk uncovered use case or stop if scoped coverage is complete. | `ready-for-browser` or stop |
+Drift risks to check before/after edits:
 
-The agent must think in rounds, not in a single broad checklist. A round is the smallest useful slice that can be designed, tested, fixed if authorized, and checked for invariant drift without losing evidence. Good rounds are usually scoped to one surface plus one interaction family, such as Historical numeric filters, saved-filter lifecycle, Watchlist/ticker-tape sync, Rank drawer controls, billing portal handoff, registration lifecycle, or Live streaming.
-
-Invariant-safe implementation rule: a Browser finding is evidence, not the product contract. Before editing code, name the invariant or functionality statement that the fix restores. After editing code, inspect the actual diff and prove the changed behavior still fits that contract. If the diff touches a shared boundary, check the adjacent surfaces too; for example, a Historical filter fix can affect Live/Historical sharing, saved-filter persistence, premium guards, query serialization, and table-result semantics.
-
-If the invariant source cannot be found, or if the expected behavior is a product decision rather than a documented contract, stop the round as `needs-product-decision`. Do not normalize the current UI behavior into code just because it was easy to patch, and do not update domain docs to match a fix unless the user explicitly approved the product-contract change.
-
-When a Browser finding suggests a fix, explicitly check for domain-invariant drift risks before editing:
-
-- Access drift: guest, canceled, expired, or trial states receiving actions/data outside the documented entitlement.
-- Persistence drift: session-only date, time, lookback, pagination, saved-filter draft state, or URL state becoming durable by accident.
-- Data-source drift: a UI label, metric, query predicate, spot source, stream state, or server field changing semantics to satisfy one row sample.
-- Cross-surface drift: Rank, Option Trades Live/Historical, Watchlist, TradingView tape, billing, export, drawer, or handoff behavior changing because a shared hook/store/serializer was touched.
-- Test-contract drift: a focused test being updated to match the current implementation when the domain docs still require different behavior.
-
-Each round must include:
-
-1. **Use-case design before Browser testing.**
-   - Name the route, persona, account state, viewport, and exact user-facing controls to exercise.
-   - State the expected product contract from `domain-invariants.md` / `functionality.md`, not from the current code.
-   - Include the table/result evidence that will prove the action worked: chips, row samples, sort aria/state, row count, live status, drawer content, billing copy, or no-mutation proof for gated users.
-   - Include the destructive or stateful cleanup plan when the test can create saved filters, Watchlist entries, billing records, account state, or temporary server data.
-   - Draft the `RoundExecutionLog.useCaseDesign` entry before clicking through the UI so the test does not become an after-the-fact explanation.
-2. **Browser execution.**
-   - Use Browser interactions for the user journey. Repository Playwright E2E scripts remain forbidden as the review mechanism.
-   - Record pass/fail/blocked with visible evidence. A rendered control is not a pass until the resulting state matches the action.
-3. **Finding classification.**
-   - Separate product defects, environment blockers, Browser-control limitations, fixture drift, and PM/trader UX improvements.
-   - Use implementation-gate labels before touching code: `true_defect`, `expected_by_domain_invariant`, `product_decision_needed`, `testability_gap`, or `environment/tooling_blocker`.
-   - Do not turn a domain decision into a bug. If a control is intentionally non-sortable or gated by product contract, record that as `keep` unless visible feedback is missing.
-4. **Invariant impact and implementation follow-up, only when authorized.**
-   - If the user asks to fix confirmed findings, make the smallest code change that restores the documented product contract.
-   - Focused unit/component/server tests are allowed and expected for implementation verification. They do not replace the Browser review.
-   - Do not broaden saved payloads, query params, access gates, billing state, or stream behavior just to satisfy one Browser scenario.
-   - Before editing, write an `InvariantImpactMatrix` row and the intended invariant-safe fix boundary: finding id, expected contract, affected invariant docs/IDs, adjacent surfaces to protect, files likely to change, invariants that must still hold, forbidden behavior changes, focused tests to run, and Browser evidence needed afterward.
-   - If the fix is not traceable to a domain invariant, functionality doc, explicit user product decision, or clearly broken UI feedback contract, do not edit. Reclassify the finding as `product_decision_needed` or `testability_gap`.
-   - If the classification is `product_decision_needed` or the fix would change an invariant, do not implement until the domain contract is explicitly updated or the user gives a concrete product decision.
-5. **Fix verification.**
-   - Re-run the focused automated checks that cover the changed boundary.
-   - Re-check the original Browser finding when the environment allows it.
-   - Record remaining risk explicitly when Browser, market-hours, fixture, CAPTCHA, Stripe, or data freshness limitations prevent full verification.
-6. **Invariant drift check before moving on.**
-   - Re-read the relevant invariant/functionality sections for the touched surface.
-   - Use the actual implementation diff as input: map each changed file, function, API parameter, persisted key, entitlement check, or query predicate to the invariants it could affect.
-   - Compare the post-fix behavior against the domain docs, not only against the original Browser symptom. A fix that removes the symptom but changes who can access data, what persists, how data is sourced, or what a metric means fails the drift check.
-   - Verify the fix did not weaken access gating, Saved Filter persistence, Live freshness/stream lifecycle, Historical date/time session-only behavior, Watchlist/symbol exclusivity, billing entitlement mapping, or metric/data-integrity promises.
-   - Check for cross-surface drift, not only the exact Browser scenario. For example, an Option Trades filter fix must be checked against Live/Historical sharing, saved preference persistence, guest/canceled guards, query serialization, and table result semantics when those seams are touched.
-   - Treat current passing tests as supporting evidence, not as the domain contract. If a focused test now encodes behavior that conflicts with the domain docs, the fix is not complete.
-   - If the code change adds or removes behavior that the docs do not describe, classify it as `needs-product-decision` or update the domain docs only when the user explicitly approved the product-contract change.
-   - If implementation and domain docs disagree, stop and report the conflict. Do not silently normalize code around the current broken behavior.
-   - Do the drift check after reviewing the final diff, not only from the original plan; a correct plan can still drift during implementation.
-7. **Next-round selection.**
-   - Pick the next use cases from the highest remaining user/trader risk and the unexplored controls in the relevant matrices.
-   - Do not mark the full `/goal` complete merely because the latest fix is merged or tests pass; completion needs the scoped Browser coverage and invariant gates to be satisfied, or a user-directed stop.
+- Access drift: guest/canceled/expired/trial receiving actions or data outside entitlement
+- Persistence drift: session-only date/time/lookback/pagination becoming durable by accident
+- Data-source drift: UI label, metric, query predicate, spot source, or stream semantics changing to satisfy one sample
+- Cross-surface drift: Rank, Option Trades Live/Historical, Watchlist, TradingView tape, billing, export, drawer, or handoff behavior changing via a shared hook/store/serializer
+- Test-contract drift: a focused test updated to match implementation while domain docs still require different behavior
 
 ### 3. Browser Walkthrough
 
@@ -734,7 +568,7 @@ Do not file a product bug for missing account data, market-closed live states, e
 
 ### RoundExecutionLog
 
-Required for `/goal` runs and any iterative review/fix loop. Treat this table as the goal-state ledger: create or update one row as each round progresses, and do not move to the next round until the row has the required verification and invariant-drift fields.
+Use this table when running an iterative review/fix loop. Create or update one row as each round progresses; do not move to the next round until verification and invariant-drift fields are filled when a code fix was made.
 
 | Field | Meaning |
 | --- | --- |
@@ -752,7 +586,7 @@ Required for `/goal` runs and any iterative review/fix loop. Treat this table as
 
 ### FixBoundary
 
-Required before editing product code in a `/goal` review/fix loop. This can be a short paragraph or table row, but it must exist before the first file edit for each confirmed finding.
+Required before editing product code in a review/fix loop. This can be a short paragraph or table row, but it must exist before the first file edit for each confirmed finding.
 
 | Field | Meaning |
 | --- | --- |
@@ -926,9 +760,9 @@ Use concise ratings or notes for:
 
 ### Final Report Shape
 
-1. Scope and environment.
+1. Scope and environment — must name the host (`testapp.tradingflow.com` by default) and confirm it was used.
 2. Browser procedure summary: routes, personas, viewports, and whether Browser was hidden or visible.
-3. RoundExecutionLog table.
+3. Round progress table (when using iterative review/fix rounds).
 4. FixBoundary for every code fix made or proposed during the run.
 5. InvariantImpactMatrix before every code fix made or proposed during the run.
 6. BrowserJourneyCoverage table.
@@ -962,7 +796,8 @@ Use concise ratings or notes for:
 - If the OTP email does not arrive for a plus-address, verify the alias shown in the modal, search the base Gmail mailbox for recent TradingFlow/Clerk verification messages, wait for the resend timer, then resend once. If it still fails, retry with a fresh alias and record the first alias as blocked.
 - If active/canceled/trial seeded accounts do not work, report the exact login step, URL, visible copy, and whether the OTP was accepted.
 - If account switching leaves the previous avatar/email, billing banner, or entitlement state visible, sign out, clear the Browser context or Clerk cookies, and retry once. If it still persists, stop counting premium-guard coverage and file a blocker with evidence.
-- If the local app is not running, start it with `PATH=/opt/homebrew/bin:$PATH pnpm dev` from the app repo and retry the route.
+- If `testapp.tradingflow.com` does not load or shows a deploy/auth error, record the blocker with URL and visible copy. Do not silently fall back to local or production unless the user asks.
+- If the user explicitly chose local and the app is not running, start it with `PATH=/opt/homebrew/bin:$PATH pnpm dev` from the app repo and retry the route.
 - If a route returns stale UI after implementation changes, reload the Browser page before re-verifying.
 - If the in-app Browser cannot observe a CSV or file download artifact, record export button/gate coverage and mark artifact verification blocked by Browser capability; do not switch to repository Playwright scripts unless the user changes scope.
 - If a TradingView widget is blank only on this Mac, verify local proxy/Shadowrocket routing for `www.tradingview-widget.com` before treating it as a product defect.
@@ -974,7 +809,7 @@ Use concise ratings or notes for:
 
 - User asks to fix tests or certify Playwright coverage: stay on this runbook and the matching `tests/e2e/specs/*` journey maps in the webapp repo.
 - User asks for code implementation and PR after findings: use the app repo product-review full playbook workflow and then normal engineering workflow.
-- User asks for production error correlation: use `ops/webappp-fullstack/error-investigate.md`.
+- User asks for production error correlation: use `ops/webappp-fullstack/webapp-check-error.md`.
 - User asks for PostHog analytics, traffic, dashboards, or session replay research: use `ops/webappp-fullstack/posthog-research.md`.
 
 ## Runbook Self-Maintenance
@@ -983,10 +818,8 @@ At the end of each run:
 
 1. Decide whether Browser walkthrough, docs, auth, route, or product-contract behavior revealed a reusable lesson.
 2. Promote durable lessons into Required Context, Module Map, Browser Plugin Procedure, Workflow, Troubleshooting, or output templates.
-3. Keep transient state in Agent Handoff only.
-4. Prune completed or obsolete handoff items before adding new ones.
-5. Keep Agent Handoff bounded to unresolved next-run blockers. Do not store completed round transcripts there.
-6. For `/goal` loops, ensure the final report includes `RoundExecutionLog`; if code fixes were made, also ensure it includes `FixBoundary`, `InvariantImpactMatrix`, and `InvariantDriftCheck`. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+3. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+4. For iterative fix loops, ensure the final report includes progress rows plus `FixBoundary`, `InvariantImpactMatrix`, and `InvariantDriftCheck` when code changed.
 
 Update this runbook when:
 
@@ -994,7 +827,6 @@ Update this runbook when:
 - A repeated Browser review blocker needs a standard recovery step.
 - A verification gate was too weak, too broad, or missing.
 - An implementation fix passed the visible Browser scenario but exposed a missing or weak domain-invariant drift check.
-- A `/goal` run needed an extra round checkpoint to prevent fixes from drifting away from the domain contract.
 - A future agent skipped use-case design, Browser re-check, or invariant drift review after fixing a finding.
 - The source app docs consolidate or rename product-review/E2E prompts.
 

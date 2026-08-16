@@ -16,37 +16,21 @@ This is a research workflow, not a dashboard-editing or instrumentation task. Th
 - Friction visible in recordings, heatmaps, errors, and web performance.
 - Tracking and dashboard gaps that limit confidence.
 
-## Recommended Invocation
 
-Use `/goal` for a complete research pass.
+## Purpose
 
-Recommended objective:
+Answer these questions with live PostHog evidence:
 
-> Research OptionData traffic and user behavior in PostHog project 90561 using ego-browser. Compare the requested period with a useful prior period, separate public content traffic from product behavior, inspect conversion, retention, replays, heatmaps, web performance, tracking health, and existing dashboards, then produce an aggregate evidence-backed report without exposing PII or changing PostHog objects. Update this runbook only when the live workflow reveals a reusable improvement or stale assumption.
+1. How much traffic reached OptionData, how did it change, and where did it come from?
+2. Which public content and product routes attract meaningful users rather than only page views?
+3. Which journeys lead from discovery to activation, checkout, API-key use, realtime use, historical queries, and option-chain queries?
+4. Where do users abandon, bounce, loop, encounter slow pages, rage click, dead click, or generate errors?
+5. Which behaviors repeat and retain users?
+6. Does the current event, identity, replay, and dashboard setup support confident decisions?
 
-Success criteria:
+Work directly in the current session. Do not invent a `/goal` or Master/Subagent loop.
 
-- The visible PostHog project is confirmed as `optiondata`, project id `90561`.
-- The exact analysis period, comparison period, project timezone, domains, and test-user filters are recorded.
-- Traffic, acquisition, product-route usage, activation/conversion, retention, and friction are each answered or explicitly marked `blocked`.
-- Public blog traffic and logged-in/product traffic are analyzed separately.
-- Existing dashboard `1280223` and relevant Product Analytics insights are reviewed before proposing new ones.
-- Session replay is sampled across multiple relevant sessions when available.
-- Saved heatmap coverage is inspected; missing coverage is reported rather than silently replaced with invented evidence.
-- Installation Health and event/data quality are checked before interpreting an unexpected zero or sharp change.
-- The final report contains aggregate evidence only and exposes no raw identities, secrets, or full replay links.
-- No PostHog object is created, edited, archived, deleted, subscribed, or shared without explicit authorization.
-- Runbook maintenance is considered before handoff.
-
-Stop condition:
-
-- Stop when the report and watchlist follow-up are complete, access is blocked with the exact blocker recorded, or the user changes the scope.
-
-## Agent Handoff
-
-Last updated: 2026-07-25
-
-### Look First
+## Check first
 
 - [ ] Confirm project `90561` still displays as `optiondata`; never substitute another TradingFlow PostHog project.
 - [ ] Revalidate traffic quality before reporting growth. Project test-traffic filters now exclude localhost and a suspicious one-page browser signature observed on 2026-07-25, but that signature can drift. Report both raw and test-filtered baselines, and confirm the filter still removes automation without suppressing legitimate traffic.
@@ -57,7 +41,7 @@ Last updated: 2026-07-25
 - [ ] When using PostHog's read-only APIs for aggregate analysis, return only explicitly allowlisted fields. Never log raw project, person, session, replay, cookie, or token payloads.
 - [ ] PostHog pages can transiently render a blank shell or buffer a replay. Wait for the expected title and populated surface before concluding data is unavailable.
 
-### Live Surfaces Confirmed On 2026-07-25
+### Live surfaces
 
 These are navigation expectations, not permanent claims about current data:
 
@@ -77,17 +61,6 @@ These are navigation expectations, not permanent claims about current data:
 | Event definitions | `https://us.posthog.com/project/90561/data-management/events` | Verify event names and recency. |
 | Persons | `https://us.posthog.com/project/90561/persons` | Identity and person-property checks; handle as sensitive. |
 | Cohorts | `https://us.posthog.com/project/90561/cohorts` | Reusable internal/test or behavioral segments when configured. |
-
-## Goal
-
-Answer these questions with live PostHog evidence:
-
-1. How much traffic reached OptionData, how did it change, and where did it come from?
-2. Which public content and product routes attract meaningful users rather than only page views?
-3. Which journeys lead from discovery to activation, checkout, API-key use, realtime use, historical queries, and option-chain queries?
-4. Where do users abandon, bounce, loop, encounter slow pages, rage click, dead click, or generate errors?
-5. Which behaviors repeat and retain users?
-6. Does the current event, identity, replay, and dashboard setup support confident decisions?
 
 ## Scope And Guardrails
 
@@ -688,11 +661,11 @@ Update it in the same pass when live work reveals a reusable improvement:
 - A recurring tracking, identity, heatmap, replay, dashboard, or performance issue belongs on the watchlist.
 - A report field or verification gate would prevent a repeated analytical mistake.
 
-Keep transient findings in `Agent Handoff`, the watchlist baseline, or the run report. Do not encode one-off traffic numbers, named-user behavior, temporary incidents, or unsupported hypotheses as permanent procedure.
+Keep transient findings in the watchlist baseline or the run report. Do not encode one-off traffic numbers, named-user behavior, temporary incidents, or unsupported hypotheses as permanent procedure.
 
 When maintaining:
 
-1. Prune or revise stale handoff and watchlist items.
+1. Prune or revise stale watchlist items.
 2. Add the smallest reusable procedure change.
 3. Re-read the edited sections.
 4. Run `git diff --check`.

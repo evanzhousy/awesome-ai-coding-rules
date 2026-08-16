@@ -43,7 +43,7 @@ Engineering may attach **small structured diagnosis fields** on error events via
 - **`failureKind`** — high-level cause bucket; must reuse the shared `ErrorCategory` values from `src/lib/errors/errorCodes.ts` (`auth`, `validation`, `transient`, `business`, `system`). Client paths should set this via `processApiResponseSystemError`, which derives it from `classifyError` when the caller does not override it.
 - **`requestStage`** — optional per-surface pipeline step (for example `timeout_client`, `stripe_customer`, `clickhouse_query`) so operators can filter within a surface. Values are defined beside each feature, not as one global enum.
 
-When MCP cannot query historical **Errors** exceptions, repair the Better Stack Telemetry cloud connection for the Errors application (same data region as ingestion) and use **`telemetry_get_errors_query_instructions_tool`** per [ops/webappp-fullstack/webapp-check-error.md](../webappp-fullstack/webapp-check-error.md) (Appendix: Better Stack Errors MCP runbook).
+When MCP cannot query historical **Errors** exceptions, repair the Better Stack Telemetry cloud connection for the Errors application (same data region as ingestion) and refresh errors query instructions before SQL per [ops/webappp-fullstack/webapp-check-error.md](../webappp-fullstack/webapp-check-error.md).
 
 `processApiResponseSystemError` may also attach `userErrorPresentation` (`silent`, `toast`, `inline`, `toastWithRetry`) on the error event payload. Secondary paths default to **`P1`** severity while primary user-blocking toasts default to **`P0`**, unless a caller overrides severity explicitly.
 

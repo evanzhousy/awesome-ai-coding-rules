@@ -8,25 +8,18 @@ disable-model-invocation: true
 
 Agent runbook for using **PostHog live access** to review web traffic, user behavior, event tracking quality, and dashboard setup for the TradingFlow webapp. The preferred access path is the one requested by the user for the run: PostHog MCP/plugin when requested, or `posthog-cli` when CLI-only evidence is requested. The default output is a research report, not code changes.
 
-## Recommended Invocation
 
-Use `/goal` for each analytics review:
+## Purpose
 
-- Objective: produce an evidence-backed PostHog review of traffic, behavior, tracking quality, dashboards, and long-term watchlist status.
-- Success criteria: access mode is confirmed, the live project/date range/filters are named, each criteria-for-success item is answered or blocked, and the long-term watchlist plus this runbook are pruned/updated when reusable findings change.
-- Stop condition: the report is complete, PostHog access is blocked with the exact attempted path, or the user expands scope to dashboard/tracking changes.
+Produce an evidence-backed product analytics review that answers:
 
-## Agent Handoff
+1. What are the traffic and user-behavior highlights, risks, and bad signals?
+2. Is the current event tracking setup reasonable for understanding the product?
+3. Are the current PostHog dashboards and insights set up reasonably?
 
-Last updated: 2026-07-26
+Work directly in the current session. Do not invent a `/goal` or Master/Subagent loop.
 
-Source now implements a bounded public-site acquisition handoff and
-backend-authoritative account registration event. A same-day live schema check
-of project `300646` found neither `marketing_handoff_landed` nor
-`account_registration_completed`; treat both as deployment-pending and do not
-create an empty acquisition funnel until they ingest.
-
-### Look First
+## Check first
 
 - [ ] Revisit every active item in [Long-Term Issue Watchlist](#long-term-issue-watchlist) before broad exploration; mark each `worse`, `unchanged`, `improved`, `resolved`, or `blocked`, and prune/revise only with current evidence.
 - [ ] Include a heatmap review in user-behavior analysis: inspect available PostHog heatmaps for top product routes and PH-W6 routes, summarize click/scroll patterns, and connect findings to dead-click, rage-click, replay, and funnel evidence.
@@ -45,14 +38,6 @@ create an empty acquisition funnel until they ingest.
   the app-project acquisition funnel from `marketing_handoff_landed` through
   registration to `billing_subscription_activated`; do not merge project
   `344580` landing counts into project `300646`.
-
-## Goal
-
-Produce an evidence-backed product analytics review that answers three questions:
-
-1. What are the traffic and user-behavior highlights, risks, and bad signals?
-2. Is the current event tracking setup reasonable for understanding the product?
-3. Are the current PostHog dashboards and insights set up reasonably?
 
 ## Boundaries
 
@@ -319,7 +304,7 @@ Flag event tracking as **reasonable** only if the current setup can support the 
 
 ### 5. Audit dashboards and insights
 
-Use PostHog dashboard/insight tools when available. For each dashboard that appears relevant, record:
+Use PostHog dashboard/insight tools when available. Always include the Market Recap dashboard contract in [5A. Market Recap dashboard contract](#5a-market-recap-dashboard-contract) when that surface is in scope or when PH-W3/PH-W4/PH-W7 touch monetization dashboards. For each dashboard that appears relevant, record:
 
 - Dashboard name, ID, URL, owner if visible, and purpose.
 - Last modified or freshness signal if available.
@@ -346,6 +331,61 @@ If dashboards are not reasonable, recommend the smallest useful dashboard set:
 3. **Engagement and retention** - weekly active users, repeat core actions, retention by signup cohort.
 4. **Product friction** - errors, rage/dead clicks, empty states, slow pages, replay links.
 5. **Event quality** - event volume by event, missing required properties, unknown hosts, internal traffic.
+
+### 5A. Market Recap dashboard contract
+
+Named dashboard: [Market Recap — Preview Growth Funnel](https://us.posthog.com/project/300646/dashboard/1811122) (project `300646`).
+
+Purpose: measure whether `/app/market-recap` traffic drives qualified registrations and paid conversion. Verify live event names and access semantics against `doc/domain-knowledge/shared/posthog-events.md` and `doc/domain-knowledge/market-recap/*` — the product surface is premium-gated (MR-1); older tile names may still say "preview."
+
+#### Event contract
+
+Market Recap product events (via `capturePostHogEvent`):
+
+| Event | Purpose | Key properties |
+| --- | --- | --- |
+| `market_recap_index_viewed` | Directory exposure | `surface`, `access_state`, `recap_count`, `public_archive_count`, `premium_recent_count` |
+| `market_recap_card_clicked` | Directory-to-post click | `surface`, `trading_date`, `full_access`, `index_position` |
+| `market_recap_preview_viewed` | Preview/content exposure (verify live meaning) | `surface`, `trading_date`, `reader_mode`, `hidden_section_count`, `chart_count`, `source_count` |
+| `market_recap_full_article_viewed` | Full article exposure | `surface`, `trading_date`, `reader_mode`, `section_count`, `chart_count`, `source_count` |
+| `market_recap_upgrade_cta_clicked` | Upgrade intent from index/CTA | `surface`, `source`, `paywall_attempt_id`, `paywall_context`, `return_url`, `trading_date` |
+| `market_recap_session_changed` | Session picker use | `surface`, `from_trading_date`, `to_trading_date`, `recent_count` |
+| `market_recap_share_clicked` | Share intent | `surface`, `network`, `trading_date` |
+
+Also compare against taxonomy docs for `market_recap_load_completed` and `market_recap_reader_interaction` when auditing event quality.
+
+The upgrade CTA passes `paywall_attempt_id` and `paywall_context = market_recap` into Access Gateway, PayWall, billing, and auth so PostHog can join Market Recap intent to:
+
+- `auth_login_modal_opened`
+- `auth_login_completed`
+- `paywall_shown`
+- `paywall_cta_clicked`
+- `billing_checkout_session_created`
+- `billing_subscription_activated`
+
+#### Expected tiles
+
+1. **Reach and readership** — `$pageview` where `$pathname` contains `/app/market-recap`; `market_recap_index_viewed`; `market_recap_preview_viewed` / full-article exposure events as live taxonomy allows.
+2. **Registration funnel** — content exposure → `auth_login_modal_opened` → `auth_login_completed`.
+3. **Paid conversion funnel** — content exposure → `market_recap_upgrade_cta_clicked` → `paywall_shown` / `paywall_cta_clicked` with `paywall_context = market_recap` → `billing_checkout_session_created` → `billing_subscription_activated`.
+4. **Exact attributed outcomes** — daily Market Recap-attributed upgrade CTA, auth completion, paywall, checkout, and activation counts.
+5. **Performance by recap date** — per `trading_date`: readers, upgrade clicks, share clicks, upgrade click rate.
+6. **Growth / revenue KPI summary** — 30-day counts for readers, upgrade clickers, attributed registrations, checkout creators, and subscription activations.
+
+#### Metric decisions
+
+- **Route traffic vs content exposure:** `$pageview` for route traffic; `market_recap_preview_viewed` / `market_recap_full_article_viewed` / `market_recap_load_completed` for content that actually rendered — confirm which event is live and canonical.
+- **Registration help:** broad funnel from content exposure → auth modal → auth completed; use `auth_login_completed.paywall_context = market_recap` for CTA-attributed registrations.
+- **Revenue conversion:** paid funnel through upgrade CTA, paywall, checkout creation, and `billing_subscription_activated`. Activation is a conversion count, not MRR.
+- **Which recaps work best:** break down by `trading_date`; compare section/chart/share properties where available.
+- **Sharing:** `market_recap_share_clicked` by `network` plus downstream funnels from shared landing sessions. Crawler/indexing belongs in Search Console, not PostHog alone.
+
+#### Caveats
+
+- Confirm `market_recap_*` events are populating in the connected project before judging dashboard emptiness as a product failure.
+- Frontend events measure browser-executed traffic only.
+- MRR/revenue dollars need Stripe price/amount attribution or warehouse join; this dashboard measures paid activation counts.
+- When auditing this dashboard under PH-W3/PH-W7, re-check `filterTestAccounts` and whether tiles still assume a public-preview access model that domain docs no longer allow.
 
 ### 6. Deliver the report
 
@@ -437,8 +477,8 @@ At the end of each run, decide whether the runbook itself should change.
 Use this self-maintenance rule:
 
 1. Promote durable lessons into access mode, workflow, query examples, dashboard checks, evidence rules, watchlist handling, or report structure.
-2. Keep transient state in `Agent Handoff`, [Long-Term Issue Watchlist](#long-term-issue-watchlist), or the run report only.
-3. Prune completed or obsolete handoff/watchlist items before adding new ones.
+2. Keep transient state in [Long-Term Issue Watchlist](#long-term-issue-watchlist) or the run report only.
+3. Prune resolved watchlist items before adding new ones.
 4. If no durable rule changed, state `Runbook maintenance: no change` in the report.
 
 Update this file in the same session when the run reveals a reusable improvement, such as:

@@ -6,49 +6,25 @@ disable-model-invocation: true
 
 # OptionData PostHog Errors And User Insights Runbook
 
-## Recommended Invocation
+## Purpose
 
-Use `/goal` when the user asks for a complete PostHog error check, weekly analytics summary, product-insight readout, or dashboard audit.
-
-Recommended objective:
-
-> Check the OptionData PostHog project for current error health and user/product insights. Confirm the active PostHog project is OptionData project 90561, inspect error tracking and relevant product events for the requested time window, summarize evidence-backed findings and gaps without exposing PII, and update this runbook if the live workflow or telemetry contract has drifted.
-
-Success criteria:
-
-- The active PostHog project is verified as OptionData project `90561` before any reads.
-- The access path is recorded: PostHog MCP/plugin, Chrome dashboard fallback, or explicit blocker.
-- Error tracking is checked through issue data and/or `$exception` events.
-- User insights are checked through dashboard tiles, HogQL, insight reads, or event schema reads.
-- The report separates confirmed findings, empty-result caveats, and tracking gaps.
-- Raw PII, full API keys, full customer ids, and full session replay URLs are not included in the final answer.
-- The runbook maintenance section is considered before handoff.
-
-Stop condition:
-
-- Stop only after the report is complete, the blocker is explicit, or the user narrows the task.
-
-## Agent Handoff
-
-Last updated: 2026-06-24
-
-### Look First
-
-- [ ] Latest run verified project `90561` but found no PostHog events in the default windows and no ingestion after `2026-02-13T11:40:44Z` in a 365-day lookback. If the user asks for remediation, verify the current production deployment env/build path before changing dashboards: `NEXT_PUBLIC_POSTHOG_KEY` or `VITE_POSTHOG_KEY`, production hostnames, and whether the deployed bundle initializes PostHog on `optiondata.io`, `www.optiondata.io`, and `portal.optiondata.io`.
-
-### Latest Run Note
-
-Executed live with PostHog MCP on 2026-06-24. Dashboard `1280223`, expected actions, project settings, error-tracking settings, event schema, and HogQL checks were read-only. No durable procedure change was required.
-
-## Goal
-
-Teach an AI agent how to use PostHog to answer:
+Answer with live PostHog evidence:
 
 - Are OptionData users hitting client-side errors or unresolved error-tracking issues?
 - Which routes, products, devices, browsers, or sessions are affected?
 - What do current users appear to be doing in the portal?
 - Are the activation, checkout, API-key, realtime, historical SQL, and option-chain flows producing useful telemetry?
 - Which insights are actionable, and which require instrumentation or data-quality follow-up?
+
+Work directly in the current session. Do not invent a `/goal` or Master/Subagent loop.
+
+## Check first
+
+- [ ] Latest run verified project `90561` but found no PostHog events in the default windows and no ingestion after `2026-02-13T11:40:44Z` in a 365-day lookback. If the user asks for remediation, verify the current production deployment env/build path before changing dashboards: `NEXT_PUBLIC_POSTHOG_KEY` or `VITE_POSTHOG_KEY`, production hostnames, and whether the deployed bundle initializes PostHog on `optiondata.io`, `www.optiondata.io`, and `portal.optiondata.io`.
+
+### Latest run note
+
+Executed live with PostHog MCP on 2026-06-24. Dashboard `1280223`, expected actions, project settings, error-tracking settings, event schema, and HogQL checks were read-only. No durable procedure change was required.
 
 ## Scope And Guardrails
 
@@ -514,5 +490,4 @@ Maintenance checklist:
 - Add new core events to the expected event contract.
 - Remove obsolete events only after verifying they are no longer emitted or intentionally deprecated.
 - Update access-mode guidance if the PostHog MCP/plugin or CLI changes.
-- Keep the handoff timestamp current when materially editing this runbook.
 - Re-read the edited sections and run `git diff --check` before final handoff.

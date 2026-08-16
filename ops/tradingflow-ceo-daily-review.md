@@ -161,13 +161,14 @@ ToolAccess:
 | Area | Runbook | Use first when |
 | --- | --- | --- |
 | Company | `ops/tradingflow-ceo-daily-review.md` | Running a daily CEO-level operating review across product health, engineering reliability, business operations, customer/support signals, and strategic/investor recommendations. |
+| Access | `ops/third-party-service-access.md` | Opening, authenticating to, checking, or managing third-party dashboards used by TradingFlow or OptionData with ego-browser and Feishu Mail OTP/magic-link verification. |
 | Architecture | `ops/workspace-system-architecture-review.md` | Reviewing all ops-referenced workspace projects as a system architect from greenfield and reverse-adversarial simplification perspectives. |
+| Machine-local resources | `ops/macbook-browser-testing-resource-cleanup.md` | Reclaiming MacBook memory and ports by closing stale non-default ego-browser task spaces and gracefully terminating stale local web servers launched for Codex in-app Browser testing. |
 | Process service | `ops/process-service/datapipeline-error-check.md` | Investigating cross-layer TradingFlow data-pipeline stale data, lag, missing rows, UW ingest, Worker snapshot/DO/KV freshness, ClickHouse quality, contract-rank, or Greeks issues. |
 | Webapp | `ops/webappp-fullstack/webapp-check-error.md` | Correlating recent production errors across PostHog Error Tracking and Better Stack. |
 | Webapp | `ops/webappp-fullstack/posthog-research.md` | Running product analytics, event quality, dashboard, and behavior reviews in PostHog. |
 | Webapp | `ops/webappp-fullstack/browser-e2e-product-review.md` | Walking webapp UI journeys with `@Browser` for manual E2E product testing, UI defects, and PM/trader UX findings. |
 | Webapp | `ops/webappp-fullstack/chaos-monkey-ux-review.md` | Running a continuing `/goal`, review-only UX exploration as a first-time novice trader with product-manager judgment, with all rounds recorded in one living Chaos Monkey Report. |
-| Landing | `ops/landingpage/browser-e2e-test.md` | Simulating user journeys while doing E2E maintenance and product review. |
 | Landing | `ops/landingpage/create-landing-hero-video.md` | Creating or refreshing the homepage hero product video from real local webapp screenshots with HyperFrames and WebM-first delivery. |
 | Landing | `ops/landingpage/update-blog-posts-and-changelog.md` | Updating bilingual blog posts (`content/posts/**`), screenshots, public changelog, and What's New sync. |
 | Landing | `ops/landingpage/update-tutorial-series.md` | Creating/updating the bilingual tutorial series (`content/series/tradingflow-docs`) - page-based how-to chapters with annotated screenshots, Mermaid diagrams, and cross-links. |
@@ -231,7 +232,7 @@ Escalate immediately if any `Critical` signal appears: app unavailable, paid use
 
 ### 3. Product and UX Health
 
-Use `ops/webappp-fullstack/browser-e2e-product-review.md` for Browser-driven evidence and `ops/landingpage/browser-e2e-test.md` for landing evidence.
+Use `ops/webappp-fullstack/browser-e2e-product-review.md` for Browser-driven webapp evidence. This repository currently has no canonical landing Browser runbook; scope landing smoke explicitly against the current landing-site repository instead of following the retired landing Browser path.
 
 Daily smoke should cover:
 

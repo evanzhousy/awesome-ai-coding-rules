@@ -10,27 +10,8 @@ Use this runbook when the user asks whether recent `git diff` changes in `/Users
 
 This runbook is a read-only audit by default. It does not fix code, rewrite wiki docs, update tests, or make commits unless the user explicitly expands scope after seeing the drift report.
 
-## Recommended Invocation
 
-Use `/goal` for a full drift audit:
-
-- Objective: compare the requested recent code changes in `tradingflow-webapp-fullstack` against the relevant domain invariant wiki and classify every possible drift.
-- Success criteria: app repo status and diff base are stated, changed hunks are mapped to affected product surfaces, relevant invariant docs are read, each behavior-affecting change has a drift classification, findings are reported with file paths and invariant references, and the runbook maintenance note is included.
-- Stop condition: all changed behavior is classified, the diff base or domain source is blocked, or the user redirects to implementation or wiki-update work.
-
-Pasteable objective:
-
-```text
-Use ops/webappp-fullstack/domain-invariant-drift-check.md as the runbook. In /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack, audit the requested recent code changes from git diff against the repo domain invariant wiki. Treat domain truth as higher priority than current code and current tests. Produce DiffScope, InvariantCoverage, InvariantDriftMatrix, required actions, verification, blockers, and runbook maintenance note. Do not edit code or wiki docs unless I explicitly ask after the audit.
-```
-
-## Agent Handoff
-
-Last updated: 2026-07-04
-
-No open handoff items. Latest real run audited the clean app repo's `HEAD` fallback commit and revised the focused Vitest command after `pnpm test:unit -- <file>` proved too broad in this repo.
-
-## Goal
+## Purpose
 
 Answer these questions with repo evidence:
 
@@ -39,6 +20,9 @@ Answer these questions with repo evidence:
 3. Does the code still preserve those invariants?
 4. If the diff intentionally changes product behavior, was the relevant wiki updated in the same body of work?
 5. What must happen next: code fix, wiki update, product decision, targeted tests, or no action?
+
+Work directly in the current session. Do not invent a `/goal` or Master/Subagent loop.
+
 
 ## Non-Negotiables
 
@@ -318,9 +302,7 @@ At the end of each run:
 
 1. Decide whether the audit exposed a reusable lesson for future drift checks.
 2. Promote durable lessons into required context, surface mapping, drift classifications, or verification guidance.
-3. Keep transient state in `Agent Handoff` only.
-4. Prune completed or obsolete handoff items before adding new ones.
-5. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
+3. If no durable rule changed, state `Runbook maintenance: no change` in the final report.
 
 Update this runbook when:
 

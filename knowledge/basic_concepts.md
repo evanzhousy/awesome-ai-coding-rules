@@ -241,8 +241,8 @@ An option **quote** is not a single price, but a two-way price structure known a
 | **Moneyness** | `moneyness` | Relationship between strike and underlying: `ITM`, `ATM`, `OTM` |
 | **Side** | `side` | Trade execution location: `AASK`, `ASK`, `MID`, `BID`, `BBID` |
 | **Sentiment** | `sentiment` | Inferred outlook: `BULLISH`, `BEARISH`, `NEUTRAL` |
-| **Delta Exposure (DEX)** | `dex` | Directional exposure = `delta × size` |
-| **Delta Impact (DEI)** | `dei` | Flow relative to liquidity = `dex ÷ avg_daily_volume` |
+| **Delta Exposure (DEX)** | `dex` | Directional exposure = `delta × size × 100` (share-equivalent; `size` is in contracts, 100 shares/contract) |
+| **Delta Impact (DEI)** | `dei` | Flow relative to liquidity = `dex ÷ avg_daily_volume × 100` (%) |
 
 #### Greeks (Recalculated)
 | Term | Data Field | Definition |
@@ -415,11 +415,16 @@ flowchart TD
 
 #### Formula (as stored in `dex` field)
 ```
-dex = delta × size
+dex = |delta × size × 100|
 ```
 
 > [!IMPORTANT]
-> Note: The stored `dex` field uses `delta × size`, not `delta × size × 100`. This represents delta-equivalent contracts, not shares.
+> `size` is in **contracts**; each contract controls 100 shares, so the `× 100` converts delta-weighted contracts into
+> share-equivalent exposure. The stored field is an unsigned magnitude (`Math.abs`) — direction comes from
+> `sentiment`/`side`, not from the sign of `dex`. Verified against the live ingestion formula
+> (`calculateDeltaExposureUtil` in `tradingflow-process-service-ec2/src/shared/util/record-function.ts`:
+> `Math.abs(size * 100 * delta)`) and against the worked example directly below, which only checks out with the
+> `× 100` term included.
 
 #### Example
 - Buy 10 AAPL calls at δ=0.60 → **+600 delta exposure**
@@ -467,11 +472,13 @@ Measures how significant an option trade's directional exposure is **relative to
 
 #### Formula (as stored in `dei` field)
 ```
-dei = dex ÷ avg_daily_volume
+dei = dex ÷ avg_daily_volume × 100
 ```
 
 > [!NOTE]
-> The `dei` field represents the ratio of delta exposure to average daily volume, indicating the relative significance of a trade.
+> `dei` is a **percentage** (see the case study and interpretation table below, e.g. "83.31%") — the trailing
+> `× 100` converts the raw ratio into that percentage. Verified against `calculateDeltaImpact` in
+> `tradingflow-process-service-ec2/src/shared/util/record-function.ts`.
 
 #### Interpretation
 

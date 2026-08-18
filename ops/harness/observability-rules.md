@@ -45,18 +45,20 @@ Engineering may attach **small structured diagnosis fields** on error events via
 
 When MCP cannot query historical **Errors** exceptions, repair the Better Stack Telemetry cloud connection for the Errors application (same data region as ingestion) and refresh errors query instructions before SQL per [ops/webappp-fullstack/webapp-check-error.md](../webappp-fullstack/webapp-check-error.md).
 
-`processApiResponseSystemError` may also attach `userErrorPresentation` (`silent`, `toast`, `inline`, `toastWithRetry`) on the error event payload. Secondary paths default to **`P1`** severity while primary user-blocking toasts default to **`P0`**, unless a caller overrides severity explicitly.
+`processApiResponseSystemError` may also attach `userErrorPresentation` (`silent`, `toast`, `inline`, `toastWithRetry`) on the error event payload. Presentation is orthogonal to incident severity: the helper defaults to **`P1`**, and callers must explicitly opt into **`P0`** for a deploy-wide, security, data-integrity, financial-integrity, or compliance-critical incident.
 
 ## Severity Policy
 
 ### `P0`
 
-Use `P0` when:
+Use `P0` only when a single event proves a critical operational condition that needs immediate human action:
 
-- the request breaks
-- the user flow fails
-- the system cannot complete the intended action
-- immediate visibility is important
+- a production-wide or broad-surface outage with no safe fallback
+- security exposure or authorization bypass
+- irreversible data loss or corruption
+- payment, credit, or audit-ledger integrity failure
+- deploy-critical configuration failure
+- compliance-critical delivery failure
 
 ### `P1`
 
@@ -79,12 +81,14 @@ Their roles are different.
 
 ### Discord
 
-Discord is the immediate human-visibility channel.
+Discord is the immediate human-visibility channel and pager.
 
 It is used for:
 
-- all errors
-- high-signal informational events (`info.P0`)
+- explicit `error.P0` incidents
+- threshold-breached P1 aggregates delivered by the external alerting system
+
+Individual `error.P1` events stay in PostHog and BetterStack. They do not page Discord.
 
 ### PostHog
 
@@ -128,15 +132,16 @@ BetterStack replaces the old pattern where informational observability was parti
 The current routing behavior is:
 
 - `error.P0` → Discord, PostHog, BetterStack
-- `error.P1` → Discord, PostHog, BetterStack
-- `info.P0` → Discord, BetterStack
+- `error.P1` → PostHog, BetterStack
+- `info.P0` → BetterStack only unless it is an explicitly approved incident signal
 - `info.P1` → BetterStack only
 
 This is intentional.
 
-Key consequence:
+Key consequences:
 
 - informational events no longer go to PostHog as part of generic observability
+- individual P1 errors never page Discord; threshold monitors own the escalation decision
 
 ### Browser startup delivery
 
@@ -204,7 +209,6 @@ These booleans decide whether external observability is active in each environme
 **Discord** (`discord`)
 
 - `errorWebhookUrl` — webhook for error alerts  
-- `infoWebhookUrl` — webhook for high-signal info (`info.P0`)
 
 **PostHog** (`posthog`)
 

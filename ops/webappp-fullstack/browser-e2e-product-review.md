@@ -1,6 +1,6 @@
 ---
 name: browser-e2e-product-review
-description: Browser-driven TradingFlow webapp product E2E walkthrough runbook against the test app at https://testapp.tradingflow.com. Uses the Browser plugin to manually exercise real user journeys, find UI defects, and produce PM/trader UX findings without running repository Playwright scripts.
+description: Browser-driven TradingFlow webapp product E2E walkthrough runbook against the test app at https://testapp.tradingflow.com. Uses the Browser plugin to manually exercise real user journeys, find UI defects, and produce PM/trader UX findings.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Use this runbook when the user asks an AI agent to use the Browser plugin to walk the TradingFlow webapp like a real user, find UI errors, and judge product UX from a product manager and option trader perspective.
 
-This runbook is **browser-first**. Do not run the repository Playwright E2E suite as the review mechanism. Use existing E2E specs and automation docs as read-only journey maps, then execute the journeys interactively with the Browser plugin.
+This runbook is **browser-first**. There is no repository Playwright E2E suite. Use domain invariants and this runbook as the journey map, then execute the journeys interactively with the Browser plugin.
 
 ## How to run
 
@@ -37,32 +37,29 @@ Produce an evidence-backed Browser walkthrough report that answers:
 ## Non-Negotiables
 
 - Use the Browser plugin for product walkthroughs. In Codex, follow the `Browser:control-in-app-browser` skill and use the in-app browser surface.
-- Do not substitute `pnpm exec playwright test`, `npx playwright test`, test generators, or repo automation scripts for the walkthrough.
+- Do not substitute Playwright, Puppeteer, test generators, or other scripted browser automation for the walkthrough.
 - Do not edit tests, product code, route files, or docs unless the user explicitly expands scope beyond review.
 - Do not commit `FINDINGS.md`, screenshots, browser exports, or review artifacts. Findings stay in the session output unless the user asks for a persistent artifact.
-- Treat E2E specs as journey maps only: read titles, personas, setup, routes, and expected user outcomes; do not use selectors or spec line numbers as UX evidence.
+- Treat domain invariants and this runbook as the journey map. Do not invent scripted locators as UX evidence.
 - Domain truth wins over current code and current tests. If glossary or invariant docs conflict with the observed UI, report the mismatch.
 - Do not transmit sensitive data, make purchases, save payment methods, submit destructive forms, change account permissions, or mutate Stripe/Neon billing state unless the user explicitly authorized that exact action for a test environment.
 - When the user explicitly authorizes billing lifecycle testing, judge pass/fail from the Browser-visible user action and app result. Stripe SDK/API mutation is support evidence only; it cannot prove that a user can pay, add or change payment method, change payment status, or cancel.
-- Do not bypass CAPTCHA, MFA, or account-protection challenges during registration. If a visible CAPTCHA challenge appears, ask the user to complete or explicitly approve the step. Automated E2E may use Clerk's test-token helper, but this Browser product review should treat CAPTCHA as a blocker unless the user intervenes.
+- Do not bypass CAPTCHA, MFA, or account-protection challenges during registration. If a visible CAPTCHA challenge appears, ask the user to complete or explicitly approve the step. This Browser product review should treat CAPTCHA as a blocker unless the user intervenes.
 
 ## What "Not From Scripts" Means
 
 Allowed:
 
 - Navigate and exercise `https://testapp.tradingflow.com` (default target) with the Browser plugin.
-- Read docs, E2E specs, and app code for context.
+- Read docs and app code for context.
 - Use Browser interactions: navigate, click, type, inspect DOM, check console/network, take screenshots, switch viewports, and verify visible states.
 - Use Browser's internal locator or DOM APIs as a control aid.
 - Use local (`http://localhost:8000`) or production (`https://app.tradingflow.com`) only when the user explicitly overrides the default test target.
 
 Forbidden unless the user explicitly changes scope:
 
-- `pnpm exec playwright test ...`
-- `npx playwright test ...`
-- Running `tests/e2e/**/*.spec.ts`
+- Playwright, Puppeteer, or other scripted browser automation in place of the interactive walkthrough.
 - Running custom scripts that automate the review in place of interactive Browser walkthroughs.
-- Editing specs to make the review pass.
 - Treating a screenshot alone as proof of auth, billing, saved preference, stream health, access gate, or route-state correctness.
 
 ## Required Context
@@ -83,18 +80,17 @@ Read in this order:
    - Rank workbench, Contract-level analysis, Symbol-level analysis: `doc/domain-knowledge/rank/domain-invariants.md` and `doc/domain-knowledge/rank/functionality.md`
    - Cookbooks when in scope: `doc/domain-knowledge/cookbooks/domain-invariants.md` and `doc/domain-knowledge/cookbooks/functionality.md`; if AI chat, recipe creation, or recipe editing is explicitly in scope, also read `ops/webappp-fullstack/ai-chat-e2e/SKILL.md` as a journey map.
 4. This runbook (`ops/browser-e2e-product-review.md`)
-5. The module-specific Playwright specs under `tests/e2e/specs/` as read-only journey maps.
 
-Path drift note: older prompts may still mention retired paths (`doc/knowledge/glossary.md`, `doc/automation/product-review/*`, `doc/automation/e2e-test/*`). Prefer webapp `doc/domain-knowledge/{shared,option-trades,rank}/...`, this runbook, and existing `tests/e2e` specs; record prompt drift in `Prompt maintenance suggestion`.
+Path drift note: older prompts may still mention retired paths (`doc/knowledge/glossary.md`, `doc/automation/product-review/*`, `doc/automation/e2e-test/*`, `tests/e2e/**`). Prefer webapp `doc/domain-knowledge/{shared,option-trades,rank}/...` and this runbook; record prompt drift in `Prompt maintenance suggestion`.
 
 ## Module Map
 
-| Surface | Primary routes | Domain truth | Read-only journey maps |
+| Surface | Primary routes | Domain truth | Journey map |
 | --- | --- | --- | --- |
-| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `shared/domain-invariants.md`, `shared/functionality.md` | this runbook; `tests/e2e/specs/auth/` |
-| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/option-trades/option-trades.spec.ts`, `watchlist.spec.ts` |
-| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/contract-rank/contract-rank.spec.ts` |
-| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook; `tests/e2e/specs/market-rank/market-rank.spec.ts` |
+| Auth, Billing, Access Gates | `/`, `/app`, `/app/billing`, `/app/account`, `/app/settings/profile`, gated app routes | `shared/domain-invariants.md`, `shared/functionality.md` | this runbook |
+| Option Trades | `/app/option-trades`, `/app/option-trades/live`, `/app/option-trades/historical` | `option-trades/domain-invariants.md`, `option-trades/functionality.md`, plus shared docs for Watchlist/access | this runbook |
+| Contract-level analysis | `/app/rank/contracts`, legacy `/app/contract-rank` | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook |
+| Symbol-level analysis | `/app/rank/symbols`, legacy `/app/symbol-level` or `/app/market-rank` if supported | `rank/domain-invariants.md`, `rank/functionality.md`, plus shared docs for Watchlist/access | this runbook |
 | Cookbooks | `/app/cookbooks`, `/app/cookbooks/$templateId`, pinned-session `slug~YYYY-MM-DD` reports, AI/edit workspaces only when explicitly in scope | `doc/domain-knowledge/cookbooks/domain-invariants.md`, `doc/domain-knowledge/cookbooks/functionality.md`; AI flows: `ops/webappp-fullstack/ai-chat-e2e/SKILL.md` | use the gallery/report UI as the journey map; do not submit AI prompts, fork recipes, delete drafts, or save recipes unless explicitly authorized |
 
 ## Cookbooks Browser Review Rules
@@ -123,7 +119,7 @@ Before the first journey:
 
 ### Seeded test credentials
 
-From `tests/e2e/fixtures/auth.ts` (and `doc/automation/e2e-test/README.md`). These are for **testapp / local / test Clerk**, never for production:
+From webapp `AGENTS.md`. These are for **testapp / local / test Clerk**, never for production:
 
 | Persona | Email | Expected state |
 | --- | --- | --- |
@@ -135,7 +131,7 @@ From `tests/e2e/fixtures/auth.ts` (and `doc/automation/e2e-test/README.md`). The
 
 Seeded test-account OTP defaults to `424242` unless the repo docs or user say otherwise. Fresh disposable registration must use the code actually delivered to Gmail.
 
-Before using these credentials, re-open `tests/e2e/fixtures/auth.ts` and confirm the scenario labels and email defaults have not drifted.
+Before using these credentials, re-open webapp `AGENTS.md` and confirm the persona emails and OTP have not drifted.
 
 ### Optional overrides (only when the user asks)
 
@@ -189,10 +185,7 @@ Manual Browser procedure:
     - The route under review recovers without losing the intended return path.
 11. If registration is part of premium-guard review, continue with the same account only after recording it as a new-user/trial scenario. Do not assume it replaces the seeded `active`, `canceled`, `trial_no_pm`, or `trial_with_pm` accounts unless the billing state proof matches one of those scenarios.
 
-Automated E2E note:
-
-- Repository E2E registration may use Clerk's testing token helper and `#clerk-captcha` fixture support.
-- That helper is not proof for this Browser product review. Browser review requires a real visible create-account flow unless the user explicitly changes scope to automated E2E certification.
+There is no repository Playwright suite. This Browser product review requires a real visible create-account flow unless the user explicitly changes scope.
 
 ## Premium Guard Account Matrix
 
@@ -354,14 +347,13 @@ Write a short scope block before opening the UI:
 
 ### 1. Build The Journey Map
 
-Use the read-only E2E docs and specs to turn test coverage into user outcomes:
+Use domain invariants and this runbook to turn product coverage into user outcomes:
 
-1. List relevant `test.describe` / `test(...)` titles and module prompt journey IDs.
-2. Translate them into user-language journeys, not selector tasks.
-3. Merge duplicates into a compact `BrowserJourneyCoverage` checklist.
-4. Add exploratory checks that E2E scripts usually miss: visual layout, copy clarity, scanability, empty/loading/error states, mobile fit, and cross-route continuity.
+1. List the user-language journeys for the scoped surfaces (auth, billing, premium guards, and the data apps in scope).
+2. Merge duplicates into a compact `BrowserJourneyCoverage` checklist.
+3. Add exploratory checks that scripted suites usually miss: visual layout, copy clarity, scanability, empty/loading/error states, mobile fit, and cross-route continuity.
 
-Do not paste Playwright locators into the walkthrough plan unless they are the only stable way to identify a control internally. User-facing findings must cite visible behavior, copy, URL, persona, and state.
+User-facing findings must cite visible behavior, copy, URL, persona, and state.
 
 ### 2. Pass 0: Greenfield Model
 
@@ -799,7 +791,7 @@ Use concise ratings or notes for:
 - If `testapp.tradingflow.com` does not load or shows a deploy/auth error, record the blocker with URL and visible copy. Do not silently fall back to local or production unless the user asks.
 - If the user explicitly chose local and the app is not running, start it with `PATH=/opt/homebrew/bin:$PATH pnpm dev` from the app repo and retry the route.
 - If a route returns stale UI after implementation changes, reload the Browser page before re-verifying.
-- If the in-app Browser cannot observe a CSV or file download artifact, record export button/gate coverage and mark artifact verification blocked by Browser capability; do not switch to repository Playwright scripts unless the user changes scope.
+- If the in-app Browser cannot observe a CSV or file download artifact, record export button/gate coverage and mark artifact verification blocked by Browser capability; do not switch to scripted browser automation unless the user changes scope.
 - If a TradingView widget is blank only on this Mac, verify local proxy/Shadowrocket routing for `www.tradingview-widget.com` before treating it as a product defect.
 - If product-review docs reference missing paths, use the current checkout's `AGENTS.md`, glossary, and invariant docs, then record doc drift in the final maintenance suggestion.
 - If Browser viewport override does not change `window.innerWidth` / `window.innerHeight` after reload, retry once, reset the viewport before finishing, and mark mobile coverage blocked by Browser capability if it still reports desktop dimensions. If `viewport.reset()` leaves the Browser at the mobile dimensions, explicitly set a desktop fallback such as `1280x720` before continuing desktop checks, then record the reset drift in the handoff.
@@ -807,7 +799,7 @@ Use concise ratings or notes for:
 
 ## When To Switch Runbooks
 
-- User asks to fix tests or certify Playwright coverage: stay on this runbook and the matching `tests/e2e/specs/*` journey maps in the webapp repo.
+- User asks to revive or certify a Playwright suite: there is none in the webapp repo; stay on this runbook unless the user explicitly asks to add new automated tests.
 - User asks for code implementation and PR after findings: use the app repo product-review full playbook workflow and then normal engineering workflow.
 - User asks for production error correlation: use `ops/webappp-fullstack/webapp-check-error.md`.
 - User asks for PostHog analytics, traffic, dashboards, or session replay research: use `ops/webappp-fullstack/posthog-research.md`.

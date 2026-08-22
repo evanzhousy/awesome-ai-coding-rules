@@ -99,7 +99,7 @@ git status --short
 3. Defaults (override via env):
    - Email: `active+clerk_test@example.com` (`E2E_LOGIN_EMAIL`, `E2E_LOGIN_EMAIL_ACTIVE`)
    - OTP: `424242` (`E2E_VERIFICATION_CODE`)
-4. References: webapp `tests/e2e/fixtures/auth.ts`, sibling `awesome-ai-coding-rules/ops/webappp-fullstack/browser-e2e-product-review.md`, and landing `AGENTS.md`.
+4. References: webapp `AGENTS.md`, sibling `awesome-ai-coding-rules/ops/webappp-fullstack/browser-e2e-product-review.md`, and landing `AGENTS.md`.
 
 The capture script (`scripts/capture-blog-ui-screenshots.ts`) calls `ensureLoggedIn`. If you are capturing an old branch that still mounts the retired custom What's New modal, keep its dismissal key in sync with that branch's campaign. Current production Product Updates are Featurebase-owned and do not use the legacy sessionStorage campaign key.
 

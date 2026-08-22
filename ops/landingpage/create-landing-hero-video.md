@@ -109,7 +109,7 @@ Default local test login, only for a Clerk development instance:
 
 If these drift, check:
 
-- `tradingflow-webapp-fullstack/tests/e2e/fixtures/auth.ts`
+- `tradingflow-webapp-fullstack/AGENTS.md`
 - `awesome-ai-coding-rules/ops/webappp-fullstack/browser-e2e-product-review.md`
 
 ### 2. Capture stable product screenshots

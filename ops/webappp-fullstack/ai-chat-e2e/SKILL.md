@@ -98,7 +98,7 @@ Kill switch: `FEATURE_FLAGS.AI_ASSISTANT_ENABLED` / `isAiAssistantEnabled()` —
    (`VITE_ENABLE_AI=true`); OFF in prod `pnpm build` until `VITE_ENABLE_AI=true` / flag. Source:
    `src/domain/ai/config.ts`.
 2. **Paid test account** — `active+clerk_test@example.com` · OTP `424242`
-   (`tests/e2e/fixtures/auth.ts` / `AGENTS.md`).
+   (`AGENTS.md`).
 3. Backend reachable (ClickHouse + Neon) so `run_read_only_sql`, threads, and recipe save work.
 4. Prefer local over testapp when exercising LLM turns (credits + kill-switch control). If the user
    forces testapp, confirm AI is enabled there first.

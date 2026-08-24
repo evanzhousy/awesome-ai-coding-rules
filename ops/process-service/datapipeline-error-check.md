@@ -54,11 +54,20 @@ the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-08-16
+Last updated: 2026-08-24
 
-This pass simplified the runbook and made `Highlights` the first report section. No production checks were executed.
+The latest read-only Pipeline audit passed the broad health gates for 2026-08-21 but proved a narrow metadata/reference-price bootstrap gap for rare active roots. The capability-first remediation is now implemented and locally validated. No deployment, backfill, production configuration change, or ClickHouse mutation was performed.
 
-- [ ] After a separately authorized process-service deploy, verify one regular-session summary exposes reason-specific aggregate omissions; confirm eligible SPEQW/MXWLD buckets reach `AggregatedOptionTrades` when their reference quote is fresh, while XSPBX/XSPBW remain intentionally raw-only.
+The 2026-08-24 live read-only candidate pass produced 12 bounded roots. `DOCK`, `FSZ`, `IDLV`, `RUI`, `SECZ`, `SNBRQ`, `TSEOQ`, and `UHALB` were metadata-capable; `RLV` and `XDB` were chain-only; `XSPBW` and `XSPBX` remained raw-only by contract. Re-resolve this matrix during rollout because provider evidence expires.
+
+- [x] Implement one read-only `RootCapabilityPreflight` boundary that records date-aware, expiring evidence per provider and capability (`identity`, `spot`, `history`, `option_chain`) and resolves `supported`, `chain_only`, `temporarily_unavailable`, `unsupported_by_contract`, or `unknown`. Static product semantics remain authoritative.
+- [x] Change preflight discovery and the coverage gate to use explicit registry gaps plus bounded recent raw and aggregate roots. Both metadata and option-chain jobs consume the shared boundary; neither requires a successful aggregate row to discover a root.
+- [x] Apply the current policy decisions: `RUI` is a vanilla index using `I:RUI`; `RLV` is chain-only; `XSPBX`/`XSPBW` remain raw-only; `SPEQW`/`MXWLD` remain unchanged; `UHALB` maps to `UHAL.B`. Provider-supported ETF/equity/OTC residuals remain dynamically date-gated rather than permanent exclusions.
+- [x] Add fixture coverage for provider disagreement, dated-chain versus current optionability, stale timestamps, auth-scope failures, positive-chain/no-price roots, ticker aliases, first-seen deduplication, and the invariant that provider support cannot override raw-only policy.
+- [ ] Deploy with the production default `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`; verify bounded candidate counts, provider evidence expiry, zero dynamic additions, and no latency/error regression. Move to `enforce` only after that evidence is accepted. Any historical repair remains separately authorized.
+- [ ] Restore callable Better Stack access and recheck the named heartbeat/monitor plus reason-specific runtime counters. This run verified the deployed source and ClickHouse outcomes, but direct Better Stack queries were blocked.
+- [ ] Sample at least five production `contract_rank_overlay_refresh_completed` events before judging latency. One current cycle completed successfully in 7,195 ms, above the five-second investigation threshold, but one sample cannot establish p95 degradation.
+- [ ] Time-box the live overlay test: set `TEST_CONTRACT_RANK_OVERLAY_ENABLED=true`, deploy test, verify at least two bounded `contract_rank_overlay_refresh_completed` cycles plus base/overlay parity, then restore `false` and redeploy test before promoting production. Production ignores the test flag and remains enabled. No ClickHouse schema apply is required.
 
 ## Operating Invariants
 
@@ -70,9 +79,12 @@ Re-resolve dated state during every run. Keep these rules stable:
 | Access is not health | `401 AUTHENTICATION_REQUIRED` on protected reads proves access control, not an outage. Corroborate with permitted telemetry and ClickHouse. |
 | Source vs serving | Stale ClickHouse points to ingest/source; fresh ClickHouse with stale Worker metadata points to snapshot/DO/R2/KV/cache; both fresh with stale UI points to webapp. |
 | Terminal outcome wins | A retry followed by all required artifacts and completion is recovered degradation; an unresolved failure, abandoned checkpoint, or missing artifact family is an incident. |
+| Schedule is not publication cadence | Full snapshots remain the rollback-safe baseline and can complete less frequently than their admission interval. After overlay activation, verify full cadence with `contract_rank_snapshot_refresh_completed` and visible freshness with the separate 90-second `contract_rank_overlay_refresh_completed`; configuration alone proves neither. |
+| Shared warehouse | Production owns continuous 90-second Contract Rank overlays. Test defaults off through `TEST_CONTRACT_RANK_OVERLAY_ENABLED` and may run only during a bounded validation window before being restored to `false`. |
 | Market state matters | Before 09:30 ET, current-day flow can legitimately be empty. Prefer the latest fully closed session for full audits and recheck live flow after 09:35 ET. |
 | Market Structure is Worker-owned | Process-service prepares source tables only. A retired artifact-service `410` indicates stale process-service deployment when Worker output is current. |
 | Product policy is explicit | Use `src/shared/option-product-capabilities.ts` and reason-specific omission counters; do not infer lateness from legacy aggregate-drop totals. |
+| Metadata bootstrap is a separate contract | The base remains aggregate-derived, but shared preflight discovery adds bounded raw-only, missing-metadata, and registry-gap candidates. The coverage gate reads raw plus aggregate roots, and chain-only roots can enter the option-chain universe independently in `enforce`. Compare `root_capability_*` evidence before calling a gap upstream loss or adding an exclusion. |
 | Vendors are references | Align ticker, session, spot time, expiry universe, scope, scale, and methodology. Vendor differences alone do not prove a TradingFlow defect. |
 
 ## Runbook Self-Maintenance
@@ -190,6 +202,51 @@ Preferred scripts:
 - `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase b --strict`
 
 Use bounded custom SQL only when scripts do not answer the question.
+
+### Root Capability Preflight
+
+Provider support is a capability vector, not one boolean. Run this preflight
+premarket for known/recent roots and asynchronously when an unknown root first
+appears. Never block raw ingestion or the trade hot path on remote probes.
+
+| Provider | Positive evidence | Negative-result rule |
+| --- | --- | --- |
+| Unusual Whales | `optionable-tickers` for equities, date-aware `stock/{ticker}/option-chains`, `stock/{ticker}/info`, and `stock/{ticker}/quote` | `has_options=false`, info `404`, or an empty current chain does not reject index aliases or an expired/residual chain. Check the relevant trading date. |
+| Massive | Reference ticker plus daily stock aggregates; canonical `I:{symbol}` index snapshot/aggregates; option snapshot | A stock reference `404` is expected for index roots. A chain without a positive index value is `chain_only`, not fully supported. Accept `DELAYED` when usable bars/values are present. |
+| Longport | Equity/ETF/OTC quote, history, static info, and option expirations/contracts; verified canonical index quote | Error `301600 invalid symbol` is provider-specific lack of support, not proof the product is invalid. |
+| Alpaca | Stock snapshots/history and option snapshots | Data credentials and trading-account credentials are separate. A trading `/assets` `401` does not invalidate successful market-data probes. Index option chains may exist without an Alpaca underlying quote. |
+
+Classify evidence as follows:
+
+- `supported`: product semantics allow the capability and at least one current,
+  usable provider result supplies every required input.
+- `chain_only`: contracts exist but no approved positive reference price exists.
+- `temporarily_unavailable`: timeout, rate limit, authentication scope, stale-only
+  result, or a current empty response contradicted by dated evidence.
+- `unsupported_by_contract`: explicit payoff/lifecycle policy, never inferred from
+  one provider failure.
+- `unknown`: evidence is insufficient or conflicting.
+
+Static policy in `option-product-capabilities.ts` owns payoff, lifecycle, and
+aggregate eligibility. Dynamic evidence can enable a supported transport path,
+but it cannot turn a binary/raw-only product into a vanilla aggregate. Persist
+probe provider, capability, normalized ticker, result state, evidence timestamp,
+market date, evidence scope (`market_date` or `current_snapshot`), and expiry/TTL
+so current and historical support are not conflated.
+
+Implementation paths:
+
+- `src/root-capability-preflight/` owns candidate queries, provider adapters,
+  date/root caching, evidence TTL, and assessment rules.
+- `src/sync-symbol-meta/service.ts` consumes metadata-eligible assessments;
+  `src/optionchain-data/root-capability-universe.ts` independently consumes
+  chain-eligible assessments.
+- `src/syncUwData/root-capability-trigger.ts` starts at most one asynchronous
+  missing-price probe per date/root and never blocks normalization.
+- `ROOT_CAPABILITY_PREFLIGHT_MODE` is `off`, `report_only`, or `enforce`.
+  Production defaults to `report_only`; non-production defaults to `off`.
+  Candidate lookback, cap, concurrency, cache TTL, and HTTP timeout are bounded
+  by the `ROOT_CAPABILITY_*` variables documented in `symbol-meta.md`.
 
 ### Rendered Rank and Vendor References
 
@@ -333,11 +390,14 @@ Resolve the `cf-service` Better Stack source at runtime. Event predicates to che
 | Queue path | `uw_ingest_queue_*`, `processUwIngestQueueBatch`, enqueue/drain fields |
 | Snapshot refresh | `contract_rank_snapshot_refresh_completed` / failure events, `payloadBytes`, `snapshotDate`, and duration fields |
 | Snapshot artifact publication | `operation = 'contract_rank_snapshot_r2_artifact_published'`; require `compact`, `columnar_v1`, and `columnar_v2` before promotion |
+| Snapshot incremental overlay | `operation IN ('contract_rank_overlay_refresh_completed', 'contract_rank_overlay_refresh_failed', 'contract_rank_overlay_refresh_skipped')`; require matching base content version/watermark, bounded rows/payload/latency, and roughly 90-second terminal cadence during RTH |
 | Snapshot retry recovery | `operation IN ('contract_rank_refresh_dispatch_retry', 'contract_rank_snapshot_dispatch_retry')`; correlate with the terminal refresh result for the same window |
 | Market Structure base snapshot | `operation IN ('market_structure_snapshot_refresh_completed', 'market_structure_snapshot_batch_retry', 'market_structure_snapshot_refresh_failed')`; require a terminal current-date completion and no unresolved build failure |
 | Market Structure intraday overlay | `operation IN ('market_structure_intraday_refresh_completed', 'market_structure_intraday_refresh_failed')`; for completion verify `durationMs`, `queryDurationMs`, `sourceSymbolCount`, `matchedSymbolCount`, and `missingSymbolCount`. Scheduled HTTP `409` means no active current-date base snapshot exists yet, and the same cadence should also have dispatched an idempotent base-snapshot ensure. |
 
 Interpret snapshot refresh health by `event`, `refreshStatus`, `effectiveDate`, `rowCount`, and `payloadBytes`, not by severity tag alone. Successful `contract_rank_snapshot_refresh_completed` rows should be informational (`P1`) after the cf-service severity fix; older logs or stale deploys may still show `[P0]`, but a completed `REBUILT` event with current date and growing row count is serving-health evidence, not an incident by itself. Repeated Durable Object CPU-limit resets during scheduled Contract Rank snapshot refreshes are serving-layer build failures when ClickHouse source and `mv_contract_rank_flow` stay current.
+
+When the incremental overlay is deployed, keep its verdict separate from the full baseline. A healthy overlay is cumulative for exactly one full-snapshot `contentVersion` plus build-start change watermark, publishes immutable replacement rows, and resets when a new base promotes. `409 BASE_CHANGED` is a client reload signal, `204` is unchanged, and a P1 overlay failure is recovered degradation only while the last-good full snapshot remains available. Overlay membership comes from the current-date `AggregatedOptionTrades.updated_timestamp` window and complete replacement state comes from `mv_contract_rank_flow`; no auxiliary change table is required. Production scheduling is always enabled. Test scheduling defaults off through `TEST_CONTRACT_RANK_OVERLAY_ENABLED`; enable it only for a time-boxed validation deployment, then restore `false`. Verify the bounded query stays within the configured limits and investigate or introduce a narrow incremental index only if regular-session p95 latency exceeds five seconds or the scan competes with full rebuilds.
 
 For Market Structure, capture `effective_date`, `structure_as_of`, `flow_as_of`, `intraday_gex_as_of`, row count, and intraday-GEX coverage before any recovery attempt. After a failed intraday query, artifact validation, or promotion, repeat the same read and require the previously promoted catalog to remain available with unchanged provenance. An empty intraday result must fail rather than publish an all-zero catalog; a partial result may promote only if unmatched catalog rows are preserved.
 
@@ -493,8 +553,25 @@ Common attribution:
 | One alias family wrong, e.g. BRKB/BFB/index roots | Alias/exclusion/vendor ticker mapping. |
 | Meta row exists but trades still zero fields | Stale in-memory meta snapshot or missing refresh. |
 | ClickHouse current but snapshot stale | Serving refresh, not source ingest. |
+| Rare/provider-supported roots exist only in raw flow | Aggregate-to-metadata bootstrap loop or missing product capability; inspect the shared universe boundary before adding symbol exceptions. |
 
 Use bounded targeted SQL only after the scripts identify a failing dimension. Keep reusable SQL snippets in this runbook; do not paste credentials in output.
+
+When raw rows and aggregate `sum(trade_count)` differ, group both sides by the
+same date/hour/root, then classify each root in this order:
+
+1. Explicit `product_raw_only` policy in `option-product-capabilities.ts`.
+2. Same-day `SymbolMetaData` presence and positive reference price.
+3. Provider daily-aggregate and option-snapshot coverage using a bounded probe.
+4. Corporate/OTC symbol-change policy and canonical alias mapping.
+
+If an active/provider-supported root has raw prints but no metadata or aggregate,
+inspect `root_capability_preflight_completed`, per-root
+`root_capability_assessed`, and `root_capability_option_chain_completed` along
+with the raw-plus-aggregate coverage gate. In `report_only`, supported candidates
+must not change either dynamic universe; in `enforce`, require the relevant
+`metadataEligible` or `optionChainEligible` decision and a non-expired evidence
+vector before diagnosing downstream processing.
 
 ### Phase 6 - Contract-Rank Correctness
 
@@ -511,11 +588,11 @@ Recommended checks:
 3. Compare contract identity (`option_symbol`, `put_call`, `strike`, `expiration_date`) against Massive live snapshot when timing is appropriate.
 4. Compare mart structure fields to same-day/prior `OptionChainTable` with webapp diagnostics when Massive timing drift makes live snapshot ambiguous.
 
-Freshness query:
+Freshness query. Keep output aliases distinct from source column names; ClickHouse alias substitution can otherwise rewrite the `date` filter before execution.
 
 ```sql
 SELECT
-  toString(date) AS date,
+  toString(date) AS mart_date,
   count() AS state_rows,
   uniqExact(option_symbol) AS contracts,
   toString(sumMerge(trade_count)) AS mart_trade_count,
@@ -530,7 +607,7 @@ Compare with `AggregatedOptionTrades` for the same date:
 
 ```sql
 SELECT
-  toString(date) AS date,
+  toString(date) AS aggregate_date,
   count() AS agg_buckets,
   toString(sum(trade_count)) AS agg_trade_count,
   toString(max(time)) AS latest_agg_time

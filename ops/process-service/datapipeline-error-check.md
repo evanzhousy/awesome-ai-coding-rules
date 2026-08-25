@@ -54,19 +54,15 @@ the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
-The latest read-only Pipeline audit passed the broad health gates for 2026-08-21 but proved a narrow metadata/reference-price bootstrap gap for rare active roots. The capability-first remediation is now implemented and locally validated. No deployment, backfill, production configuration change, or ClickHouse mutation was performed.
+The latest read-only Pipeline audit used 2026-08-24 as the closed target, 2026-08-21 as baseline, and 2026-08-25 for live liveness. Broad integrity, raw/aggregate coverage, metadata, Contract Rank mart parity, and same-date Greeks parity passed. A bounded 11:42:45-12:12:46 ET catch-up affected 20,665 aggregate rows over ten minutes late, but every hourly raw/aggregate fill difference was explained and current-day ingestion was fresh; no permanent data loss was found. Better Stack read-only OAuth was restored and attributed the catch-up to upstream late replay: pre-handler lag carried the tail, handler normalization remained 0-18 ms, reconnect attempts and drain failures were zero, and insert latency stayed bounded. Protected edge payloads remained access-blocked.
 
-The 2026-08-24 live read-only candidate pass produced 12 bounded roots. `DOCK`, `FSZ`, `IDLV`, `RUI`, `SECZ`, `SNBRQ`, `TSEOQ`, and `UHALB` were metadata-capable; `RLV` and `XDB` were chain-only; `XSPBW` and `XSPBX` remained raw-only by contract. Re-resolve this matrix during rollout because provider evidence expires.
+The live capability pass again produced 12 bounded roots. `DOCK`, `FSZ`, `IDLV`, `RUI`, `SECZ`, `SNBRQ`, `TSEOQ`, and `UHALB` were metadata-capable; `RLV` and `XDB` were chain-only; `XSPBW` and `XSPBX` remained raw-only by contract. Production still runs revision `566f2d8`; `origin/master` is `095d059`, and the compiled capability-preflight module is absent on the VM.
 
-- [x] Implement one read-only `RootCapabilityPreflight` boundary that records date-aware, expiring evidence per provider and capability (`identity`, `spot`, `history`, `option_chain`) and resolves `supported`, `chain_only`, `temporarily_unavailable`, `unsupported_by_contract`, or `unknown`. Static product semantics remain authoritative.
-- [x] Change preflight discovery and the coverage gate to use explicit registry gaps plus bounded recent raw and aggregate roots. Both metadata and option-chain jobs consume the shared boundary; neither requires a successful aggregate row to discover a root.
-- [x] Apply the current policy decisions: `RUI` is a vanilla index using `I:RUI`; `RLV` is chain-only; `XSPBX`/`XSPBW` remain raw-only; `SPEQW`/`MXWLD` remain unchanged; `UHALB` maps to `UHAL.B`. Provider-supported ETF/equity/OTC residuals remain dynamically date-gated rather than permanent exclusions.
-- [x] Add fixture coverage for provider disagreement, dated-chain versus current optionability, stale timestamps, auth-scope failures, positive-chain/no-price roots, ticker aliases, first-seen deduplication, and the invariant that provider support cannot override raw-only policy.
-- [ ] Deploy with the production default `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`; verify bounded candidate counts, provider evidence expiry, zero dynamic additions, and no latency/error regression. Move to `enforce` only after that evidence is accepted. Any historical repair remains separately authorized.
-- [ ] Restore callable Better Stack access and recheck the named heartbeat/monitor plus reason-specific runtime counters. This run verified the deployed source and ClickHouse outcomes, but direct Better Stack queries were blocked.
-- [ ] Sample at least five production `contract_rank_overlay_refresh_completed` events before judging latency. One current cycle completed successfully in 7,195 ms, above the five-second investigation threshold, but one sample cannot establish p95 degradation.
+- [ ] A one-time same-task continuation is scheduled for 17:06 ET. Recheck every live gate, then deploy the reviewed `origin/master` with the production default `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`; do not use the emergency override for this non-P0 change.
+- [ ] After deployment, verify bounded candidate counts, expiring provider evidence, `addedToUniverseCount=0`, first-seen probe deduplication, and no producer-latency regression before considering `enforce`. Any backfill remains separately authorized.
+- [ ] Sample at least five production `contract_rank_overlay_refresh_completed` events before judging latency. One earlier cycle completed successfully in 7,195 ms, above the five-second investigation threshold, but one sample cannot establish p95 degradation.
 - [ ] Time-box the live overlay test: set `TEST_CONTRACT_RANK_OVERLAY_ENABLED=true`, deploy test, verify at least two bounded `contract_rank_overlay_refresh_completed` cycles plus base/overlay parity, then restore `false` and redeploy test before promoting production. Production ignores the test flag and remains enabled. No ClickHouse schema apply is required.
 
 ## Operating Invariants
@@ -556,6 +552,43 @@ Common attribution:
 | Rare/provider-supported roots exist only in raw flow | Aggregate-to-metadata bootstrap loop or missing product capability; inspect the shared universe boundary before adding symbol exceptions. |
 
 Use bounded targeted SQL only after the scripts identify a failing dimension. Keep reusable SQL snippets in this runbook; do not paste credentials in output.
+
+If the open window is healthy but the full-day `>10m` counter is nonzero, cluster
+the tail by ET trade hour and UTC insert minute before assigning a cause:
+
+```sql
+WITH
+  dateDiff(
+    'second',
+    toDateTime64(formatDateTime(time, '%F %T'), 3, 'America/New_York'),
+    toDateTime64(updated_timestamp / 1000, 3, 'UTC')
+  ) AS lag_sec,
+  toDateTime64(updated_timestamp / 1000, 3, 'UTC') AS inserted_at_utc
+SELECT
+  toHour(time) AS trade_hour_et,
+  toStartOfMinute(inserted_at_utc) AS insert_minute_utc,
+  count() AS late_rows,
+  sum(toUInt64(trade_count)) AS late_fills,
+  quantile(0.5)(lag_sec) AS p50_lag_sec,
+  max(lag_sec) AS max_lag_sec
+FROM AggregatedOptionTrades
+PREWHERE date = toDate('YYYY-MM-DD')
+WHERE lag_sec > 600
+GROUP BY trade_hour_et, insert_minute_utc
+ORDER BY late_rows DESC
+LIMIT 30
+SETTINGS
+  max_execution_time = 30,
+  timeout_before_checking_execution_speed = 0,
+  max_rows_to_read = 50000000,
+  max_bytes_to_read = 10000000000,
+  max_result_rows = 100;
+```
+
+A concentrated cross-symbol insertion burst with raw/aggregate parity proves
+catch-up, not loss. Use `runtime_summary` pre-handler, handler-normalization,
+reconnect, and buffer fields before distinguishing upstream replay from local
+producer delay.
 
 When raw rows and aggregate `sum(trade_count)` differ, group both sides by the
 same date/hour/root, then classify each root in this order:

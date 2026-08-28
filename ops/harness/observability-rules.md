@@ -71,24 +71,25 @@ Use `P1` when:
 
 ## Destinations
 
-TradingFlow currently uses three observability destinations:
+TradingFlow currently uses two observability destinations plus one collaboration surface:
 
-- Discord
 - PostHog
 - BetterStack
+- Slack (incident collaboration, owned by Better Stack)
 
 Their roles are different.
 
-### Discord
+### Slack
 
-Discord is the immediate human-visibility channel and pager.
+Slack is the human incident-collaboration surface. Application code does not call Slack and does not hold a Slack webhook; Better Stack creates, updates, and resolves Slack-visible incidents through its native integration.
 
-It is used for:
+It receives:
 
-- explicit `error.P0` incidents
-- threshold-breached P1 aggregates delivered by the external alerting system
+- explicit trusted-backend `error.P0` incidents created by Better Stack
+- threshold-breached P1 aggregate incidents created by Better Stack
+- recovery updates on the same incident
 
-Individual `error.P1` events stay in PostHog and BetterStack. They do not page Discord.
+Individual `error.P1` events stay in PostHog and BetterStack. They do not notify Slack. Better Stack on-call scheduling is a separate plan capability; when no schedule exists, the current team receives incident notifications.
 
 ### PostHog
 
@@ -112,7 +113,7 @@ The same PostHog **project** receives observability errors (per routing above) a
 
 Both helpers attach the same origin contract (`channel: 'frontend' | 'backend'`, `env`, `runtime`) so PostHog filters and funnels can split by origin uniformly. See [`ops/webappp-fullstack/posthog-research.md`](../webappp-fullstack/posthog-research.md) for naming and product-analytics conventions. **`$pageview`** for route traffic is emitted from the webapp [`src/layouts/BasicLayout.tsx`](../../../tradingflow-webapp-fullstack/src/layouts/BasicLayout.tsx) via **`captureRouteViewForPostHog`** in [`src/services/posthog.ts`](../../../tradingflow-webapp-fullstack/src/services/posthog.ts) (automatic PostHog **`history_change`** pageviews are off so TanStack Router navigations are counted reliably). PostHog **Web Analytics** and digest-style summaries that depend on **`$pageview`** should align with real route traffic for **app.tradingflow.com** after that pipeline is healthy.
 
-For **traffic by URL**, use **`$pageview`** (pathname / current URL properties as surfaced in PostHog). **Product-area rollups** that used to rely on a custom `path_group` property are no longer sent on every navigation; rebuild them in PostHog (Actions, HogQL on `$pathname`, etc.) if dashboards still need buckets. High-volume **`frontend_error`** / **`frontend_log`** events are **observability** noise in the same project; keep product funnel questions on **`$pageview`** plus named events from the two product helpers above, and use Better Stack / Discord for operational triage per this document.
+For **traffic by URL**, use **`$pageview`** (pathname / current URL properties as surfaced in PostHog). **Product-area rollups** that used to rely on a custom `path_group` property are no longer sent on every navigation; rebuild them in PostHog (Actions, HogQL on `$pathname`, etc.) if dashboards still need buckets. High-volume **`frontend_error`** / **`frontend_log`** events are **observability** noise in the same project; keep product funnel questions on **`$pageview`** plus named events from the two product helpers above, and use Better Stack / Slack incidents for operational triage per this document.
 
 To split frontend vs backend in the PostHog UI, filter on the **`channel`** property — present on both **`$exception`** error events (already tagged by the observability sinks) and product events emitted via the helpers above.
 
@@ -131,9 +132,9 @@ BetterStack replaces the old pattern where informational observability was parti
 
 The current routing behavior is:
 
-- `error.P0` → Discord, PostHog, BetterStack
+- trusted backend `error.P0` → PostHog, BetterStack → immediate Better Stack incident / Slack
 - `error.P1` → PostHog, BetterStack
-- `info.P0` → BetterStack only unless it is an explicitly approved incident signal
+- `info.P0` → BetterStack only
 - `info.P1` → BetterStack only
 
 This is intentional.
@@ -141,16 +142,18 @@ This is intentional.
 Key consequences:
 
 - informational events no longer go to PostHog as part of generic observability
-- individual P1 errors never page Discord; threshold monitors own the escalation decision
+- individual P1 errors never notify Slack; Better Stack threshold monitors own the escalation decision
+- browser telemetry is authenticated and relayed through the app; the server clamps it to P1, so only trusted backend events can create immediate P0 incidents
 
 ### Browser startup delivery
 
 Browser error reporting preserves the routing policy without making the Sentry
 or PostHog vendor SDKs part of the first-render bundle. The lightweight browser
 bootstrap queues early vendor-sink errors while those SDKs load, then replays
-them in order. Discord and Better Stack delivery remain independent, so a slow
-vendor chunk does not delay those destinations. Queue overflow is surfaced as
-a sink failure rather than silently discarding an error.
+them in order. Browser Better Stack Telemetry delivery uses the authenticated,
+same-origin `/api/observability/client` relay; it never ships the Better Stack
+bearer token to the browser and never treats client priority as pager-authoritative.
+Queue overflow is surfaced as a sink failure rather than silently discarding an error.
 
 ## SSR server functions (TanStack Start)
 
@@ -188,15 +191,15 @@ If the environment gate is enabled intentionally, development can emit externall
 
 ### Test
 
-Test is console-only by default (same noop/local path as disabled `development`): Discord, PostHog observability, Better Stack Telemetry, and Better Stack Errors (Sentry-compatible SDK via observability bootstrap) do not receive events unless `enabledByEnv.test` is turned on in config for a deliberate staging-like setup.
+Test is console-only by default (same noop/local path as disabled `development`): PostHog observability, Better Stack Telemetry, and Better Stack Errors (Sentry-compatible SDK via observability bootstrap) do not receive events unless `enabledByEnv.test` is turned on in config for a deliberate staging-like setup.
 
 ### Production
 
 Production emits to external observability sinks.
 
-## Configuring Discord, PostHog, and BetterStack (Ops)
+## Configuring PostHog, Better Stack, and Slack (Ops)
 
-All destination values live in **`src/lib/observability/config.ts`** under `OBSERVABILITY_CONFIG`. Update the fields below, then merge and deploy like any other app config change.
+Environment gates and public PostHog hosts live in **`src/lib/observability/config.ts`** under `OBSERVABILITY_CONFIG`. Credentials come from deployment environment variables. Update the fields below, then merge and deploy like any other app config change.
 
 **Environment gate**
 
@@ -206,20 +209,24 @@ All destination values live in **`src/lib/observability/config.ts`** under `OBSE
 
 These booleans decide whether external observability is active in each environment. If an environment is disabled, the app falls back to local-only/noop behavior for that environment.
 
-**Discord** (`discord`)
-
-- `errorWebhookUrl` — webhook for error alerts  
-
 **PostHog** (`posthog`)
 
 - `key` — project API key  
 - `host` — ingest URL (e.g. your PostHog proxy or `https://app.posthog.com`)
 
-**Better Stack** (`betterstack`) — two products:
+**Better Stack** — two products:
 
-- **Telemetry (logs/events):** `telemetryUrl` (POST base URL, e.g. `https://…betterstackdata.com`), `telemetryBearerToken` (same token as in the dashboard “connect” example). The app sends JSON with `dt`, `message`, and metadata (`Authorization: Bearer …`).
-- **Errors:** `sentry.browserDsn` and `sentry.serverDsn` — same Sentry-compatible DSN from Errors → application → Data ingestion (typically identical for browser and server). The app uses **`@sentry/tanstackstart-react`** (TanStack Start React) for both runtimes, not Next.js.
+- **Telemetry (logs/events):** server-only `BETTER_STACK_TELEMETRY_URL` and `BETTER_STACK_TELEMETRY_BEARER_TOKEN`. The app sends JSON with `dt`, `message`, and metadata (`Authorization: Bearer …`). Authenticated browser events use the app relay and are clamped to P1.
+- **Errors:** browser `VITE_BETTER_STACK_ERRORS_DSN` and server-only `BETTER_STACK_ERRORS_DSN`. The app uses **`@sentry/tanstackstart-react`** (TanStack Start React) for both runtimes, not Next.js.
 
-Leave `telemetryUrl` / `telemetryBearerToken` or both `sentry.*Dsn` values empty to disable that path. Discord and PostHog are independent.
+Leave either Telemetry credential or an Errors DSN empty to disable that path. PostHog remains independent.
 
-**Smoke-check after deploy:** Discord (error + info), PostHog (errors), Better Stack Telemetry (HTTP event), Better Stack Errors (new issue in Errors UI). For **product** sanity on the same PostHog project, confirm **`$pageview`** appears in Live events (or HogQL) after an initial load **and** after a client-side route change (no full reload)—Web Analytics visitors should then reflect SPA traffic.
+**Better Stack incident delivery**
+
+- Slack is configured in Better Stack Uptime integrations, not application code.
+- `P0 errors - production (immediate)` filters trusted backend production P0 errors, triggers above zero every 30 seconds with no confirmation delay, and recovers after ten minutes.
+- `P1 errors - production (5m)` filters trusted backend events and triggers above five production P1 errors in five minutes, confirms for two minutes, and recovers after ten minutes.
+- Individual P1 errors never create an incident. The current Better Stack plan notifies the current team; an on-call schedule requires a plan upgrade.
+- Forward Vercel production logs/traces through the Better Stack Vercel integration or a production-only Vercel Drain. Vercel is a telemetry source, not a second incident owner.
+
+**Smoke-check after deploy:** PostHog (errors), Better Stack Telemetry (backend event plus authenticated browser relay), Better Stack Errors (new issue in Errors UI), and Better Stack incident → Slack delivery/recovery. For **product** sanity on the same PostHog project, confirm **`$pageview`** appears in Live events (or HogQL) after an initial load **and** after a client-side route change (no full reload)—Web Analytics visitors should then reflect SPA traffic.

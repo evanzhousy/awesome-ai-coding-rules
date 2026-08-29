@@ -4,6 +4,15 @@ This file owns the landing telemetry taxonomy and source-emitter contract. For
 live traffic and user-behavior summaries, use
 [`posthog-research.md`](./posthog-research.md).
 
+## Shared production project
+
+New landing events target the canonical TradingFlow PostHog production project
+`300646`, shared with the app. Historical landing events remain in project
+`344580` and must not be mixed into current shared-project baselines. Every new
+landing event carries `product_surface=landing`; app browser and backend events
+carry `product_surface=app`. Use this property to split the shared conversion
+funnel without changing the event names below.
+
 ## Recommended Invocation
 
 Use `/goal` when auditing or extending landing analytics:
@@ -214,14 +223,19 @@ parameters from the URL. Login and billing-return events inherit the same
 context. The backend emits `account_registration_completed` only when a
 verified Clerk identity creates a new account record. This connects
 acquisition intent to registration and revenue without sending raw paths,
-search queries, emails, or arbitrary labels across projects.
+search queries, emails, or arbitrary labels across the shared project.
 
 ### Funnels & Dashboards (PostHog MCP)
 
+The dashboard and insight links below point to historical landing project
+`344580` and remain baseline references only. Do not combine their historical
+counts with current shared-project `300646` metrics; create shared-project
+equivalents only after migrated events have live volume.
+
 - **Dashboard**: `Landing & Docs Conversion`
-  - **URL**: see PostHog: `https://us.posthog.com/project/344580/dashboard/1365389`
+  - **URL**: historical PostHog dashboard: `https://us.posthog.com/project/344580/dashboard/1365389`
   - **Purpose**: Central place for key landing/doc funnels and event streams.
-  - **Project status**: Primary dashboard for project `344580`.
+  - **Project status**: Historical landing dashboard. Create or update the shared-project conversion dashboard only after migrated events have live volume.
 
 - **Insight**: `Learn & Blogs views`
   - **URL**: `https://us.posthog.com/project/344580/insights/MEsOBYzH`

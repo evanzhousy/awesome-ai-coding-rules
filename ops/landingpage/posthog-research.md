@@ -1,6 +1,6 @@
 ---
 name: landingpage-posthog-research
-description: Read-only PostHog research runbook for summarizing TradingFlow landing-page traffic, acquisition, content engagement, CTA intent, repeat behavior, replay, heatmaps, performance, errors, and tracking quality in project 344580.
+description: Read-only PostHog research runbook for summarizing TradingFlow landing-page traffic, acquisition, content engagement, CTA intent, repeat behavior, replay, heatmaps, performance, errors, and tracking quality in shared project 300646.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,8 @@ disable-model-invocation: true
 
 Use this runbook to summarize live user behavior for
 `/Users/evansmacbookpro/Desktop/Projects/tradingflow-web-landingpage` from
-PostHog project `344580`.
+shared PostHog project `300646`. Historical landing data remains in project
+`344580` and is excluded from current shared-project baselines.
 
 This is a read-only analytics workflow. Its normal deliverable is an
 aggregate, evidence-backed report covering:
@@ -30,21 +31,21 @@ Use `/goal` for a complete behavior-summary pass.
 
 Recommended objective:
 
-> Summarize TradingFlow landing-page user behavior in PostHog project 344580 using the connected PostHog plugin/MCP. Compare the requested period with a useful prior period, separate content discovery from conversion surfaces, inspect acquisition, engagement, CTA intent, retention, paths, replays, heatmaps, performance, errors, event health, and existing dashboards, then produce an aggregate report without exposing PII or changing PostHog objects. Update this runbook only when the live workflow reveals a reusable improvement or stale assumption.
+> Summarize TradingFlow landing-page user behavior in shared PostHog project 300646 using the connected PostHog plugin/MCP. Compare the requested period with a useful prior period, separate content discovery from conversion surfaces, inspect acquisition, engagement, CTA intent, retention, paths, replays, heatmaps, performance, errors, event health, and existing dashboards, split events by `product_surface=landing|app`, exclude historical project 344580, then produce an aggregate report without exposing PII or changing PostHog objects. Update this runbook only when the live workflow reveals a reusable improvement or stale assumption.
 
 Success criteria:
 
-- The active PostHog project is confirmed as
-  `www.tradingflow.com(landingpage)`, id `344580`.
-- Exact analysis and comparison dates, UTC project timezone, production
+- The active PostHog project is confirmed as the shared TradingFlow project
+  `300646`; historical landing project `344580` is not used for current data.
+- Exact analysis and comparison dates, live project timezone, production
   domains, consent limitations, path cleaning, and test filters are recorded.
 - Traffic, acquisition, route/content behavior, CTA intent, repeat behavior,
   friction, performance, and tracking health are answered or marked
   `blocked`.
 - Content and learning traffic is separated from homepage, pricing, product
   proof, and outbound-app intent.
-- Dashboard `1365389` and relevant saved insights are reviewed before new
-  analysis is proposed.
+- Historical dashboard `1365389` and relevant saved insights are reviewed as
+  needed; shared-project dashboards are not assumed to have been migrated.
 - `free_trial_started` is reported as landing-site trial intent, never as
   confirmed signup, subscription, or revenue.
 - Replays and heatmaps are reviewed when the connected read-only tools expose
@@ -62,7 +63,12 @@ Stop condition:
 
 ## Agent Handoff
 
-Last updated: 2026-07-26
+Last updated: 2026-08-29
+
+Migration note: new landing events now target shared PostHog project `300646`
+with `product_surface=landing`. Project `344580` and dashboard `1365389`
+remain historical sources only; do not combine their historical counts with
+current shared-project baselines.
 
 The full read-only behavior-summary workflow was executed on 2026-07-25 for
 the 30 complete UTC days from 2026-06-25 through 2026-07-24, compared with
@@ -105,20 +111,23 @@ check still found none of `cta_viewed`, `site_search_performed`,
   contents to an unspecified model without separate authorization. Keep
   replay conclusions blocked unless the user explicitly approves that risk or
   a safer first-party review path is available.
-- [ ] Preserve the project and privacy boundary: confirm project `344580`,
-  consent/DNT coverage, and the live schema every run; never substitute
-  project `300646`, expose project/person/session payloads, or claim downstream
-  signup, subscription, or product activation from landing events alone.
+- [ ] Preserve the project and privacy boundary: confirm shared project
+  `300646`, `product_surface=landing`, consent/DNT coverage, and the live
+  schema every run; exclude historical project `344580`, expose no
+  project/person/session payloads, and never claim downstream signup,
+  subscription, or product activation from landing events alone.
 - [ ] After deployment, verify `cta_viewed`, `site_search_performed`, and
-  `site_search_result_clicked` in project `344580`. Confirm CTA exposure uses
+  `site_search_result_clicked` in shared project `300646` with
+  `product_surface=landing`. Confirm CTA exposure uses
   the 50%-for-one-second rule and search properties contain no raw query,
   title, excerpt, or full result URL.
-- [ ] Verify the cross-project acquisition chain in project `300646`:
+- [ ] Verify the shared-project acquisition chain in project `300646`:
   `marketing_handoff_landed` → `account_registration_completed` → existing
   billing lifecycle events. Registration is backend-authoritative and must
   appear only for a newly created account with a verified Clerk identity.
-  Report the two projects separately; the bounded handoff is attribution
-  context, not shared cross-project identity.
+  Keep landing intent events and app outcomes distinct with
+  `product_surface=landing|app`; the bounded handoff remains attribution
+  context, not a landing-side signup claim.
 - [ ] Once the new landing events are observed, add and verify dashboard
   `1365389` tiles for CTA exposure-to-click rate, search zero-result rate, and
   search result-click rate.
@@ -129,18 +138,18 @@ These are navigation expectations, not permanent claims about current data:
 
 | Surface | URL | Expected purpose |
 | --- | --- | --- |
-| Project home | `https://us.posthog.com/project/344580/home` | Confirm project identity and pinned surfaces. |
-| Web Analytics | `https://us.posthog.com/project/344580/web` | Traffic, acquisition, paths, devices, geography, retention, recordings, errors, and frustrating pages. |
-| Web vitals | `https://us.posthog.com/project/344580/web/web-vitals` | LCP, INP, CLS, and route/device breakdowns. |
-| Page reports | `https://us.posthog.com/project/344580/web/page-reports` | Route-specific traffic and performance. |
-| Live traffic | `https://us.posthog.com/project/344580/web/live` | Short-recency ingestion check. |
-| Installation Health | `https://us.posthog.com/project/344580/web/health` | Page-view, page-leave, scroll, URL, proxy, and web-vitals health. |
-| Main conversion dashboard | `https://us.posthog.com/project/344580/dashboard/1365389` | Project primary dashboard for saved landing, content, CTA, and trial-intent insights. |
-| Product Analytics | `https://us.posthog.com/project/344580/insights` | Trends, funnels, retention, paths, lifecycle, and saved insights. |
-| Session replay | `https://us.posthog.com/project/344580/replay/home` | Qualitative journey and friction review. |
-| Heatmaps | `https://us.posthog.com/project/344580/heatmaps` | Saved click/scroll heatmaps when present. |
-| Error Tracking | `https://us.posthog.com/project/344580/error_tracking` | Current exception groups and affected sessions/users. |
-| Event definitions | `https://us.posthog.com/project/344580/data-management/events` | Event existence, properties, and recency. |
+| Project home | `https://us.posthog.com/project/300646/home` | Confirm shared project identity and pinned surfaces. |
+| Web Analytics | `https://us.posthog.com/project/300646/web` | Traffic, acquisition, paths, devices, geography, retention, recordings, errors, and frustrating pages. |
+| Web vitals | `https://us.posthog.com/project/300646/web/web-vitals` | LCP, INP, CLS, and route/device breakdowns. |
+| Page reports | `https://us.posthog.com/project/300646/web/page-reports` | Route-specific traffic and performance. |
+| Live traffic | `https://us.posthog.com/project/300646/web/live` | Short-recency ingestion check. |
+| Installation Health | `https://us.posthog.com/project/300646/web/health` | Page-view, page-leave, scroll, URL, proxy, and web-vitals health. |
+| Historical landing dashboard | `https://us.posthog.com/project/344580/dashboard/1365389` | Historical landing dashboard; do not treat it as the current shared-project dashboard. |
+| Product Analytics | `https://us.posthog.com/project/300646/insights` | Trends, funnels, retention, paths, lifecycle, and saved insights. |
+| Session replay | `https://us.posthog.com/project/300646/replay/home` | Qualitative journey and friction review. |
+| Heatmaps | `https://us.posthog.com/project/300646/heatmaps` | Saved click/scroll heatmaps when present. |
+| Error Tracking | `https://us.posthog.com/project/300646/error_tracking` | Current exception groups and affected sessions/users. |
+| Event definitions | `https://us.posthog.com/project/300646/data-management/events` | Event existence, properties, and recency. |
 
 ## Goal
 
@@ -200,12 +209,12 @@ Unless the user overrides:
 | --- | --- |
 | Product | TradingFlow public landing, content, and learning site |
 | App repo | `/Users/evansmacbookpro/Desktop/Projects/tradingflow-web-landingpage` |
-| PostHog project | Expected name `www.tradingflow.com(landingpage)`, id `344580`; confirm every run |
+| PostHog project | Shared production project `300646`; historical landing project `344580` is excluded from current baselines |
 | PostHog host | `https://us.posthog.com` |
 | Analysis period | Last 30 complete days |
 | Comparison | Previous 30 complete days |
 | Recency check | Last 7 complete days plus a live-ingestion sanity check |
-| Project timezone | Expected UTC; confirm every run |
+| Project timezone | Confirm the live shared-project timezone every run |
 | Production domains | `www.tradingflow.com` and `tradingflow.com` when observed; record every included host |
 | Primary segments | Route group, new vs returning, source/channel, device/browser, geography, CTA location, content type, and scroll depth |
 | Exclusions | Internal/test traffic, localhost/dev/preview hosts, QA traffic, and known bots when safely identifiable |
@@ -266,7 +275,7 @@ Every complete run must revisit each item and label it `worse`, `unchanged`,
 | LP-PH-W2 | Acquisition quality | Separate content/learning discovery from homepage/conversion traffic; compare source quality, bounce, engagement, and next action. |
 | LP-PH-W3 | CTA and trial intent | Compare CTA locations and entry pages, but keep same-click events separate from independent conversion stages. |
 | LP-PH-W4 | Content engagement | Measure readers, maximum scroll depth per session, return visits, and which content leads to a CTA or outbound-app click. |
-| LP-PH-W5 | Cross-project boundary | Verify the bounded landing-to-app handoff and the project `300646` chain from `marketing_handoff_landed` to backend-authoritative registration and billing. Keep project metrics separate and never infer registration from a landing click. |
+| LP-PH-W5 | Shared-project acquisition | Verify the bounded landing-to-app handoff and the shared `300646` chain from `marketing_handoff_landed` to backend-authoritative registration and billing. Split landing/app events with `product_surface` and never infer registration from a landing click. |
 | LP-PH-W6 | Friction and performance | Review replays, heatmaps, dead/rage clicks, exceptions, and web vitals for top traffic and conversion routes. |
 | LP-PH-W7 | Dashboard and taxonomy drift | Audit dashboard `1365389`, generic dashboard `1365301`, live event/property schema, and `posthog-events.md` for stale or duplicate definitions. |
 
@@ -282,7 +291,7 @@ compare. Keep one-off numbers and incident findings in the run report.
      already visible.
    - Run `schema <tool_name> <field_path>` for every field with a schema hint.
 3. Resolve the accessible projects without printing raw project payloads.
-4. Explicitly switch to project `344580`, even if the default appears correct.
+4. Explicitly switch to shared project `300646`, even if the default appears correct.
    Connector contexts can drift independently, so switch the exact query
    surface that will execute the reads.
 5. Retain only the safe active context:
@@ -359,7 +368,7 @@ Record:
 | Field | Required note |
 | --- | --- |
 | User question | Full behavior summary or named traffic/content/conversion question |
-| Project | Must be `www.tradingflow.com(landingpage)` / `344580` |
+| Project | Must be shared production project `300646`; use `product_surface=landing` for landing analysis |
 | Analysis period | Exact start and end dates |
 | Comparison period | Exact start and end dates |
 | Timezone | Live project timezone or `not verified` |
@@ -369,14 +378,14 @@ Record:
 | Path cleaning | On/off and normalization rules |
 | Access | Connected PostHog plugin/MCP and tool names used |
 
-If the project is wrong or inaccessible, stop. Do not substitute another
-TradingFlow project.
+If the project is wrong or inaccessible, stop. Do not substitute historical
+project `344580` or another TradingFlow project.
 
 ### 1. Verify Live Ingestion And Data Quality
 
 Before interpreting a zero, decline, or missing journey:
 
-1. Confirm the active project and UTC timezone.
+1. Confirm the active shared project and its live timezone.
 2. Read the live event schema and recent event definitions.
 3. Check live/recent traffic or the current installation-health surface.
 4. Verify the chosen date range, domain, test-account filter, bot exclusions,
@@ -525,8 +534,8 @@ Critical interpretation rule:
 - Prefer `page_viewed → cta_clicked` or
   `content_engaged → outbound_app_clicked` for behavior.
 - Name `free_trial_started` as `trial intent` in prose.
-- Use webapp project `300646`, Clerk, or Stripe evidence only in a separately
-  authorized downstream-conversion analysis.
+- Use app lifecycle events in shared project `300646`, Clerk, or Stripe evidence
+  only for the separately identified downstream-conversion stages.
 
 For every funnel, state:
 
@@ -576,8 +585,9 @@ Use a clearly stated marketing-site retention definition, for example:
 - Return: later `page_viewed` or `content_engaged`.
 - Period: daily or weekly.
 
-Do not call this product retention. The signed-in product lives in a separate
-project.
+Do not call marketing page behavior product retention. The signed-in product
+shares this project, but retention must use authenticated product events and
+the stable Clerk identity rather than page views alone.
 
 For user-level SQL or deduplication:
 
@@ -838,8 +848,8 @@ insights have been audited.
 
 Before completing:
 
-- Project `www.tradingflow.com(landingpage)` / `344580` was confirmed.
-- Exact calendar windows and UTC timezone were recorded.
+- Shared project `300646` was confirmed; historical project `344580` was excluded.
+- Exact calendar windows and the live shared-project timezone were recorded.
 - Consent/DNT coverage limits were stated.
 - Test, bot, domain, person/cohort, and path-cleaning filters were recorded.
 - Current-day incompleteness was handled.
@@ -870,7 +880,7 @@ ToolAccess:
 
 | Problem | Likely cause | Response |
 | --- | --- | --- |
-| Active project is wrong | Connected PostHog context drifted | Resolve accessible projects and explicitly switch to `344580`; do not continue on another project. |
+| Active project is wrong | Connected PostHog context drifted | Resolve accessible projects and explicitly switch to shared project `300646`; do not continue on historical project `344580`. |
 | Project response contains a token or person metadata | Broad project/dashboard response | Do not log the raw payload; retain only safe project context and aggregate fields. |
 | Metrics suddenly show zero | Wrong window, host, test filter, consent-limited ingestion, stale event, or project mismatch | Reconfirm project/filters and check event schema, recency, and installation health. |
 | `$pageview` and `page_viewed` disagree | Deployment drift, historical configuration, consent timing, or duplicate ownership | Confirm the deployed adapter manually emits the pair and SDK `capture_pageview` remains false. Keep `page_viewed` canonical until counts reconcile. |
@@ -884,7 +894,7 @@ ToolAccess:
 | No replay or heatmap tools are exposed | Connected PostHog surface lacks those reads | Mark the section blocked and ask before browser fallback; do not create a playlist or heatmap. |
 | Replay summarizer requires model processing | Individual replay contents may leave the first-party read path | Obtain explicit user authorization first; otherwise use aggregate metadata and keep visible-cause claims blocked. |
 | User counts look inflated | Events or `distinct_id` counted instead of persons/sessions | Confirm person-on-events and use the unit that matches the question. |
-| Landing intent is reported as paid conversion | Cross-project/product boundary was ignored | Rename it trial/outbound intent and scope a separate verified app/Stripe analysis if requested. |
+| Landing intent is reported as paid conversion | Event source or lifecycle stage was ignored | Filter by `product_surface`, keep `free_trial_started` / `outbound_app_clicked` as intent, and require backend-authoritative registration or billing events for conversion. |
 
 ## Runbook Self-Maintenance
 

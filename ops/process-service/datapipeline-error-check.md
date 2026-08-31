@@ -54,13 +54,14 @@ the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-08-25
+Last updated: 2026-08-27
 
-The latest read-only Pipeline audit used 2026-08-24 as the closed target, 2026-08-21 as baseline, and 2026-08-25 for live liveness. Broad integrity, raw/aggregate coverage, metadata, Contract Rank mart parity, and same-date Greeks parity passed. A bounded 11:42:45-12:12:46 ET catch-up affected 20,665 aggregate rows over ten minutes late, but every hourly raw/aggregate fill difference was explained and current-day ingestion was fresh; no permanent data loss was found. Better Stack read-only OAuth was restored and attributed the catch-up to upstream late replay: pre-handler lag carried the tail, handler normalization remained 0-18 ms, reconnect attempts and drain failures were zero, and insert latency stayed bounded. Protected edge payloads remained access-blocked.
+The latest read-only Pipeline audit froze the requested 24-hour window at 2026-08-26 17:25:40 UTC through 2026-08-27 17:25:40 UTC (13:25:40 ET to 13:25:40 ET), used 2026-08-26 as the latest closed session, 2026-08-25 as baseline, and 2026-08-27 for live liveness. The exact window contained 10,914,498 raw fills and 10,914,488 aggregate fills. All ten raw-only fills were classified: seven `XSPBW` contract-policy omissions plus two `DOCK` and one `GNMX` report-only capability candidates. The ClickHouse asynchronous-insert log contained 31,069 `Ok` batches for each sink and no non-`Ok` status in the window, so no unexplained permanent write loss was found.
 
-The reviewed `095d059` revision was deployed at 17:10 ET after the protected window, replacing `566f2d8`. Production resolves UW enabled, Theta disabled, and `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`; the compiled capability module is present, the tracked host tree matches `origin/master`, and API/UW is the only Forever Node process. A direct production read produced 12 candidates and 12 assessments with no option-chain universe additions. `DOCK`, `FSZ`, `IDLV`, `RUI`, `SECZ`, `SNBRQ`, `TSEOQ`, and `UHALB` remained metadata-capable; `RLV` and `XDB` remained chain-only; `XSPBW` and `XSPBX` remained raw-only by contract. Setup completed, the channel joined, WebSocket opened, heartbeat/canary stayed up, and no DDL, backfill, `.env` change, or `enforce` activation occurred.
+Closed-session integrity, raw/aggregate hourly coverage, metadata, same-date Greeks parity, and Contract Rank mart parity passed. Live 2026-08-27 aggregate freshness remained p95 1 second and p99 3 seconds with zero rows over 30 seconds, and the current mart exactly matched aggregate fill counts. Production remains on clean revision `095d059` with UW enabled, Theta disabled, `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`, one API/UW Forever process, and healthy host/Worker canaries. Direct preflight still produced 12 bounded candidates; `GNMX` was supported and eligible across the configured provider checks but correctly caused no dynamic-universe addition in report-only mode. Better Stack log, heartbeat, runtime-summary, and per-root event inspection was access-blocked by an expired login, while protected Worker payloads returned the expected `401 AUTHENTICATION_REQUIRED`.
 
-- [ ] Observe the next full trading session: require scheduled `root_capability_preflight_completed` / per-root evidence, bounded candidates, `addedToUniverseCount=0`, first-seen probe deduplication, no write-buffer/drop regression, and normal open latency before considering `enforce`. Any backfill remains separately authorized.
+- [ ] Restore Better Stack read-only login, replay the frozen 24-hour queries, and verify scheduled `root_capability_preflight_completed` / per-root evidence, `addedToUniverseCount=0`, first-seen probe deduplication, runtime summaries, heartbeat, and no write-buffer/drop regression before considering `enforce`. Any backfill remains separately authorized.
+- [ ] If a full-session 2026-08-26 investigation is requested, correlate the out-of-window 09:35:18-09:35:19 ET aggregate-only 33-fill cluster with application batch telemetry. Both raw and aggregate asynchronous inserts were `Ok`, so do not label it a server-side insert rejection without that correlation.
 - [ ] Provision `BETTERSTACK_ERRORS_DSN` through the approved host-secret workflow with separate authorization. Post-deploy startup emitted one configuration error because this secondary Errors sink is absent; Better Stack Logs, heartbeat, and canary remain healthy.
 - [ ] Sample at least five production `contract_rank_overlay_refresh_completed` events before judging latency. One earlier cycle completed successfully in 7,195 ms, above the five-second investigation threshold, but one sample cannot establish p95 degradation.
 - [ ] Time-box the live overlay test: set `TEST_CONTRACT_RANK_OVERLAY_ENABLED=true`, deploy test, verify at least two bounded `contract_rank_overlay_refresh_completed` cycles plus base/overlay parity, then restore `false` and redeploy test before promoting production. Production ignores the test flag and remains enabled. No ClickHouse schema apply is required.
@@ -592,6 +593,11 @@ producer delay.
 
 When raw rows and aggregate `sum(trade_count)` differ, group both sides by the
 same date/hour/root, then classify each root in this order:
+
+For bucket-level raw/aggregate joins, compare the intended ET wall-clock bucket,
+not the stored Unix epoch. Normalize the raw New York timestamp to an ET
+wall-clock key and compare the aggregate plain `DateTime` using that same key;
+direct epoch equality can create a false four-hour mismatch.
 
 1. Explicit `product_raw_only` policy in `option-product-capabilities.ts`.
 2. Same-day `SymbolMetaData` presence and positive reference price.

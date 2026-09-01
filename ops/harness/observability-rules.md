@@ -155,6 +155,12 @@ same-origin `/api/observability/client` relay; it never ships the Better Stack
 bearer token to the browser and never treats client priority as pager-authoritative.
 Queue overflow is surfaced as a sink failure rather than silently discarding an error.
 
+### Third-party browser exception filtering
+
+Raw exceptions from embedded vendors may be dropped before PostHog and Better Stack Errors only when both the failure shape and vendor provenance are established—for example, a known TradingView message paired with a TradingView host or immutable `/w/<locale>/chunks/` bundle path. Message-only suppression is not allowed because first-party code may throw the same text. The app's own structured integration failures remain reportable even when their underlying vendor's raw exception is filtered.
+
+This filtering controls duplicate/non-actionable vendor implementation noise; it must not conceal a verified user-visible integration outage. When rendered impact is unknown, retain a narrowly scoped diagnostic or verify the affected flow before broadening a filter.
+
 ## SSR server functions (TanStack Start)
 
 When a **server function** throws before returning, TanStack responds with HTTP 500 and a JSON body. The app also reports that failure as:

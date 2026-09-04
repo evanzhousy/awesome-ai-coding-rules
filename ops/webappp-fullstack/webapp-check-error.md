@@ -14,7 +14,7 @@ Use `/goal` for a complete run with this objective: collect the rolling 24-hour 
 
 ## Agent Handoff
 
-Last updated: 2026-09-04 (window **2026-09-03 02:43–2026-09-04 02:43 ET**). PostHog project `300646` was verified as **TradingFlow Web — Production** with the production host and test-account filter. The active issue list returned **21 groups**; Better Stack application/source/error/query tools were not exposed, so Better Stack is **blocked, not zero** and prior IDs were not reused. Vercel confirms production **`0.15.1`** on commit `948a230…`, READY and deployed **2026-09-03 06:36 ET** to `app.tradingflow.com`; direct `version.json` browser verification was blocked by the client. Local `test` contains the prior remediation, but it is not production proof.
+Last updated: 2026-09-04 (window **2026-09-03 03:27–2026-09-04 03:27 ET**). PostHog project `300646` was verified as **TradingFlow Web — Production** with the production host and test-account filter; its active issue list returned **21 groups**. Better Stack resolved `WebFullStack-Errors` as application `2412994` and `WebFullStack-Info` as source `2357910`: Errors returned one unresolved production pattern, `d5ef08…` (`TypeError: Failed to fetch`, `Wa.checkVersion`, count **1**), while Info returned **0 logs** and **1 exception metric row**. Vercel confirms production **`0.15.1`** on commit `948a230…`, READY and deployed **2026-09-03 06:36 ET** to `app.tradingflow.com`; direct `version.json` browser verification was blocked by the client. Local `test` contains the prior remediation, but it is not production proof.
 
 ### Look First
 
@@ -26,15 +26,16 @@ Last updated: 2026-09-04 (window **2026-09-03 02:43–2026-09-04 02:43 ET**). Po
 
 - [ ] **Rank snapshot latency** — **WATCH**. PH 8s `019f7c70-7428-7791-a759-f49e140bf7f6`=**2**/2u/2s, overlay 30s `01a03e8b-20b9-79c3-858b-74ad5e47c0d9`=**2**/2u/2s, and 90s `019fb376-35f2-7ff1-b65e-5236086bc4d7`=**1**/1u/1s, all on `/app/rank/symbols`. Samples pair timeout fingerprints with `AbortError`; without Better Stack lifecycle data, recovery and provider cause remain unknown.
 - [ ] **Option Trades persistence/live lifecycle** — **WATCH**. Saved-filter conflict PH `01a03175-0482-7390-ae36-81380d74d7f3`=**3** plus backend duplicate `01a03175-03c9-7d82-94d6-79d1026b2fc5`=**1** are one cross-session incident; preference fetch `019f8673-b978-7300-99d4-dc5bbbeb8e2a`=**1** is current-build `/app/option-trades/live`; live exhaustion `01a00256-a3b5-7cc2-ad90-2fd63cb318ce`=**1**. The prior 22s/25s rows/stats timeout searches have no active match.
-- [ ] **ResizeObserver** — **IMPROVED volume, still noisy**. PH `019eaf87-6b10-7ec1-9df7-2276cc4665db`=**184**/14u/20s versus prior **564**/13u/29s; samples span Option Trades Live and Rank Contracts in one session. Keep out of P0 ranking.
+- [ ] **ResizeObserver** — **IMPROVED volume, still noisy**. PH `019eaf87-6b10-7ec1-9df7-2276cc4665db`=**181**/14u/19s versus prior **564**/13u/29s; samples span Option Trades Live and Rank Contracts in one session. Keep out of P0 ranking.
 
 ### Monitor / Lower Priority
 
+- [ ] Better Stack `d5ef08…` and PostHog `019fa938-4799-7652-b029-8b5f4f4cbfa4` both describe a `Failed to fetch` version-check class, but their timestamps differ and no correlation ID was available. Treat them as a related signal, not additive counts.
 - [ ] No active PostHog issue matched the prior market-structure snapshot, `INVALID_ACCESS_PROOF`, GlobalTickerTape, or “Option Trades timed out” searches. This is an active-list result, not proof of zero traffic or recovery.
 
 ### Blocked / Needs Decision
 
-- [ ] Better Stack evidence is blocked because no live application/source/error/query tools were exposed. Re-resolve `WebFullStack-Errors` and `WebFullStack-Info`, refresh query instructions, then correlate request IDs and lifecycle transitions; do not reuse prior IDs.
+- [ ] Info raw-log queries returned no rows and no session-replay listing tool was exposed; rendered impact for vendor errors and lifecycle recovery for Rank latency remain unknown.
 - [ ] Direct production `version.json` access was blocked by the in-app Browser/client, while Vercel deployment metadata proved the production alias and source commit. Recheck the public version endpoint in a session without that blocker before using version-file evidence.
 
 ## Channels to check

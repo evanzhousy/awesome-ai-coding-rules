@@ -79,6 +79,16 @@ TradingFlow currently uses two observability destinations plus one collaboration
 
 Their roles are different.
 
+### Recommended routing principle
+
+Use both observability destinations with distinct ownership; do not mirror every log to both systems.
+
+- PostHog is the user-facing error and context plane: error events with route, session, browser, and replay context, plus product analytics and `$pageview`.
+- BetterStack is the operational plane: structured and redacted logs, request lifecycle, correlation IDs, provider/timeout/retry signals, error patterns, and incident escalation.
+- Route trusted backend `error.P0` and `error.P1` to both; route `info.P0` and `info.P1` to BetterStack only. Keep product events and `$pageview` PostHog-only.
+- Send only bounded operational metadata (`correlationId`, `surface`, `operation`, `requestStage`, `failureKind`, release, and environment); never duplicate secrets, request bodies, cookies, headers, or raw PII.
+- A quiet sink is a coverage signal, not proof that production is healthy; verify ingestion across both destinations before declaring recovery.
+
 ### Slack
 
 Slack is the human incident-collaboration surface. Application code does not call Slack and does not hold a Slack webhook; Better Stack creates, updates, and resolves Slack-visible incidents through its native integration.

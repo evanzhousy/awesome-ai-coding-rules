@@ -14,7 +14,7 @@ Use `/goal` for a complete run with this objective: collect the rolling 24-hour 
 
 ## Agent Handoff
 
-Last updated: 2026-09-04 (window **2026-09-03 03:27–2026-09-04 03:27 ET**). PostHog project `300646` was verified as **TradingFlow Web — Production** with the production host and test-account filter; its active issue list returned **21 groups**. Better Stack resolved `WebFullStack-Errors` as application `2412994` and `WebFullStack-Info` as source `2357910`: Errors returned one unresolved production pattern, `d5ef08…` (`TypeError: Failed to fetch`, `Wa.checkVersion`, count **1**), while Info returned **0 logs** and **1 exception metric row**. Vercel confirms production **`0.15.1`** on commit `948a230…`, READY and deployed **2026-09-03 06:36 ET** to `app.tradingflow.com`; direct `version.json` browser verification was blocked by the client. Local `test` contains the prior remediation, but it is not production proof.
+Last updated: 2026-09-04 (window **2026-09-03 04:49–2026-09-04 04:49 ET**). PostHog project `300646` was verified as **TradingFlow Web — Production** with the production host and test-account filter; its active issue list returned **21 groups**. Better Stack resolved `WebFullStack-Errors` as application `2412994` and `WebFullStack-Info` as source `2357910`: the Errors list and metrics query returned **no current patterns**, and Info returned **0 logs / 0 exception rows**. Treat this as Better Stack source silence/coverage uncertainty, not proof of zero, because PostHog remains non-empty. Vercel confirms production **`0.15.1`** on commit `948a230…`, READY and deployed **2026-09-03 06:36 ET** to `app.tradingflow.com`; direct `version.json` browser verification remains blocked by the client. Local `test` contains the prior remediation, but it is not production proof.
 
 ### Look First
 
@@ -30,7 +30,7 @@ Last updated: 2026-09-04 (window **2026-09-03 03:27–2026-09-04 03:27 ET**). Po
 
 ### Monitor / Lower Priority
 
-- [ ] Better Stack `d5ef08…` and PostHog `019fa938-4799-7652-b029-8b5f4f4cbfa4` both describe a `Failed to fetch` version-check class, but their timestamps differ and no correlation ID was available. Treat them as a related signal, not additive counts.
+- [ ] Better Stack Errors and Info are quiet for this refreshed window while PostHog still has 21 active groups. The prior `d5ef08…` version-check pattern fell outside the new cutoff; treat the cross-sink gap as an ingestion/coverage check, not recovery, and do not add the old pattern to current counts.
 - [ ] No active PostHog issue matched the prior market-structure snapshot, `INVALID_ACCESS_PROOF`, GlobalTickerTape, or “Option Trades timed out” searches. This is an active-list result, not proof of zero traffic or recovery.
 
 ### Blocked / Needs Decision

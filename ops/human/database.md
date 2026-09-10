@@ -97,8 +97,9 @@ Core production permissions:
   `OptionChainTable`, `SymbolMetaData`, and `mv_contract_rank_flow`.
 - `SELECT`, `INSERT`: `OptionChainLatestInferred` and
   `OptionChainInferenceCheckpoint`.
-- `SELECT`: `HistoricalOptionIv30Backfill` and the current `theta_*` shadow,
-  staging, state, reference, and cursor tables.
+- `SELECT`, `INSERT`: the current `theta_*` shadow, staging, state, reference,
+  and cursor tables.
+- `SELECT`: `HistoricalOptionIv30Backfill`.
 - `SHOW TABLES`, `SHOW COLUMNS` within `default`.
 - `SELECT` on `system.columns`, `system.parts`, and `system.tables` for bounded
   discovery, compatibility, and retention checks.

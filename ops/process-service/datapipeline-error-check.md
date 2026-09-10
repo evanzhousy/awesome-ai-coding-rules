@@ -54,17 +54,20 @@ the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-08-27
+Last updated: 2026-09-04
 
-The latest read-only Pipeline audit froze the requested 24-hour window at 2026-08-26 17:25:40 UTC through 2026-08-27 17:25:40 UTC (13:25:40 ET to 13:25:40 ET), used 2026-08-26 as the latest closed session, 2026-08-25 as baseline, and 2026-08-27 for live liveness. The exact window contained 10,914,498 raw fills and 10,914,488 aggregate fills. All ten raw-only fills were classified: seven `XSPBW` contract-policy omissions plus two `DOCK` and one `GNMX` report-only capability candidates. The ClickHouse asynchronous-insert log contained 31,069 `Ok` batches for each sink and no non-`Ok` status in the window, so no unexplained permanent write loss was found.
+The latest greenfield read-only Pipeline audit froze 2026-09-03 06:41:49 UTC through 2026-09-04 06:41:49 UTC (02:41:49 ET to 02:41:49 ET), using September 3 as the latest fully closed target. September 1 is the healthy comparison session because September 2 has complete trades/metadata/chain rows but zero embedded IV30 coverage (0/5,653). The September 2 archive proves the 17:00 ET `FinalMetadataVolStructure` run started `SyncSymbolMetaService`, hit the 1-billion-row ClickHouse read cap at 21:00:04 UTC, and ended `status=failed` with `ticker_count=0`; this explains the IV gap without implicating the provider.
 
-Closed-session integrity, raw/aggregate hourly coverage, metadata, same-date Greeks parity, and Contract Rank mart parity passed. Live 2026-08-27 aggregate freshness remained p95 1 second and p99 3 seconds with zero rows over 30 seconds, and the current mart exactly matched aggregate fill counts. Production remains on clean revision `095d059` with UW enabled, Theta disabled, `ROOT_CAPABILITY_PREFLIGHT_MODE=report_only`, one API/UW Forever process, and healthy host/Worker canaries. Direct preflight still produced 12 bounded candidates; `GNMX` was supported and eligible across the configured provider checks but correctly caused no dynamic-universe addition in report-only mode. Better Stack log, heartbeat, runtime-summary, and per-root event inspection was access-blocked by an expired login, while protected Worker payloads returned the expected `401 AUTHENTICATION_REQUIRED`.
+September 3 source and derived data are healthy: 7,042,926 aggregate rows and 12,060,537 aggregate fills; all RTH hours present; open p50/p95/p99 lag 0/4/6 seconds; zero rows over five or ten minutes; premium-under-25k share 0.9768; zero-market-cap share 0.000113; actionable zero-DEI-with-DEX share 0.000303; aggregate row ratio 1.132 versus September 1; and strict integrity passed. `OptionChainTable` has 1,870,862 rows / 1,870,316 contracts / 5,604 symbols, `SymbolMetaData` has 5,648 rows with 5,393 IV30 values, and zero chain symbols lack a valid same-date metadata spot. `mv_contract_rank_flow` has 2,676,967 state rows / 1,879,217 contracts, exact fill-count parity with aggregates, and strict Phase B Greeks parity has 42 comparisons with zero breaches. The non-strict Massive Phase A diagnostic had one expected historical-versus-live NVDA IV timing/model breach.
 
-- [ ] Restore Better Stack read-only login, replay the frozen 24-hour queries, and verify scheduled `root_capability_preflight_completed` / per-root evidence, `addedToUniverseCount=0`, first-seen probe deduplication, runtime summaries, heartbeat, and no write-buffer/drop regression before considering `enforce`. Any backfill remains separately authorized.
-- [ ] If a full-session 2026-08-26 investigation is requested, correlate the out-of-window 09:35:18-09:35:19 ET aggregate-only 33-fill cluster with application batch telemetry. Both raw and aggregate asynchronous inserts were `Ok`, so do not label it a server-side insert rejection without that correlation.
-- [ ] Provision `BETTERSTACK_ERRORS_DSN` through the approved host-secret workflow with separate authorization. Post-deploy startup emitted one configuration error because this secondary Errors sink is absent; Better Stack Logs, heartbeat, and canary remain healthy.
-- [ ] Sample at least five production `contract_rank_overlay_refresh_completed` events before judging latency. One earlier cycle completed successfully in 7,195 ms, above the five-second investigation threshold, but one sample cannot establish p95 degradation.
-- [ ] Time-box the live overlay test: set `TEST_CONTRACT_RANK_OVERLAY_ENABLED=true`, deploy test, verify at least two bounded `contract_rank_overlay_refresh_completed` cycles plus base/overlay parity, then restore `false` and redeploy test before promoting production. Production ignores the test flag and remains enabled. No ClickHouse schema apply is required.
+Public serving and liveness are healthy: Worker canary 200, retired `/uw-ingestion/status` 404, `available-dates` and latest symbol metadata at September 3, protected snapshot/Market Structure routes return 401 authentication-required, `ProcessServiceCanary` was checked five minutes ago, and the process-service heartbeat arrived 35 seconds ago. The production host has one API Forever process, `NODE_ENV=production`, UW enabled, Theta disabled, and canary 200. Its clean deployed revision is `5968d26`, while current `origin/master` is `e741e5e`; the deployed bundle already resolves the 30-day lookback, report-only root mode, and runtime ClickHouse role, but the revision skew remains an unreleased change boundary.
+
+Better Stack remains the material evidence gap. `Process Service[Production]` (source `533318`, three-day retention) returned no remote or archive rows for the frozen window despite host credentials being present. The `cf-service` archive returned 12,609 rows only from 06:41:49 to 08:48:17 UTC, all auth/cache/connection operations; it had zero runtime summaries, websocket-health, buffer/drop, insert, snapshot, or Market Structure event predicates. Current liveness is separate and healthy: the Uptime heartbeat arrived 35 seconds ago, the pull monitor was checked five minutes ago, and the Worker canary is 200. Therefore the audit proves ClickHouse/serving health but cannot prove “zero process-service errors” or current Worker producer health from telemetry.
+
+- [ ] Recheck Better Stack after the next scheduled market run; require full-window min/max coverage and `runtime_summary`/writer events before using an error count as zero.
+- [ ] Obtain approved query-log/insert-history evidence or an independent rebuild to explain the September 1 mart overcount; current attribution is 82 existing contracts with +395 fills and no mart-only contracts.
+- [ ] Keep the production release boundary explicit: host `5968d26` is clean and config-correct but behind `origin/master` `e741e5e`; no deployment was authorized by this audit.
+- [ ] Revisit Worker snapshot/DO incidents only if fresh failure events or an authorized protected payload read shows they persist; current public canary, dates, and metadata are healthy.
 
 ## Operating Invariants
 
@@ -158,6 +161,12 @@ Resolve sources at runtime. Do not rely on old IDs or table names.
 4. `mcp__betterstack__query_help` for the resolved `source_id` and `source_type: logs`.
 5. Use the returned table names in `mcp__betterstack__query`.
 
+If Better Stack MCP is unavailable but an authenticated Explore Logs session is
+available, resolve the source and type there and verify the returned `min(dt)` /
+`max(dt)` coverage before interpreting the result. The live remote leg may expose
+only a recent tail while the durable archive contains the historical window; an
+empty or short live result is not evidence that the missing portion had no errors.
+
 For process-service uptime, resolve by name rather than trusting old IDs:
 
 - Push heartbeat: `Process Service SyncUw Ingestion Heartbeats` via Better Stack **heartbeats** (not the status-monitors list).
@@ -199,6 +208,45 @@ Preferred scripts:
 - `bun scripts/check-greeks-parity.ts --date YYYY-MM-DD --phase b --strict`
 
 Use bounded custom SQL only when scripts do not answer the question.
+
+#### Current-day metadata and option-chain recovery
+
+This is a production data mutation even when invoked from a local checkout. Obtain explicit
+backfill authority, prove the target date is missing or intentionally replaceable, and run the
+two owners serially. Do not start the local server as `NODE_ENV=production`, which would enable
+production crons and may start a second UW writer.
+
+Start the local API in one terminal. The bounded lookback prevents an all-history distinct-symbol
+scan from exceeding the ClickHouse read cap. The production code-owned default is 30 days, so do
+not add this non-secret value to `.env` to mask a stale compiled artifact. Keep the explicit value
+below as a one-process local override when validating the recovery path:
+
+```bash
+cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
+SYNC_SYMBOL_META_DISTINCT_LOOKBACK_DAYS=30 \
+ROOT_CAPABILITY_PREFLIGHT_MODE=report_only \
+SYNC_UW_DATA_LOCAL_ENABLED=false \
+npm run dev
+```
+
+Use the port printed by the server (`4100` in the current local configuration). From a second
+terminal, run metadata first and wait for its terminal response before starting option chain:
+
+```bash
+/usr/bin/curl -sS --fail-with-body --max-time 7200 \
+  'http://127.0.0.1:4100/syncSymbolMeta?date=YYYY-MM-DD&phase=preopen'
+
+/usr/bin/curl -sS --fail-with-body --max-time 7200 \
+  'http://127.0.0.1:4100/fetchOptionChainDataController?date=YYYY-MM-DD'
+```
+
+Require the metadata response to report `status=completed` with a nonzero, baseline-consistent
+row count. The option-chain controller currently discards its structured service result, so HTTP
+`SUCCESS` is not sufficient: require the terminal service summary to show `error_count=0` and
+`noDataThresholdBreached=false`, then verify same-date rows, unique contracts/symbols, baseline
+ratios, and zero unexplained chain symbols without a valid metadata spot. Stop the local server
+after verification. Do not include volatility, mart fills, or Worker force-refresh unless they are
+separately authorized.
 
 ### Root Capability Preflight
 

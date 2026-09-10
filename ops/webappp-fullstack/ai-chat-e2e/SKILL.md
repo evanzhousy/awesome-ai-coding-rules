@@ -4,7 +4,7 @@ description: >-
   Browser E2E runbook for all in-app TradingFlow AI features: global sidebar shell,
   explain/attach (Rank, Option Trades, drawers, Portfolio), AI Insight, Home Customize
   with AI → Build as Recipe, cookbook build/new/Edit with AI, Select element picker,
-  render_view, thread/stop/feedback, consent + credits, Skills, Messaging-apps link
+  Rank custom-formula authoring/annotation, render_view, thread/stop/feedback, consent + credits, Skills, Messaging-apps link
   mint, and optional memory/schedule chat tools. Use when smoke- or regression-testing
   AI after changes to the sidebar, AssistantChatProvider, /api/ai/chat, assistant tools,
   recipe workspace, ElementPicker, Home workflows, Skills, or Assistant Channels settings.
@@ -60,12 +60,13 @@ Domain truth (read the rows in scope before driving):
 | **P** | Home Customize with AI | `/app/home` → `Customize with AI` | Clarification (0 credits) → proposal → Build as Recipe |
 | **Q** | Memory / tools (optional) | Chat remember / watchlist / portfolio / Massive | Visible tool outcome |
 | **R** | Schedule via chat (optional) | Chat create/list schedule | Settings list updates; delivery itself is OUT |
+| **S** | Rank formula authoring | Rank Contracts/Symbols → Columns → Custom columns | Isolated `propose_rank_formula`; Use draft; explicit Save; semantic annotation |
 
 ## Scope presets
 
 **Default smoke** (run unless the user narrows further): **0, A (Rank + one OT route), B, C, D, E, F, L, P, M (consent + credits pill visible).**
 
-**Full AI suite:** default + **G, H, I, J, K**, and when flags allow **N, O**. Optional **Q, R** only if the user asks.
+**Full AI suite:** default + **G, H, I, J, K, S**, and when flags allow **N, O**. Optional **Q, R** only if the user asks.
 
 **Always out of this runbook:**
 
@@ -185,6 +186,35 @@ Prefer light `quick-test/edit` or Rank for picker checks.
 5. **E4a** — Recipe send body: `attachedContext.kind === 'recipeElements'` with `rows` where applicable, **no** `snapshot`.
 6. **E4b** — Data-page send: elements + `surfaceLabel` + bundled `snapshot`, **no** `rows`/`blockIndex`.
 7. **E5** — Escape / toggle-off exits selecting; pills retained; picks stay valid across navigation.
+
+---
+
+## Flow S — Rank custom-formula authoring and semantic annotation
+
+Run on both `/app/rank/contracts` and `/app/rank/symbols`.
+
+1. Open **Columns → Custom columns**. Confirm each leaf shows its own field catalog and count; a Contracts
+   formula never appears in Symbols and vice versa.
+2. Create a valid draft and click **Ask AI** beside Formula. The dialog closes, the global sidebar opens,
+   and `POST /api/ai/chat` carries `formulaAuthoring` with the active leaf/draft/session but no
+   `workingRecipe` or `attachedContext`.
+3. The only tool part is `tool-propose_rank_formula`. Confirm there is no SQL, metric, portfolio, memory,
+   Skills, Recipe, schedule, Massive, or channel tool call. The card names Contracts or Symbols.
+4. Click **Use draft**. The same editor reopens with the proposal; the Saved View is unchanged until the
+   normal **Create column** / **Save changes** action is clicked. A proposal from an older session has a
+   disabled Use draft action.
+5. Enable sidebar **Annotate** and select: (a) a custom header, (b) a custom cell, and (c) the formula
+   expression/validation/preview inside the editor. The anchored composer must remain usable inside the
+   formula dialog. Inspect the request body:
+   - header: formula definition only;
+   - cell: definition + selected result + only dependency inputs;
+   - editor: unsaved draft + validation/focus; preview may add only its dependency inputs;
+   - none of these carries the broader Rank surface snapshot.
+6. Save one formula per leaf, sort descending, hide/show/reorder it, export CSV, switch historical/latest,
+   reload, and re-open the Saved View. Values recompute; only definitions persist. Entering **Vol** hides
+   Symbols custom columns and **Exit Vol** restores their exact prior visibility/order.
+7. Cleanup: delete the formulas and any AI test thread, restore the original Saved View/default layout,
+   and confirm no account-owned test residue remains.
 
 ---
 

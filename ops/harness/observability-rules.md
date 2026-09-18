@@ -34,6 +34,26 @@ Every event must have:
 - a human-readable message
 - a defined severity
 
+### Outcome ownership
+
+Error Tracking is reserved for a final user-visible failure or a critical integrity failure. The layer that knows the final user or integrity outcome owns `reportError`; lower transport, retry, cache, provider, and fallback layers must not create Error Tracking issues before recovery is settled.
+
+Use this outcome matrix:
+
+- success → no observability event unless an operational diagnostic is independently useful
+- retry then success → `info.P1` when the recovery is useful to diagnose, otherwise nothing
+- primary path fails but fallback succeeds → `info.P1`
+- stale/cached data remains usable after refresh failure → `info.P1`
+- optional/background work fails after the primary user action succeeds → `info.P1`, unless the work is itself a promised user outcome or integrity boundary
+- abort, supersession, navigation cancellation, teardown, or expected cancellation → nothing
+- expected request rejection such as authored validation, normal authentication/access denial, or malformed client input → normally no Error Tracking; use bounded `info.P1` only when operationally useful
+- terminal user-visible unavailable/error state → exactly one `error.P1` from the final outcome owner
+- security, data, financial, audit, payment, credit-ledger, deploy-configuration, or compliance integrity failure → `error.P0`
+
+Do not report the same terminal outcome at both a transport/helper layer and a feature/page/store owner. Diagnostic events may describe the failed attempts, but the final error is emitted once.
+
+The shared runtime enforces this boundary for ordinary 4xx-style P1 failures: authored HTTP 400–499 rejections are routed as bounded `info.P1` diagnostics rather than Error Tracking. `P0` is never automatically demoted; a genuine integrity/security condition must be classified explicitly at its owner.
+
 Engineering may attach **small structured diagnosis fields** on error events via `reportError` metadata or `processApiResponseSystemError` context so Better Stack log search can group failures without guessing from message text alone. Standard fields include:
 
 - `correlationId` — stable id for one request or user-visible operation (generated when omitted).
@@ -64,10 +84,11 @@ Use `P0` only when a single event proves a critical operational condition that n
 
 Use `P1` when:
 
-- the system recovered
-- a fallback path was used
-- the issue is operationally relevant but not request-breaking
-- the event is useful for diagnosis but should create less interruption
+- a user-visible operation reaches a terminal failure that is not `P0`
+- a user-visible feature remains unavailable after its bounded recovery paths are exhausted
+- a promised user mutation or delivery fails and the failure is not a critical integrity event
+
+Recovered, fallback, stale-but-usable, optional-background, and expected-rejection outcomes are not `error.P1`; route them as `info.P1` when they are useful for diagnosis.
 
 ## Destinations
 
@@ -164,6 +185,10 @@ them in order. Browser Better Stack Telemetry delivery uses the authenticated,
 same-origin `/api/observability/client` relay; it never ships the Better Stack
 bearer token to the browser and never treats client priority as pager-authoritative.
 Queue overflow is surfaced as a sink failure rather than silently discarding an error.
+
+Browser Error Tracking is application-owned. PostHog exception autocapture and Sentry global/browser-API exception integrations are disabled for Error Tracking; explicit app-owned `reportError` events remain routed through the PostHog and Better Stack Errors sinks. Raw `window.onerror` and unhandled-rejection signals may be retained as bounded, redacted Better Stack `info.P1` diagnostics, but they do not create Error Tracking issues by themselves.
+
+Known harmless browser-runtime notifications such as benign `ResizeObserver` loop notifications are dropped at that raw-diagnostic boundary. This does not suppress an explicit app-owned failure merely because its message contains the same text.
 
 ### Third-party browser exception filtering
 

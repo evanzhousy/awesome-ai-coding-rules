@@ -144,7 +144,7 @@ This project aligns with the **shadcn/ui** theme created from:
 
 That preset selects **base-luma**, **Base UI**, **neutral** base, **Inter** (body + heading), **default** radius (`--radius: 0.625rem`), Lucide icons, and blue chart colors. Use it when regenerating or comparing primitives so tokens and component chrome stay consistent.
 
-**Brand primary override (product decision):** `--primary` / `--sidebar-primary` in **`src/index.css`** use TradingFlow dark blue `#1e4d7b` (light + dark) — not the preset’s neutral near-black/near-white primary. Keep that override when re-applying theme/fonts from the preset CLI.
+**Brand primary override (product decision):** `--primary` / `--sidebar-primary` in **`src/index.css`** use TradingFlow light blue (`#5ba8dc` light, `#7eb8e8` dark) with dark `--primary-foreground` `#0b1f33` — not the preset’s neutral near-black/near-white primary. Keep that override when re-applying theme/fonts from the preset CLI.
 
 **Stack model (do not conflate layers):**
 

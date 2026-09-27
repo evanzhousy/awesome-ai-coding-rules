@@ -16,6 +16,8 @@ Use `/goal` for a complete run with this objective: collect the rolling 24-hour 
 
 Last updated: 2026-09-27 (rolling **-24h**, run completed **2026-09-27T19:05:27Z**). PostHog project `300646` (`TradingFlow Web — Production`) was explicitly rebound before list and detail batches; returned URLs carried `/project/300646/`. Better Stack resolved live to `WebFullStack-Errors` application `2412994` and `WebFullStack-Info` source `2357910`. The app-scoped result is one Option Trades Live incident represented in both PostHog and Better Stack; do not add the sink counts. Browser evidence from `https://app.tradingflow.com/version.json` confirms production **`0.25.1+09d3726`**, built **2026-09-24T06:04:03Z**.
 
+Documentation maintenance note (2026-09-27): the report contract now requires separate **Doing well** and **Doing badly** summaries first. This maintenance pass did not rerun production telemetry.
+
 ### Look First
 
 - [ ] **Watch the isolated Option Trades terminal reconnect stop before changing policy.** PH `01a035e6-9401-73b3-b2c1-f2cb9001d09c` = **1** occurrence / 1 user / 1 session and BS `d5767fb6d5ca764c852d7fee235ecfc4aa5816d63d533bc15a9340c9d937b713` = **1**, correlated by timestamp, route, message, and `correlationId`. The Live session accumulated 15 instability observations and 5 earlier healthy recoveries over ~30 minutes, then stopped after retry attempt 3 with `terminalReason=online_retry_exhausted`. The later Info row has `reportReason=terminal_failure`; it is a flushed summary of earlier recoveries, not proof that the terminal stop recovered. If this recurs, inspect online/offline transitions and reconnect-budget ownership in `src/pages/optionTrades/hooks/useLiveMode.ts` before changing retry limits.
@@ -137,11 +139,13 @@ Call these out; do **not** treat as P0 product bugs by default:
 
 ### 6. Report (no implementation)
 
-Use the template below. Every generated report must begin with **Highlights** before window/source metadata. Name likely files/areas and the exact PostHog issue / Better Stack pattern signals that should drop after a fix. Stop there unless the user asks to implement.
+Use the template below. Every generated report must begin with **Highlights**, with **Doing well** followed by **Doing badly**, before window/source metadata. Keep both evidence-backed: do not infer health from a blocked source or short silence, and state when the available evidence is insufficient to claim a positive. Put user-impacting defects, regressions, operational risks, and material coverage gaps under **Doing badly**. Name likely files/areas and the exact PostHog issue / Better Stack pattern signals that should drop after a fix. Stop there unless the user asks to implement.
 
 ## Deliverable template
 
-1. **Highlights** — 2–4 bullets: overall health, dominant themes, biggest risk, and the first recommended action
+1. **Highlights**
+   - **Doing well** — 1–3 bullets on evidence-backed healthy, recovered, low-volume, or correctly contained behavior; if none is proven, say the evidence is insufficient rather than inventing a positive
+   - **Doing badly** — 1–3 bullets on confirmed defects, likely user impact, regressions, operational risk, or material evidence gaps; end with the first recommended action
 2. **Window and sources** — `-24h`; PostHog project id; Better Stack Errors `application_id` + Info `source_id` actually used
 3. **PostHog — top issues** — title, issue id, counts/users/sessions, `channel` / route / scope
 4. **Better Stack — top patterns** — pattern id, message/type, count in window

@@ -14,19 +14,18 @@ Use `/goal` for a complete run with this objective: collect the rolling 24-hour 
 
 ## Agent Handoff
 
-Last updated: 2026-09-27 (rolling **-24h**, run completed **2026-09-27T19:05:27Z**). PostHog project `300646` (`TradingFlow Web — Production`) was explicitly rebound before list and detail batches; returned URLs carried `/project/300646/`. Better Stack resolved live to `WebFullStack-Errors` application `2412994` and `WebFullStack-Info` source `2357910`. The app-scoped result is one Option Trades Live incident represented in both PostHog and Better Stack; do not add the sink counts. Browser evidence from `https://app.tradingflow.com/version.json` confirms production **`0.25.1+09d3726`**, built **2026-09-24T06:04:03Z**.
-
-Documentation maintenance note (2026-09-27): the report contract now requires separate **Doing well** and **Doing badly** summaries first. This maintenance pass did not rerun production telemetry.
+Last updated: 2026-09-28 (rolling **-24h**, run completed **2026-09-28T06:14:51Z**). PostHog project `300646` (`TradingFlow Web — Production`) was explicitly rebound before list, detail, replay, and SQL batches; returned URLs carried `/project/300646/`. Better Stack resolved live to `WebFullStack-Errors` application `2412994` and `WebFullStack-Info` source `2357910`. PostHog returned three active issues: two app-scoped issues on one Option Trades session and one landing-only issue excluded by the shared-project boundary. Better Stack returned one production error pattern and one matching Info error row. Browser evidence confirms production remains **`0.25.1+09d3726`**, built **2026-09-24T06:04:03Z**.
 
 ### Look First
 
-- [ ] **Watch the isolated Option Trades terminal reconnect stop before changing policy.** PH `01a035e6-9401-73b3-b2c1-f2cb9001d09c` = **1** occurrence / 1 user / 1 session and BS `d5767fb6d5ca764c852d7fee235ecfc4aa5816d63d533bc15a9340c9d937b713` = **1**, correlated by timestamp, route, message, and `correlationId`. The Live session accumulated 15 instability observations and 5 earlier healthy recoveries over ~30 minutes, then stopped after retry attempt 3 with `terminalReason=online_retry_exhausted`. The later Info row has `reportReason=terminal_failure`; it is a flushed summary of earlier recoveries, not proof that the terminal stop recovered. If this recurs, inspect online/offline transitions and reconnect-budget ownership in `src/pages/optionTrades/hooks/useLiveMode.ts` before changing retry limits.
+- [ ] **Preserve cached watchlists across transient background-read failures.** PH `01a0c009-df84-78d1-b404-c0846d435831` = **1** occurrence / 1 user / 1 session at `2026-09-27T22:07:25Z`. Exact-event SQL identifies `apiGetWatchlistRequest` → `@/server/preferences.getWatchlist`, `requestStage=server_fn_call`, `failureKind=transient`, on `/app/option-trades/live`. The client returns `signed-in-load-error`; inspect whether `useWatchlist` replaces already cached account state, which would conflict with the documented invariant that cached watchlists remain browsable during background refresh. There is no Better Stack counterpart or replay, so rendered impact is unproven.
+- [ ] **Keep the isolated Option Trades terminal reconnect stop on watch.** PH `01a035e6-9401-73b3-b2c1-f2cb9001d09c` = **1** occurrence / 1 user / 1 session and BS `d5767fb6d5ca764c852d7fee235ecfc4aa5816d63d533bc15a9340c9d937b713` = **1**, correlated by timestamp, route, message, and `correlationId`. The Live session accumulated 15 instability observations and 5 earlier healthy recoveries over ~30 minutes, then stopped after retry attempt 3 with `terminalReason=online_retry_exhausted`. No new terminal occurrence appeared in this run; do not change retry limits from a singleton.
 
 ### Blocked / Needs Decision
 
-- [ ] The affected PostHog session has no recording, and Better Stack has no later `live_mode_start`, `live_mode_open`, or stable-recovery row after the terminal stop. The user-visible duration and whether manual **Start** recovered remain unknown.
-- [ ] The second active PostHog result, PH `01a05735-8b62-7431-8c6d-d3336268228a` = **1**, is landing-only (`https://tradingflow.com/`, Netlify RUM) and was excluded from the webapp report under the shared-project boundary.
-- [ ] The PostHog `learn -s` handshake remains unavailable for this client, but live `search` / `info` / `call --json` reads succeeded. No PostHog or Better Stack issue state, deployment, observability configuration, or application code was changed.
+- [ ] The shared affected session has no recording. A bounded ten-minute event query after the watchlist failure returned only the exception, and no Better Stack preference event exists, so watchlist recovery and rendered impact remain unknown. The same lack of post-terminal evidence leaves manual Live recovery unknown.
+- [ ] PH `01a05735-8b62-7431-8c6d-d3336268228a` = **1** is landing-only (`https://tradingflow.com/docs/option-chain-and-oi/`, Netlify RUM) and was excluded from the webapp report.
+- [ ] The PostHog `learn -s` handshake remains unavailable for this client, but live `search` / `info` / `call --json` reads succeeded. No issue state, deployment, observability configuration, or application code was changed.
 
 ## Channels to check
 
@@ -74,7 +73,7 @@ Live Cursor tool names on `user-betterstack` are typically: `applications`, `sou
 3. Prefer Error Tracking list tools (`query-error-tracking-issues-list` or whatever the live schema exposes).
 4. Defaults: `status=active`, `date_from=-24h`, order by `occurrences` DESC, limit ~25–50.
 5. For top issues, pull detail / sampled events for `channel`, `scope`, `$pathname` / `$current_url`, stack, users/sessions.
-6. Generic `TypeError`, `Failed to fetch`, and dynamic-import issues may combine unrelated failures under one fingerprint. Paginate their sampled events and group exact exception values plus current URLs before assigning ownership or root cause.
+6. Generic `TypeError`, `Failed to fetch`, and dynamic-import issues may combine unrelated failures under one fingerprint. Paginate their sampled events and group exact exception values plus current URLs before assigning ownership or root cause. If a sampled event is app-scoped but the typed detail omits its structured owner, perform PostHog schema discovery and query only that exact event UUID for bounded fields such as `scope`, `operation`, `requestStage`, `failureKind`, `serverModule`, `serverExport`, `route`, and `correlationId`.
 7. For `posthog-node` / backend issues, do not treat `users` or zero `sessions` as customer impact. Backend `distinct_id` may represent an operation identity; use correlation IDs, frontend events, or authenticated browser evidence for blast radius.
 8. When a browser issue has session IDs, sample available recordings across both active and inactive sessions. Compare recording duration with active time and verify the rendered product state. A late or missing initial replay snapshot is an evidence blocker for the omitted interval; do not infer that the visible frame caused earlier telemetry or count each event as a user-visible outage.
 
@@ -123,6 +122,8 @@ Align PostHog issues with Better Stack patterns using, in order:
 6. `channel` (`frontend` vs `backend`)
 
 Better Stack Errors and Better Stack Telemetry are two sinks, not two independent incidents. Never add their counts. Collapse duplicate reports by `correlationId`; when an ID is absent, compare operation, request stage, route/scope, and sub-second timestamps, and report the missing-ID limitation explicitly. A client wrapper, `serverFn.uncaught`, authored server error, and query-layer error can all describe one failed request.
+
+An app-owned frontend `Failed to fetch` can appear in PostHog without a Better Stack counterpart when the browser transport itself is impaired: the Better Stack client relay also uses a same-origin fetch. Treat this as a sink-coverage gap, not proof that the structured `reportError` path did not run or that Better Stack observed zero impact.
 
 For reconnecting or retrying lifecycles, aggregate success/error totals are not recovery proof. Group by the owned session/request ID and check whether a success transition occurs after that session's final error. A session that ends without a later success is unknown, not recovered and not automatically a terminal outage.
 

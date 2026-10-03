@@ -1,7 +1,7 @@
 ---
 name: gex-insiderfinance-comparison
 description: >-
-  Runbook for comparing the TradingFlow Rank symbol drawer GEX tab against
+  Runbook for comparing the TradingFlow Symbol Research GEX view against
   InsiderFinance Gamma Exposure, and for comparing TradingFlow Rank IV-family
   metrics against Barchart IV Rank and Percentile pages for the same ticker and
   market session. Use when asked to audit GEX totals, wall/flip semantics,
@@ -12,8 +12,8 @@ description: >-
 
 # GEX / IV Vendor Comparison Runbook
 
-Use this runbook to compare TradingFlow's **GEX** tab in the Rank symbol drawer
-with InsiderFinance's Gamma Exposure page for the same ticker, and to compare
+Use this runbook to compare TradingFlow's **GEX** view in Symbol Research
+(`/app/symbols/<TICKER>?tab=gex`) with InsiderFinance's Gamma Exposure page for the same ticker, and to compare
 TradingFlow's **IV-family metrics** in Rank with Barchart's IV Rank and
 Percentile pages. The goal is not to prove either vendor is canonical; the goal
 is to gather current evidence, separate source freshness from calculation
@@ -21,8 +21,8 @@ semantics, and identify product patterns worth copying.
 
 ## Objective
 
-Produce a current, evidence-backed comparison between TradingFlow's Rank
-symbol-drawer GEX tab and InsiderFinance's Gamma Exposure page, or between
+Produce a current, evidence-backed comparison between TradingFlow's Symbol
+Research GEX view and InsiderFinance's Gamma Exposure page, or between
 TradingFlow's Rank IV-family metrics and Barchart's IV Rank and Percentile
 page, for the same ticker and market session.
 
@@ -57,7 +57,7 @@ Canonical path: `ops/webappp-fullstack/gex-insiderfinance-comparison/SKILL.md` (
    pnpm dev
    ```
 
-   Use `http://127.0.0.1:8000/app/rank/symbols` unless the server reports a
+   Use `http://127.0.0.1:8000/app/symbols` unless the server reports a
    different port.
 4. Browser automation must be available. Prefer Chrome when the user asks for
    Chrome or when existing browser state matters. Otherwise use the in-app
@@ -156,11 +156,11 @@ than guessing.
 Open:
 
 ```text
-http://127.0.0.1:8000/app/rank/symbols
+http://127.0.0.1:8000/app/symbols/<TICKER>?tab=gex
 ```
 
-Sign in with the local test account if required. Select the same ticker and
-open the Rank symbol drawer. Go to the **GEX** tab.
+Sign in with the local test account if required. (From the Symbols table, the
+ticker's GEX icon opens the same view.)
 
 Record:
 
@@ -252,7 +252,7 @@ Barchart side rather than fabricating data.
 Open:
 
 ```text
-http://127.0.0.1:8000/app/rank/symbols
+http://127.0.0.1:8000/app/symbols
 ```
 
 Sign in with the local test account if required for filters or historical date
@@ -267,7 +267,7 @@ selection. For the same ticker:
    - `25Δ Skew`
    - `Term Slope`
    - `25Δ Bfly`
-3. Open the symbol drawer and go to the **Vol** tab.
+3. Open the ticker's row (its Symbol Research page) and go to the **Vol** view.
 4. Capture the IV Rank headline card, its sub-label, and its tooltip.
 5. If Rank/Percentile are unavailable, capture the exact unavailable label and
    verify it matches the full-clean-window invariant.
@@ -366,7 +366,7 @@ the comparison.
 | --- | --- | --- |
 | Clear Call Wall / Put Wall headline cards | Our wall semantics are available and can be labeled precisely | The value would duplicate Gamma Magnet with a different name |
 | Separate signal cards for volatility, magnet, and squeeze | The signal adds interpretation beyond raw totals | It would restate the existing GEX Level Map without new evidence |
-| Expanded heatmap or "show all strikes" affordance | Users need to inspect more expiries or far strikes than the compact panel exposes | It slows the drawer or buries the near-spot read |
+| Expanded heatmap or "show all strikes" affordance | Users need to inspect more expiries or far strikes than the compact panel exposes | It slows the GEX view or buries the near-spot read |
 | Explicit expiry-scope labels | Percentages could be confused across vendors | Our denominator is already obvious in the local panel |
 | Near-spot strike count disclosure | The profile intentionally filters to a window | The chart already shows all strikes |
 | Wall/magnet semantic labels | InsiderFinance and TradingFlow levels differ but both are useful | The label implies exact vendor parity we do not provide |
@@ -411,8 +411,8 @@ Example browser-use style flow:
 browser-use --session gex-compare open https://www.insiderfinance.io/gamma-exposure/SPY
 browser-use --session gex-compare wait text "Gamma Exposure" --timeout 30000
 browser-use --session gex-compare state
-browser-use --session gex-compare open http://127.0.0.1:8000/app/rank/symbols
-browser-use --session gex-compare wait text "Symbol-level analysis" --timeout 30000
+browser-use --session gex-compare open "http://127.0.0.1:8000/app/symbols/SPY?tab=gex"
+browser-use --session gex-compare wait text "Gamma" --timeout 30000
 browser-use --session gex-compare state
 ```
 
@@ -440,7 +440,7 @@ attach screenshots only when they materially support the conclusion.
 
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
-| TradingFlow redirects to login or hides the drawer tab | Premium gate | Sign in with the local paid test account |
+| TradingFlow redirects to login or hides the GEX view | Premium gate | Sign in with the local paid test account |
 | Local page never loads | Dev server down, stale port, backend unavailable | Check `pnpm dev`, terminal errors, and browser console/network |
 | InsiderFinance values disappear or page layout changes | Vendor markup/access change | Capture screenshots and visible fallback fields; do not infer hidden values |
 | Barchart row or IV columns are hidden | Vendor access, custom-view, or markup change | Capture visible filters/timestamp and compare only visible fields |
@@ -479,7 +479,7 @@ At the end of each run, update this file only for reusable procedure drift (rout
 
 Update this runbook when:
 
-- A TradingFlow route, auth flow, drawer label, or GEX tab label drifts.
+- A TradingFlow route, auth flow, view label, or GEX tab label drifts.
 - Required Rank domain docs move, disappear, or gain relevant constraints.
 - InsiderFinance visible field names or page structure change.
 - Barchart visible field names, help definitions, timestamp/update semantics, or

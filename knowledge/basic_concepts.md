@@ -28,7 +28,7 @@ This document summarizes key concepts from the OptionData product documentation 
      - [Gamma Squeeze](#gamma-squeeze)
      - [The 0DTE Phenomenon](#the-0dte-phenomenon)
    - [Implied Volatility (IV)](#implied-volatility-iv)
-4. Chain structure concepts (GEX, OI, vol) — see Symbol-level analysis in Rank for current UI (former dedicated Option Chain Analysis surface retired)
+4. Chain structure concepts (GEX, OI, vol) — current UI: Symbol Research (`/app/symbols/:symbol`), opened from the Symbols table (Symbol-level analysis, `/app/symbols`); the former dedicated Option Chain Analysis surface is retired
 
 ---
 
@@ -713,9 +713,9 @@ Market's expectation of future volatility in the underlying asset's price, deriv
 
 ## Chain structure (GEX / OI / vol) concepts
 
-> **Note:** The former standalone **Option Chain Analysis** app and route `/app/option-chain-analysis` is retired. These concepts now apply to the GEX / Vol / Chain tabs in the Rank Workbench **Symbols tab** symbol inspection drawer.
+> **Note:** The former standalone **Option Chain Analysis** app and route `/app/option-chain-analysis` is retired. These concepts now apply to the GEX / Vol / Chain views of **Symbol Research** (`/app/symbols/:symbol`), which a row of the Symbols table (Symbol-level analysis, `/app/symbols`) opens. The Rank workbench's former symbol drawer is retired.
 
-### Option Chain vs Option Flow (concepts; current UI in Rank Symbols)
+### Option Chain vs Option Flow
 
 Understanding the difference between these two data views is crucial for analysis.
 

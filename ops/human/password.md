@@ -14,6 +14,7 @@ Tradingflow123!
 - Codex MCP server name: `betterstack`.
 - MCP endpoint: `https://mcp.betterstack.com`.
 - Use the `ego-browser` skill for website actions and the Computer plugin for the native Feishu app. Read the current skill instructions before using either interface.
+- Standing user authorization (2026-10-09): proceed with routine Better Stack read-only reconnections and login using this shared account without asking again when the active rules permit. This does not authorize wider access; any mandatory action-time confirmation still applies. The user approved the read-only grant and terms acknowledgement for this recovery.
 - Reuse a working browser session. An authenticated browser and authenticated MCP are separate: the website can be signed in while MCP reports **Not logged in**.
 
 ### Reactivate the existing Codex MCP connection
@@ -26,7 +27,7 @@ Tradingflow123!
 6. Choose **Read-only access** for log/monitor investigation. **Full access** includes writes and needs explicit authority. Preserve an existing authorized scope when refreshing; do not silently widen it. Read-only access covers all teams visible to this account, so resolve the intended team and source after reconnecting.
 7. Click **Allow access** when authorized. The observed page also acknowledges Better Stack's Terms of Service and Privacy Policy; if the active Computer/browser rules require confirmation at this step, obtain that confirmation before submitting. Approval must return to the live callback listener.
 8. Wait for the login command to report success, then rerun `codex mcp list` and confirm **OAuth** for `betterstack`.
-9. Verify that Better Stack initializes and exposes tools in the intended Codex client, then make a read-only inventory call such as `telemetry_list_sources_tool`. CLI login success alone is not proof that an already-running chat has refreshed its tool catalog. If credentials are saved but the current chat still has no tools, refresh/reconnect that client's MCP connection or start a fresh session; avoid disrupting other running chats.
+9. Verify that Better Stack initializes and exposes tools in the intended Codex client, then make a read-only inventory call. The current tools are `teams` and `sources` (`mcp__betterstack__teams` / `mcp__betterstack__sources`); older runbooks may refer to `telemetry_list_sources_tool`, so resolve live tool names rather than assuming that legacy name is available. CLI login success alone is not proof that an already-running chat has refreshed its tool catalog. If credentials are saved but the current chat still has no tools, refresh/reconnect that client's MCP connection or start a fresh session; avoid disrupting other running chats.
 
 If the server is genuinely absent, add it with `codex mcp add betterstack --url https://mcp.betterstack.com`, then log in. Do not remove/re-add an existing correct configuration as the default repair. Use `codex mcp logout betterstack` only when an explicit credential reset is needed; it clears the saved MCP login. Do not read or copy Codex's credential store into this document.
 
@@ -46,6 +47,7 @@ If the server is genuinely absent, add it with `codex mcp add betterstack --url 
 - If the callback fails or the login process has timed out, start a fresh login and use its new URL. Do not replay the old callback or manually copy credentials.
 - Distinguish website login, OAuth credential storage, MCP initialization/tool discovery, and a successful read-only tool call when reporting results.
 - This procedure does not authorize production changes, source-token rotation, monitor edits, incident actions, or account security changes.
+- Verified recovery on 2026-10-09: read-only **Allow access** returned **Authentication complete**, and `codex mcp login betterstack` reported success. A fresh MCP initialization reported OAuth and 71 tools; Better Stack tools also became available in this chat. Read-only `teams` returned TradingFlow (team `159323`), and `sources` returned the active `Process Service[Production]` source (`533318`). No OTP was required, and no production data or monitoring configuration was changed.
 - Initial observation on 2026-10-09: the configured MCP was enabled but **Not logged in**; ego-browser already had the shared Better Stack session. Feishu was accessible through Computer by bundle ID. A fresh OTP login was not exercised.
 
 References: [Codex MCP configuration and OAuth login](https://developers.openai.com/codex/mcp/), plus the Better Stack sign-in and authorization pages observed during recovery. UI labels and consent requirements may change; inspect the live page each time.

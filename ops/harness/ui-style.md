@@ -85,6 +85,7 @@ Details for buttons and forms also appear in later sections; this table is the c
 | **`SelectTrigger`** | Underline preset on primitive | Boxed fields: `border-input bg-input` + **`formControlCompactTouchClass()`** |
 | **`SelectContent`** | `bg-popover` on primitive | `max-h-*` only |
 | **Error copy** | `text-destructive` | Not `text-rose-600` unless [data-encoding](#domain-specific-visual-encoding) |
+| **`Trace` / `CodeBlock`** | `TraceLine status`, `CodeBlock variant` (`default` / `destructive`) + `size="sm"` | Layout only (`my-1`, `max-h-64`, `wrap`) — not re-painted status rows or custom code `pre`s |
 
 **Data-encoding color** (call/put, signed metrics, regime chips, rank medals, etc.) is the main exception: hue may encode metric meaning in tables and chips. That exception does **not** apply to generic alerts, toolbars, or load-error paragraphs.
 
@@ -104,6 +105,7 @@ Treat the **shadcn skill** ([`.agents/skills/shadcn/SKILL.md`](../../.agents/ski
 - Use **`Empty`** for real empty states; use **`Separator`** instead of **`border-t`** / **`<hr>`** for section breaks between regions.
 - Use **`Skeleton`** for loading placeholders in lists and content regions—not one-off **`animate-pulse`** blocks.
 - Use **`Badge`** (and variants) instead of custom muted label **`span`**s where the UI is clearly a tag/chip.
+- Agent steps in the AI chat (tool calls, sources, reasoning rows) are shadcn **`Trace`** lines (`TraceLine` + `TraceIcon` + `TraceTitle`, `status` for running/error/pending, `TraceCollapsible` to expand); tool input/output, SQL, logs, and diffs render in **`CodeBlock`** (`size="sm"` inside a trace) — not **`Collapsible`** + **`Marker`** + a raw **`<pre>`**. The webapp owns the `scroll-fade-*` utilities those registry items reference; **`shimmer`** comes from `tw-shimmer`.
 
 ### Styling habits
 

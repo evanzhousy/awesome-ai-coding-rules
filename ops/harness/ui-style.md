@@ -187,14 +187,26 @@ Luma is the **visual** baseline (soft, rounded, “Tahoe minus glass”). Apple 
 
 Helpers: **`projectMomentum`**, **`rubberband`**. Prefer Motion springs for anything gesture-driven.
 
-**Base UI sheets/dialogs** cannot use Motion springs on enter/exit (they drive motion via `data-starting-style` / `data-ending-style`). Use the CSS approximations:
+**Base UI sheets/dialogs/popups** cannot use Motion springs on enter/exit (they drive motion via `data-starting-style` / `data-ending-style`). Use the CSS approximations:
 
-| Export | Value |
-| --- | --- |
-| **`cssSpringEase.ui`** | `cubic-bezier(0.32, 0.72, 0, 1)` (no overshoot) |
-| **`cssSpringDurationMs.sheet`** | `300` (matches `springs.sheet.duration`) |
+| Export | Value | Consumers |
+| --- | --- | --- |
+| **`cssSpringEase.ui`** | `cubic-bezier(0.32, 0.72, 0, 1)` (no overshoot) | `Dialog`, `Sheet` |
+| **`cssSpringEase.popover`** | `cubic-bezier(0.2, 0.8, 0.2, 1)` (no overshoot) | `Tooltip`, `Popover`, `DropdownMenu`, `HoverCard`, `Select` |
+| **`cssSpringDurationMs.sheet`** | `300` (matches `springs.sheet.duration`) | `Sheet` |
+| **`cssSpringDurationMs.popover`** | `250` (matches `springs.popover.duration`) | `Popover`, `DropdownMenu`, `HoverCard`, `Select` |
+| **`cssSpringDurationMs.tooltip`** | `150` (same ease, shorter response) | `Tooltip` |
 
-`Sheet` applies those on overlay + panel (full-edge travel, soft Luma side radii). `Dialog` uses the same ease/duration on fade/zoom.
+`Sheet` applies those on overlay + panel (full-edge travel, soft Luma side radii). `Dialog` uses the same ease/duration on fade/zoom; both may set the transition longhands inline because `Dialog.Popup` has no mount-time transition override.
+
+The five popup primitives must **not** set `transitionDuration` / `transitionTimingFunction` inline: Base UI's Tooltip, Popover, Menu, Select and PreviewCard popups apply a `transition: none` shorthand while `starting`, and when React removes that shorthand it wipes every inline transition longhand (React warns "Removing a style property during rerender (transition) when a conflicting property is set"). They instead spread **`popupTransitionVars.popover`** / **`.tooltip`** from `springs.ts` into `style` (the custom properties `--popup-ease` / `--popup-duration`, which survive the reset) and declare `transition-[…] ease-(--popup-ease) duration-(--popup-duration)` in the class list, caller `style` spread last. Do not reintroduce `duration-*` / `ease-*` literal classes on those popups; one ease for every popup is the point.
+
+### Tooltip
+
+- **One provider, one delay.** `TooltipProvider` is mounted once in `src/routes/__root.tsx` with `delay={300}`, `closeDelay={0}` and Base UI's default 400 ms grouping `timeout`. Do not mount local providers or pass `delay` / `delayDuration` per surface: the provider is React context and crosses portals, so dialogs, menus and sheets inherit it. The wrapper in `src/components/ui/tooltip.tsx` has no delay default of its own; an undefined `delay` resolves to the nearest provider (Base UI falls back to 600 ms only with no provider at all).
+- **Grouped hops swap, they do not re-enter.** Because the whole app is one delay group, moving between adjacent triggers within 400 ms opens the next tooltip instantly and Base UI marks both the closing and the opening popup with `data-instant`. The primitive carries `data-instant:transition-none`, so the popup relocates without replaying the scale-in. Keyboard-focus opens (`data-instant="focus"`) and Escape dismissals (`"dismiss"`) are instant for the same reason. Keep that rule when restyling the popup.
+- **Motion:** fade + `scale-95` + 2 px travel away from the trigger (via `data-side`), `cssSpringEase.popover` over `cssSpringDurationMs.tooltip`, no bounce. Reduced motion is covered by the global short-circuit in `src/index.css`.
+- **Tooltip vs Popover vs visible label.** Base UI tooltips open on mouse hover and keyboard focus only; touch users never see them. Use a tooltip only for supplementary wording on a control that already has an accessible name (icon buttons, truncated values, keyboard hints). Anything a user must read to act (a disabled-reason, a definition the table depends on, a confirmation) goes in a `Popover` (tap/click to open, focusable content) or in visible label / helper text. Never make a tooltip the only copy of an action's label or an error.
 
 ### Materials & press
 

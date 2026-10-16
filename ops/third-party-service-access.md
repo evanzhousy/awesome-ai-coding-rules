@@ -23,19 +23,21 @@ Use `/goal` for multi-service work:
 Pasteable prompt:
 
 ```text
-Use ops/third-party-service-access.md as the canonical access runbook. Use ego-browser for each required dashboard, reuse its authenticated state, and use Feishu Mail at https://tradingflow.feishu.cn/mail for email OTP or magic-link verification. Select engineering@tradingflow.com through Other Accounts at the bottom-left of Feishu Mail before requesting an admin-service code. Do not ask me to log in or provide an email OTP unless a genuine human-only challenge remains. Prove the correct tenant, project, and environment before acting; authentication alone does not authorize mutations beyond my request. Continue independent services if one is blocked, and report the exact blocker without exposing secrets.
+Use ops/third-party-service-access.md as the canonical access runbook. Use ego-browser for each required dashboard, reuse its authenticated state, and follow the service-specific identity and login procedure before applying the general defaults. Netlify uses public@tfsharedspace.com with email/password login for the FlowMan Sites team. For services that actually request email OTP or magic-link verification, use Feishu Mail at https://tradingflow.feishu.cn/mail and select the exact recipient through Other Accounts at the bottom-left; the general admin mailbox is engineering@tradingflow.com. Do not ask me to log in or provide an email OTP when the approved session or mailbox can complete the step. Prove the correct tenant, project, and environment before acting; authentication alone does not authorize mutations beyond my request. Continue independent services if one is blocked, and report the exact blocker without exposing secrets.
 ```
 
 ## Agent Handoff
 
-Last updated: 2026-08-11
+Last updated: 2026-10-14
 
-No open handoff items. This runbook was created from a current repository inventory of `tradingflow-webapp-fullstack` and `optiondata-portal`. The Feishu Mail mailbox switch and the existing Better Stack account/team session were live-verified with ego-browser on 2026-08-11. Selected vendor entry routes for Massive, Logo.dev, Resend, Webull, Crisp, GitBook, and Alpaca were also opened without authenticating. The other dashboard rows are repository-derived and must be visibly re-verified when first used; this maintenance pass did not log into every listed service or execute production mutations.
+No open handoff items. Fresh Netlify email/password login passed through ego-browser's own API on 2026-10-14 using the user-authorized runtime credential. The authenticated session proved `public@tfsharedspace.com`, team `FlowMan Sites` (`engineering-a9acvw0`), project `optiondataportal`, and production domain `www.optiondata.io`. User settings also confirmed no connected social providers and disabled 2FA. No OTP was requested, no Computer Use was used for this verification, and no Netlify configuration was changed. The password is not stored in this runbook.
+
+The working invocation was `ego-browser nodejs -e` with a normal non-PTY command. Heredoc and PTY invocations reported a bootstrap connection failure; the documented inline-script invocation completed the same browser workflow. Start with that working mode rather than treating the bootstrap message as proof of missing access or a bad credential.
 
 ## Non-Negotiable Boundaries
 
 1. **Reuse before login.** Open the direct dashboard in ego-browser first. Do not sign out of a working company session merely to force `engineering@tradingflow.com`.
-2. **Use the named browser.** Dashboard login and management use ego-browser. Do not silently substitute Chrome, the in-app Browser, Playwright, or raw HTTP for an authenticated dashboard workflow.
+2. **Use the named browser API.** Dashboard login and management use `ego-browser nodejs` and the named ego-browser skill. Do not substitute Computer Use to operate Ego Lite, Chrome, the in-app Browser, Playwright, or raw HTTP when the user requires this API.
 3. **Do not ask for an email OTP.** Use Feishu Mail when the login recipient is an available company mailbox. Never ask the user to read or paste that code.
 4. **Do not expose secrets.** Never send an OTP, password, recovery code, API key, token, session cookie, DSN, webhook URL, database URL, or full environment file to `cliLog`, terminal output, screenshots delivered to the user, runbook text, or the final report.
 5. **Login is not mutation authority.** Read-only inspection and tenant verification are the default. Deploys, DNS edits, billing changes, refunds, subscription changes, user/role changes, secret rotation, data deletion, monitor edits, alert tests, outbound messages, OAuth-app changes, and production configuration changes require authorization from the current request.
@@ -48,7 +50,8 @@ No open handoff items. This runbook was created from a current repository invent
 
 | Purpose | Default | Rule |
 | --- | --- | --- |
-| Third-party admin identity | `engineering@tradingflow.com` | Use when a signed-out vendor accepts email, email OTP, or magic-link login. Better Stack was visibly verified under this identity on 2026-08-11. |
+| Third-party admin identity | `engineering@tradingflow.com` | Apply only when the service has no documented identity override. Better Stack was visibly verified under this identity on 2026-08-11. |
+| Netlify admin identity | `public@tfsharedspace.com` | Fresh email/password login verified through ego-browser's own API on 2026-10-14 for team `FlowMan Sites` and project `optiondataportal`. Use the current authorized credential; no password is stored here. |
 | Feishu Mail URL | `https://tradingflow.feishu.cn/mail` | Do not substitute `mail.feishu.cn` or `mail.larksuite.com`. |
 | Product end-user production login | `evanzhou@tradingflow.com` | This is an app/Clerk verification exception, not the default vendor-admin identity. Follow the product-review runbook when testing the customer app. |
 | TradingFlow production app | `https://app.tradingflow.com` | Do not confuse it with `testapp.tradingflow.com`, preview deployments, or local development. |
@@ -61,28 +64,28 @@ If a vendor is already authenticated with another approved company member and th
 Use the named `ego-browser` skill and its current helper surface. Keep one task space for the whole user goal so service and mailbox tabs share session state.
 
 ```bash
-ego-browser nodejs <<'EOF'
-const task = await useOrCreateTaskSpace('third-party service access')
-const tab = await openOrReuseTab('<DIRECT_DASHBOARD_URL>', {
-  wait: true,
-  timeout: 30,
-})
-cliLog(JSON.stringify({ taskId: task.id, tabId: tab.targetId, page: await pageInfo() }))
-EOF
+ego-browser nodejs -e '
+const task = await taskSpace("third-party service access");
+const page = task.page("p1");
+await page.goto("<DIRECT_DASHBOARD_URL>");
+console.log({ taskSpaceId: task.spaceId, page: page.label });
+'
 ```
 
-For ordinary vendor dashboards, use `snapshotText()` and stable refs/locators first. Feishu Mail is a rich web application: inspect it visually first, then use screenshot-guided clicks or targeted DOM checks. Do not hard-code screen coordinates from a previous run.
+These examples use ego-browser skill API v2. The `-e` mode above was verified for this runbook; run it without allocating a PTY (`tty: false` or omitted in the command tool). Use single shell quotes around the script and double quotes for JavaScript strings. Resume the recorded numeric space id and Page label in later rounds. Use `page.snapshot()` and stable refs/locators for ordinary dashboards; use `page.screenshot()` and targeted checks for Feishu Mail. All v2 wait/timeout values are milliseconds. When the user has supplied a credential for the requested login, enter it with `page.fill()` using the freshly observed field ref or locator. Keep the credential runtime-only. Browser-owned autofill menus are not page DOM elements and do not justify switching to Computer Use.
 
-At the end, close scratch tabs and complete the task space in its own final heredoc after the prior round proves the work is done:
+If heredoc or PTY execution reports `Failed to connect to ego_cli bootstrap`, first retry the documented `nodejs -e` mode through a normal non-PTY command. This mode completed the Netlify login even when the other modes failed. Reuse the same task-space id if one was created. If the inline mode also fails, follow the skill's connection troubleshooting and report the exact attempted invocation; do not substitute Computer Use or run outside the sandbox to bypass a restriction. User-control and inactive-space errors remain hard stops and must not be retried through another mode.
+
+When the task succeeds, replace the sample id below with the recorded task-space id and call `finish` exactly once:
 
 ```bash
-ego-browser nodejs <<'EOF'
-const result = await completeTaskSpace(<TASK_ID>, { keep: false })
-cliLog(JSON.stringify(result))
-EOF
+ego-browser nodejs -e '
+const task = await taskSpace(123); // Replace 123 with the recorded task-space id.
+await task.finish({ keep: [] });
+'
 ```
 
-Use `{ keep: true }` only when the user explicitly wants the dashboard left open or must complete a human-only challenge in that exact task space.
+Use `keep: ["p1"]` only for a Page the user needs to view or continue. For a human-only challenge, use `task.handOff()` and resume only after the user's confirmation. Do not call `finish` while stopped for user control or an error. Preserve pre-existing user tabs.
 
 ## Feishu Mail: Exact Mailbox Switch
 
@@ -103,7 +106,7 @@ If the vendor says it sent mail to a different company address, repeat the same 
 2. Return to the prepared Feishu tab. Use the Search field at the top of Feishu Mail with the vendor name or sender, or refresh the selected mailbox and inspect the newest message received after the request time.
 3. Open only the newest matching message. Old inbox subjects can contain still-visible six-digit codes; do not reuse them.
 4. Read the code into a short-lived in-memory variable or visually, switch to the vendor tab, and enter it immediately.
-5. Never call `cliLog(otp)`. Never print full Feishu `snapshotText()` output: message subjects and previews can contain OTP values. Capture the mailbox layout before requesting a code; once OTP mail is present, prefer targeted in-memory extraction and avoid new inbox screenshots. Do not attach a mailbox screenshot to the final report.
+5. Never call `console.log(otp)`. Never print a full Feishu `page.snapshot()` or accessibility tree: message subjects and previews can contain OTP values. Capture the mailbox layout before requesting a code; once OTP mail is present, prefer targeted in-memory extraction and avoid new inbox screenshots. Do not attach a mailbox screenshot to the final report.
 6. After successful verification, discard the code and verify the vendor dashboard identity and tenant. Do not preserve the code in notes, shell history, a file, or a runbook update.
 
 If the email contains a magic link, open it in the same ego-browser task space, verify that it lands on the expected vendor domain and tenant, and close the message/mail tab after the dashboard session is established. Do not copy the signed magic-link URL into logs or chat.
@@ -114,7 +117,7 @@ When the task does not need more admin OTPs, open **Other Accounts** again and r
 
 ## Authentication Ladder
 
-Use this order for every in-scope service:
+Follow a service-specific procedure when one exists; otherwise use this order:
 
 1. **Existing session:** open the direct dashboard and prove the current account, tenant, and project.
 2. **Existing company SSO:** if the vendor offers Google or another already-authenticated company SSO, use it and verify the selected company identity before consenting.
@@ -124,17 +127,58 @@ Use this order for every in-scope service:
 
 After any login, navigate to the direct dashboard URL again. Login landing pages and remembered last projects are not proof that the intended tenant is selected.
 
+## Netlify Dashboard Login: OptionData
+
+This section owns operator access to the Netlify dashboard. OptionData customer login and deploy visitor protection have separate sessions.
+
+### Verified account and login settings
+
+Verified through ego-browser's own API on 2026-10-14, including credential submission and authenticated project access:
+
+| Item | Confirmed value |
+| --- | --- |
+| Netlify user | `public@tfsharedspace.com` |
+| Default/owning team | `FlowMan Sites` |
+| Team slug | `engineering-a9acvw0` |
+| Project | `optiondataportal` |
+| Production domain | `www.optiondata.io` |
+| Dashboard entry | `https://app.netlify.com/projects/optiondataportal/overview` |
+| Email/password form | `https://app.netlify.com/login/email` |
+| Connected accounts | GitHub, Google, GitLab, and Bitbucket all showed `Not connected` in User settings → General → Connected accounts. |
+| Two-factor authentication | User settings → Security displayed `Enable two-factor authentication`; 2FA was not enabled for this user at the time of the check. |
+| Fresh login result | Email/password submission redirected to `https://app.netlify.com/`, then the authenticated project overview passed all identity/team/project checks. No OTP or SSO was requested. |
+
+The verified path is direct email/password login using the current authorized credential. A saved browser entry is not a substitute for a credential explicitly supplied for the task. Preserve the distinction between opening an existing session and proving a new credential submission.
+
+### Exact login steps
+
+1. Use `ego-browser nodejs -e` without a PTY. Create or resume the task space, take its Page `p1`, and open the dashboard entry. If it opens directly, prove the sidebar user menu reads **`User public@tfsharedspace.com. Open menu`**, the team breadcrumb reads **`FlowMan Sites`**, the heading is **`optiondataportal`**, and the project link is **`www.optiondata.io`**. This is sufficient for session reuse.
+2. If signed out, open `https://app.netlify.com/login` and click **Log in with email**. Confirm the route changes to `/login/email` and the heading reads **Log in to Netlify**. Opening the email-form URL directly is also valid.
+3. Take a fresh `page.snapshot()`. The verified email locator is `loc=css:input[name="email"]`; fill it with **`public@tfsharedspace.com`** using `page.fill()`.
+4. The verified password locator is `loc=css:input[name="password"]`. Fill it with the current password authorized by the user for this login. Verify the email and that the password field has filled without returning the password value in tool output. Never print or persist the password in this document, a script file, environment file, or report.
+5. Click the exact submit button with `page.click("loc=role:button[name=\"Log in\"]")`. Its accessible name is **Log in**; the alternative **Log in with a Git provider** is a different button. Wait for navigation or a visible error. The successful test redirected to `https://app.netlify.com/`. If the form returns `No user found for this email/password`, preserve any working session and report the rejected attempt without guessing passwords or starting recovery.
+6. Navigate to `https://app.netlify.com/projects/optiondataportal/overview` and wait for the project content to settle. Prove **`public@tfsharedspace.com` → `FlowMan Sites` (`engineering-a9acvw0`) → `optiondataportal` → `www.optiondata.io`**, then check the requested Production/Preview/branch deploy context before continuing. The verified user-menu locator is `loc=role:button[name="User public@tfsharedspace.com. Open menu"]`; the team-switcher locator is `loc=css:button[name="Switch teams"]`. When the sidebar is collapsed and shows only **F**, inspect or expand it before asserting the team name.
+
+For a specifically requested fresh-login test, establish a signed-out state through the supported ego-browser API. Read the skill's `references/clearing-state.md` before clearing any cookies, cache, or storage, and preserve the user's working sessions. A fresh-login success verdict requires step 6 to pass after the credential submission; opening an inherited session alone is session-reuse evidence.
+
+### Verify or recover the correct path
+
+- To check the operator identity and provider linkage, open the sidebar user menu → **User settings** → **General** (`https://app.netlify.com/user/settings`). Read **Personal information** for Email and Default team, then **Connected accounts**. This account's verified path is email/password; the presence of a Google/GitHub/GitLab/Bitbucket button on Netlify's public login screen does not prove those providers are linked. Use `page.snapshot({ scope: "full_page" })` when the provider list extends below the viewport.
+- To check whether 2FA has changed, use **User settings** → **Security** → **Two-factor authentication** (`https://app.netlify.com/user/security#content`). If a future login requests an authenticator code, use that user's approved authenticator source. Use Feishu only if the live Netlify screen explicitly sends an email verification to an available mailbox; no email OTP was needed in the verified login.
+- Use `https://app.netlify.com/sso` only if live tenant policy or a redirect establishes enforced SAML SSO. It was not required by the verified public account settings.
+- Deploys, environment variables, domains, team membership, build hooks, project visibility, and site-protection changes remain governed by the current user request.
+
 ## Current Managed Service Directory
 
-This table covers control planes with a current or repository-configured company integration. `Default admin email` means `engineering@tradingflow.com` when email login is needed; it does not override an already-valid company session.
+This table covers control planes with a current or repository-configured company integration. Service-specific identities take precedence over the general `engineering@tradingflow.com` default. Keep an already-valid company session when it has the required tenant access.
 
 | Service | Project use and current status | Direct browser entry | Required tenant/project proof |
 | --- | --- | --- | --- |
 | Vercel | TradingFlow production hosting, serverless functions, cron, Speed Insights, and AI Gateway | `https://vercel.com/dashboard` | Project `tradingflow-webapp-fullstack`; production domain `app.tradingflow.com`; distinguish Production from Preview. AI Gateway and Speed Insights are inside this Vercel project, not separate vendor logins. |
-| Netlify | OptionData production host; TradingFlow still has legacy Netlify config but its production host is Vercel | `https://app.netlify.com/sites/optiondataportal/overview` | Site `optiondataportal`; production domains belong to OptionData. Do not manage the legacy TradingFlow Netlify site as production. |
+| Netlify | OptionData production host; TradingFlow still has legacy Netlify config but its production host is Vercel | `https://app.netlify.com/projects/optiondataportal/overview` | Follow [Netlify Dashboard Login: OptionData](#netlify-dashboard-login-optiondata). Fresh email/password login verified with ego-browser's own API on 2026-10-14: operator `public@tfsharedspace.com`, team `FlowMan Sites` (`engineering-a9acvw0`), project `optiondataportal`, domain `www.optiondata.io`. Prove deploy context before acting. |
 | Cloudflare | Worker/Durable Objects/R2 and edge serving used by both products, including `ws.optiondata.io` | `https://dash.cloudflare.com/` | Active account `FlowMan LLC`; select the authoritative zone and the production Worker/environment that owns the requested host. Do not edit a duplicate/stale zone or test Worker. |
 | Clerk | Authentication for both products and Google sign-in for TradingFlow | `https://dashboard.clerk.com/` | Select the application by its production domains: TradingFlow `app.tradingflow.com`; OptionData `accounts.optiondata.io` / OptionData production domains. Prove Production versus Development before any user/session change. |
-| Stripe | Billing and subscriptions for both products | `https://dashboard.stripe.com/` | Prove the product account and the visible Live/Test mode before reading or acting. Never infer mode from the URL alone. Refunds, cancellations, price/product edits, invoices, and payment-method actions require exact authorization. |
+| Stripe | Billing and subscriptions for both products | `https://dashboard.stripe.com/` | The switcher lists three accounts. TradingFlow is `TradingFlow.com` (`acct_1AtaljDVsC6tSD27`). OptionData production is **`www.optiondata.io`** (`acct_1MXLheEsKvZ43FCy`): it holds the portal's live key, the Pro price, and the `OptionData Portal production` webhook endpoint. `optiondata.io (Blobr)` (`acct_1LK6ZyPETuTsNF5I`) is a lookalike with no endpoints; do not act there. Prove the account name and the visible Live/Sandbox mode before reading or acting; never infer mode from the URL alone. Refunds, cancellations, price/product edits, invoices, and payment-method actions require exact authorization. Verified 2026-10-14. |
 | Neon | TradingFlow application database | `https://console.neon.tech/` | Match the project/branch host against `NEON_DATABASE_URL` from the webapp environment without printing the URL or credentials. |
 | ClickHouse Cloud | Market/options data queried by both products | `https://console.clickhouse.cloud/` | Match the service hostname and database to the repo-owned environment variables without printing credentials. Browser access is for service administration; production data audits should still follow the process-service runbook and its read-only scripts. |
 | PostHog — TradingFlow | Product analytics, feature flags, error tracking, and session evidence | `https://us.posthog.com/project/300646/home` | Project id `300646`, product domain `app.tradingflow.com`. Re-prove the project on every dashboard/query batch. |
@@ -229,6 +273,12 @@ Do not ask the user to paste a password, OTP, authenticator code, recovery code,
 | Magic link opens a public homepage | Return to the original email and use the newest unexpired link in the same task space, then navigate to the direct dashboard URL. Never log the link. |
 | Correct identity, wrong tenant/project | Use the vendor's account/team/project switcher and verify the expected domain/id. Do not create, rename, transfer, or delete a tenant to solve navigation. |
 | SSO chooses a personal Google account | Cancel before granting access. Choose the approved company identity from the account chooser. Do not globally sign out of Google unless the user requests it. |
+| Netlify redirects to `/sso` or shows **Log in via SSO** | Treat this as Netlify dashboard Organization/Team SSO. Use the known team ID/slug and configured identity provider; do not substitute Netlify Identity, a site password, or an unrelated social account. |
+| A Netlify-hosted deploy asks for a password or team login | This is deploy/site protection, not dashboard login. Open the direct `app.netlify.com/projects/optiondataportal/overview` route to prove dashboard access separately. |
+| Netlify requests a six-digit 2FA code | Retrieve it from the Netlify user's configured authenticator app. It is not an email OTP; hand off rather than starting recovery or disabling 2FA. |
+| Netlify returns `No user found for this email/password` | Confirm `public@tfsharedspace.com` and the exact selected saved credential. Preserve any working session; obtain or confirm the valid credential through an approved password manager, then re-test fresh sign-in. Do not infer that the account is absent or create a replacement user. |
+| Ego Lite autofill menu appears but the password is still empty | The native menu can outlive the page observation. Inspect the current menu, select the exact address, and verify the masked field has filled before clicking **Log in**. Do not submit an empty field or repeatedly retry rejected credentials. |
+| Heredoc or PTY execution reports `Failed to connect to ego_cli bootstrap` | Retry `ego-browser nodejs -e` with ordinary non-PTY execution, reusing the recorded task space. This documented mode completed the verified Netlify login. If it also fails, investigate the skill's connection prerequisites and report the exact invocation; the error alone does not establish missing Full Access. |
 | Feishu itself is signed out | Reuse another existing agent-owned Feishu task space only if available. Otherwise hand off Feishu's QR/device/login challenge; do not substitute another mailbox or browser. |
 | Vendor requires CAPTCHA, passkey, hardware key, app authenticator, phone, or recovery code | Finish independent work, hand off the task space, and request completion in-browser. |
 | Session expires during a long run | Re-authenticate in the same task space, re-prove the tenant/environment, and re-read any form before submitting. |
@@ -260,7 +310,7 @@ Do not claim a service is connected solely because its public homepage loads. A 
 At the end of each run:
 
 1. Decide whether live use revealed a durable change to a dashboard URL, tenant selector, login method, Feishu mailbox path, service status, or verification rule.
-2. Update the durable procedure or service directory only from visible dashboard evidence and current repository/configuration evidence. Do not infer that a vendor is active from a package name alone.
+2. Update the durable procedure or service directory only from visible dashboard evidence and current repository/configuration evidence. Record session reuse and fresh sign-in as separate verification results; provider linkage and 2FA status must be checked on the actual user. Do not infer that a vendor is active from a package name alone.
 3. Keep transient outages, temporary OTP delays, current counts, and one-run blockers out of the permanent service table. Put only unresolved next action in `Agent Handoff`, and prune completed items first.
 4. When a service is added, removed, renamed, nested under another control plane, or moved between active and gated status, update this file and the canonical routing row in `ops/tradingflow-ceo-daily-review.md` if its purpose changes.
 5. Never add passwords, OTPs, magic links, tokens, recovery codes, session data, full env values, customer data, or screenshots of a mailbox to this runbook.

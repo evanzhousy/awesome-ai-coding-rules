@@ -1,6 +1,6 @@
 ---
 name: third-party-service-access
-description: Canonical human-maintained service-access guide for TradingFlow and OptionData, including the preserved Neon credential record, ego-browser login, Feishu OTP, Stripe CLI authentication, and Better Stack MCP recovery.
+description: Canonical human-maintained service-access guide for TradingFlow and OptionData, including the preserved Neon credential record, ego-browser login, Feishu OTP, Stripe CLI authentication, Better Stack MCP recovery, and the TradingFlow Worker operator reads for production Rank state.
 disable-model-invocation: true
 ---
 
@@ -394,6 +394,61 @@ The subsequent multi-product retry also failed at the initial pairing POST with 
 
 Current verification status: Dashboard session/account/email and TradingFlow↔OptionData browser switching verified; CLI login **blocked**; CLI account and Live/Test GET checks **not run**; Stripe MCP connection **not tested**. Earlier help inspection found the installed `stripe docs` plugin unavailable and its documentation connector requiring reauthentication. No upgrade or connector reconnection was performed. Re-check current help before execution; do not label the pairing procedure end-to-end verified until CLI completion and account/mode gates pass.
 
+## TradingFlow Worker Operator Reads: Production Rank and Live Contracts
+
+Last verified: 2026-10-19 07:30-07:55 ET against the production and test Workers, using read-only `GET` requests only.
+
+Use this when a check needs the production state behind the TradingFlow Rank pages (Live Contracts, Contract Rank, Market Structure) and no signed-in customer session is available. It is a bearer-token API on the TradingFlow Cloudflare Worker (`tradingflow-cfworker-service`), not a dashboard login, so ego-browser, Feishu Mail, and the Authentication Ladder do not apply.
+
+**Why the customer routes do not work for an agent.** The customer routes (`/api/v1/contract-rank/live/*`, `/api/v1/contract-rank/latest-snapshot*`, `/api/v1/market-structure`) require an edge-access proof that the app issues to a signed-in, entitled user. Without a proof they return `401 AUTHENTICATION_REQUIRED`; with the operator token they return `401 INVALID_ACCESS_PROOF`. The local mint script refuses production signing. Do not mint, borrow, or copy a user's proof.
+
+**What works instead.** The Worker exposes operator mirrors under `/api/v1/live-contracts/`. In `src/live-contracts/routes.ts`, `rank/<route>` and `structure/<route>` forward to the same Live Contracts object paths as the customer `rank:read` and `market-structure:read` routes, so the owner's operator can read production without an edge-access proof.
+
+| Item | Value |
+| --- | --- |
+| Production origin | `https://cfworker-service.engineering-601.workers.dev`; `ws.optiondata.io` is the same production Worker. |
+| Test origin | `https://cfworker-service-test.engineering-601.workers.dev` |
+| Token | `CF_SERVICE_OPERATOR_TOKEN` in `tradingflow-cfworker-service/.env`. Production compares requests against the constant in `src/security/operator-token.ts` (stored in source at the owner's request, commit `8440c4e`); other Workers compare against their own `CF_SERVICE_OPERATOR_TOKEN` secret. On 2026-10-19 the `.env` value was accepted by both production and test. |
+| Read routes (`GET` only) | Under `/api/v1/live-contracts/`: `status`; `rank/<meta, snapshot, changes, gex-regime, contract, contracts, quotes, chain, symbol>`; `structure/<available-dates, catalog, summary, detail>`. Also `GET /api/v1/option-chain/snapshot/status` and `GET /api/v1/market-structure/refresh/status`. |
+| Needs explicit authorization | `POST /api/v1/live-contracts/<load, resync, run, import, archive, overlay>` and the refresh `POST` routes. The same token authorizes them, so holding it is production write access. |
+
+Read the state without printing the token:
+
+```bash
+WORKER_ORIGIN="https://cfworker-service.engineering-601.workers.dev"
+OPERATOR_TOKEN="$(grep '^CF_SERVICE_OPERATOR_TOKEN=' /Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service/.env | cut -d= -f2- | tr -d '"')"
+op_get() { curl -sS --max-time 60 -H "Authorization: Bearer $OPERATOR_TOKEN" "$WORKER_ORIGIN/api/v1/live-contracts/$1"; }
+op_get status | jq '{
+    chain: (.live.chainGen | {id, chainDate, symbolCount, contractCount, loadedAt}),
+    rankGenId: .live.rankGenId,
+    rank: (.rank | {date, seq, lastRunAt, latestTradeTime}),
+    sourceCheck: (.sourceCheck | {date, status, checkedAt}),
+    structure: [.structureGenerations[0:2][] | {date, phase, symbolCount, computedAt}],
+    archive: (.rankArchive | {sessions, newest: .newest.date, pending, building}),
+    errors
+  }'
+op_get rank/meta | jq '{effectiveDate, rowCount, latestTradeTime, asOf, dates: (.availableTradingDates | length), archived: (.archivedTradingDates | length)}'
+op_get structure/available-dates | jq '{effective_date, dates: (.available_dates | length)}'
+unset OPERATOR_TOKEN
+```
+
+Keep the token in the shell variable only: never `echo` it, use `set -x`, paste it into a command line, or save request headers. The `status` payload is about 22 KB, so summarize it with `jq` as above instead of printing it whole.
+
+How to read the result (the healthy shape, not fixed values):
+
+- Before 09:30 ET: `chain.chainDate` is today and `sourceCheck.status` is `UNCHANGED`, meaning the chain loaded for the day matches ClickHouse. `rank.date` and the `rank/meta` `effectiveDate` still show the previous session. Today's `preopen` structure generation is listed, `archive.pending` is empty, and `errors` is `{}`.
+- During the session: `rank.date` is today, `rank.lastRunAt` keeps advancing, and `archive.newest` is the previous session.
+- The full pipeline verdict belongs to the [process-service data-pipeline runbook](../process-service/datapipeline-error-check.md) (Phase 4). This section owns only the access path.
+
+| Response | Meaning and action |
+| --- | --- |
+| `401 {"error":"Unauthorized"}` on `/api/v1/live-contracts/*` | The operator token is missing or wrong. Reload it from the cf-service `.env`; do not substitute an edge-access proof. |
+| `503` "CF Service operator token is not configured" | That Worker has no operator secret. Report it; setting a Worker secret is a configuration change that needs authorization. |
+| `401 AUTHENTICATION_REQUIRED` or `INVALID_ACCESS_PROOF` on a customer route | Expected. Customer routes refuse the operator token; use the operator mirrors above. |
+| `404 {"error":"Not Found"}` on `/api/v1/live-contracts/<name>` | The name is not in the read set, or it is an action sent as `GET`. Check the route list; never retry it as a `POST`. |
+
+First use, 2026-10-19 pre-open check: the first report marked production Rank "not checked" because the process-service runbook described only customer edge-access proofs. Reading the Worker's auth code (`requireOperatorAccess` in `src/security/operator-access.ts`) led to the production constant and the operator read routes. The `.env` value matched, and the reads showed the expected pre-open shape: the day's chain loaded about 07:01 ET and matching ClickHouse, Rank still on the previous session, today's pre-open structure published, and no errors. Lesson: try these operator reads before recording a production Rank check as blocked.
+
 ## Current Managed Service Directory
 
 This table covers control planes with a current or repository-configured company integration. Service-specific identities take precedence over the general `engineering@tradingflow.com` default. Keep an already-valid company session when it has the required tenant access.
@@ -402,7 +457,7 @@ This table covers control planes with a current or repository-configured company
 | --- | --- | --- | --- |
 | Vercel | TradingFlow production hosting, serverless functions, cron, Speed Insights, and AI Gateway | `https://vercel.com/dashboard` | Project `tradingflow-webapp-fullstack`; production domain `app.tradingflow.com`; distinguish Production from Preview. AI Gateway and Speed Insights are inside this Vercel project, not separate vendor logins. |
 | Netlify | OptionData production host; TradingFlow still has legacy Netlify config but its production host is Vercel | `https://app.netlify.com/projects/optiondataportal/overview` | Follow [Netlify Dashboard Login: OptionData](#netlify-dashboard-login-optiondata). Fresh email/password login verified with ego-browser's own API on 2026-10-14: operator `public@tfsharedspace.com`, team `FlowMan Sites` (`engineering-a9acvw0`), project `optiondataportal`, domain `www.optiondata.io`. Prove deploy context before acting. |
-| Cloudflare | Worker/Durable Objects/R2 and edge serving used by both products, including `ws.optiondata.io` | `https://dash.cloudflare.com/` | Active account `FlowMan LLC`; select the authoritative zone and the production Worker/environment that owns the requested host. Do not edit a duplicate/stale zone or test Worker. |
+| Cloudflare | Worker/Durable Objects/R2 and edge serving used by both products, including `ws.optiondata.io` | `https://dash.cloudflare.com/` | Active account `FlowMan LLC`; select the authoritative zone and the production Worker/environment that owns the requested host. Do not edit a duplicate/stale zone or test Worker. To read production Rank / Live Contracts state without a dashboard or customer login, use [TradingFlow Worker Operator Reads](#tradingflow-worker-operator-reads-production-rank-and-live-contracts). |
 | Clerk | Authentication for both products and Google sign-in for TradingFlow | `https://dashboard.clerk.com/` | Select the application by its production domains: TradingFlow `app.tradingflow.com`; OptionData `accounts.optiondata.io` / OptionData production domains. Prove Production versus Development before any user/session change. |
 | Stripe | Billing and subscriptions for both products | `https://dashboard.stripe.com/` | Follow [Stripe CLI Login and Account Verification](#stripe-cli-login-and-account-verification). TradingFlow is `TradingFlow.com` (`acct_1AtaljDVsC6tSD27`). OptionData production is **`www.optiondata.io`** (`acct_1MXLheEsKvZ43FCy`): it holds the portal's live key, the Pro price, and the `OptionData Portal production` webhook endpoint. `optiondata.io (Blobr)` (`acct_1LK6ZyPETuTsNF5I`) is a lookalike with no endpoints; do not act there. Search/select by name and ID, not the number or position of switcher entries. Prove the account name and visible Live/Sandbox mode before acting; never infer mode from the URL alone. Refunds, cancellations, price/product edits, invoices, and payment-method actions require exact authorization. Billing mapping verified 2026-10-14; OptionData Dashboard identity/session rechecked 2026-10-17, while CLI pairing remained blocked. |
 | Neon | TradingFlow application database | `https://console.neon.tech/` | Account note: `public@tfsharedspace.com`; use the [preserved human credential record](#neon-access-and-human-credential-record) only for authorized Neon access. Match the project/branch host against `NEON_DATABASE_URL` without printing it. Credential validity was not re-tested in the consolidation. |

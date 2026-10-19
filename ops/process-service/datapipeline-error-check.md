@@ -76,7 +76,7 @@ Re-resolve dated state during every run. Keep these rules stable:
 | Rule | Interpretation |
 | --- | --- |
 | Writer first | Resolve the active writer before interpreting logs; retired Worker UW routes returning `404` are expected after the removal deploy. |
-| Access is not health | `401 AUTHENTICATION_REQUIRED` on protected reads proves access control, not an outage. Corroborate with permitted telemetry and ClickHouse. |
+| Access is not health | `401 AUTHENTICATION_REQUIRED` on protected reads proves access control, not an outage. Read the same state through the Phase 4 operator routes, and corroborate with permitted telemetry and ClickHouse. |
 | Source vs serving | Stale ClickHouse points to ingest/source; fresh ClickHouse with stale Worker metadata points to snapshot/DO/R2/KV/cache; both fresh with stale UI points to webapp. |
 | Terminal outcome wins | A retry followed by all required artifacts and completion is recovered degradation; an unresolved failure, abandoned checkpoint, or missing artifact family is an incident. |
 | Schedule is not publication cadence | Full snapshots remain the rollback-safe baseline and can complete less frequently than their admission interval. After overlay activation, verify full cadence with `contract_rank_snapshot_refresh_completed` and visible freshness with the separate 90-second `contract_rank_overlay_refresh_completed`; configuration alone proves neither. |
@@ -102,7 +102,7 @@ ClickHouse schema, scripts, Rank routes/fields, vendor page contracts,
 comparison rules, thresholds, or report shape drift. Do not update it for a
 single incident or speculative product idea.
 
-Keep the canonical file at `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md` and the process-service mirror at `ops/datapipeline-error-check.md` byte-identical. Validate with `diff -u` after either copy changes.
+Keep the canonical file at `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md` and the process-service mirror at `wiki/ops/agent-runbook/datapipeline-error-check.md` byte-identical. Validate with `diff -u` after either copy changes.
 
 
 ## Workspace Map
@@ -120,7 +120,7 @@ Keep the canonical file at `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-c
 Allowed by default:
 
 - Better Stack telemetry and uptime reads.
-- Unauthenticated Worker status probes, plus authenticated read-only `GET` checks when an existing caller-authorized edge-access token is available.
+- Unauthenticated Worker status probes, plus authenticated read-only `GET` checks: the Phase 4 operator read routes with `CF_SERVICE_OPERATOR_TOKEN`, and customer routes when an existing caller-authorized edge-access token is available.
 - Repo-local `npx wrangler` read-only commands such as deployments list, KV key read/list, and bounded tail when needed.
 - Existing ClickHouse read-only scripts and bounded SELECT queries through repo `.env`.
 - Small provider probes only when a data-quality symptom requires them.
@@ -130,6 +130,7 @@ Requires explicit user authorization:
 
 - `wrangler deploy`, `wrangler kv key put/delete`, Durable Object migrations, or production env changes.
 - Force-refresh endpoints, backfills, ClickHouse mutations, queue purge/replay, monitor edits, or heartbeat-token changes.
+- Live Contracts operator `POST` actions: `load`, `resync`, `run`, `import`, `archive`, `overlay`.
 - Any command that prints raw secrets, full env files, webhook URLs, or API keys.
 - Product code changes or vendor/account mutations discovered during a rendered comparison.
 
@@ -468,7 +469,31 @@ curl -sS "$WORKER_ORIGIN/api/v1/symbol-meta/latest/meta" | jq .
 curl -sS "$WORKER_ORIGIN/uw-ingestion/status" # expected 404 after retirement
 ```
 
-Contract Rank, Market Structure, and advertised snapshot-object reads require an existing caller-authorized edge-access JWT. Do not mint a token, reuse another user's token, or print it during an audit:
+Then read Live Contracts, Rank, and Market Structure state through the operator read routes. They forward to the same Live Contracts object paths as the customer `rank:read` and `market-structure:read` routes, so the owner's operator can check production without an edge-access proof; the customer routes still refuse this token. The token is the static `CF_SERVICE_OPERATOR_TOKEN` in the Worker repo's `.env`; production checks the same value, stored in `src/security/operator-token.ts`. Load it without printing it, send `GET` only, and never `POST` the operator actions (`load`, `resync`, `run`, `import`, `archive`, `overlay`) during an audit:
+
+```bash
+OPERATOR_TOKEN="$(grep '^CF_SERVICE_OPERATOR_TOKEN=' /Users/evansmacbookpro/Desktop/Projects/tradingflow-cfworker-service/.env | cut -d= -f2- | tr -d '"')"
+op_get() { curl -sS --max-time 60 -H "Authorization: Bearer $OPERATOR_TOKEN" "$WORKER_ORIGIN/api/v1/live-contracts/$1"; }
+op_get status | jq '{
+    chain: (.live.chainGen | {id, chainDate, symbolCount, contractCount, loadedAt}),
+    rankGenId: .live.rankGenId,
+    rank: (.rank | {date, seq, lastRunAt, latestTradeTime}),
+    sourceCheck: (.sourceCheck | {date, status, checkedAt}),
+    structure: [.structureGenerations[0:2][] | {date, phase, symbolCount, computedAt}],
+    archive: (.rankArchive | {sessions, newest: .newest.date, pending, building}),
+    errors
+  }'
+op_get rank/meta | jq '{effectiveDate, rowCount, latestTradeTime, asOf, dates: (.availableTradingDates | length), archived: (.archivedTradingDates | length)}'
+op_get structure/available-dates | jq '{effective_date, dates: (.available_dates | length)}'
+unset OPERATOR_TOKEN
+```
+
+Expected healthy readings:
+
+- Before 09:30 ET: `chain.chainDate` is today and `sourceCheck.status` is `UNCHANGED` (the loaded chain matches ClickHouse), `rank.date` and `rank/meta` `effectiveDate` are still the previous session, today's `preopen` structure generation is listed, `archive.pending` is empty, and `errors` is `{}`.
+- During the session: `rank.date` is today, `rank.lastRunAt` keeps advancing, and `archive.newest` is the previous session.
+
+Customer routes (Contract Rank snapshot meta, Market Structure, and advertised snapshot objects) require an existing caller-authorized edge-access JWT. Do not mint a token, reuse another user's token, or print it during an audit:
 
 ```bash
 # EDGE_ACCESS_TOKEN must already be present in the shell.
@@ -489,7 +514,7 @@ curl -sS --max-time 30 -H "Authorization: Bearer $EDGE_ACCESS_TOKEN" \
     }'
 ```
 
-Without authorized edge access, record the protected routes as `401 AUTHENTICATION_REQUIRED`, mark direct payload/R2 verification blocked in `ToolAccess`, and use terminal Better Stack publication/build events plus ClickHouse freshness for the bounded serving verdict.
+Without authorized edge access, the operator reads above still give the serving verdict for Live Contracts, Rank, and Market Structure. Record the customer routes as `401 AUTHENTICATION_REQUIRED`, mark only direct customer payload/R2 object verification blocked in `ToolAccess`, and use terminal Better Stack publication/build events plus ClickHouse freshness for the rest of the bounded serving verdict.
 
 For R2-backed columnar contract-rank reads, inspect metadata first and prefer V2 when advertised:
 
@@ -990,7 +1015,7 @@ three to six decision-focused bullets and move supporting metrics into
 
 - betterstack: connected|blocked|skipped; source=<resolved name/id>; blocker=<none or error>
 - uptime: connected|blocked|skipped; monitor=<name/id>; blocker=<none or error>
-- cloudflare: connected|blocked|skipped; path=<http|wrangler>; blocker=<none or error>
+- cloudflare: connected|blocked|skipped; path=<http|operator|wrangler>; blocker=<none or error>
 - clickhouse: connected|blocked|skipped; script_or_query=<name>; blocker=<none or error>
 - massive/alpaca/longport: connected|blocked|skipped; path=<script/sdk>; blocker=<none or error>
 - browser/vendors: connected|blocked|skipped; urls=<TradingFlow/vendor>; blocker=<none or error>

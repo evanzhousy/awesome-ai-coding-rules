@@ -16,7 +16,7 @@ Use `/goal` for a complete run with this objective: collect the rolling 24-hour 
 
 Last updated: 2026-10-24. Executed **2026-10-22T16:57:42Z → 2026-10-23T16:57:42Z** (**2026-10-22 23:57:42 → 2026-10-23 23:57:42 Bangkok**). PostHog was explicitly bound to production project `300646`; Better Stack resolved fresh to Errors application `2412994` and Info source `2357910`. PostHog returned **85 app exceptions across 12 issues** plus **1 landing-only event**, excluded from app impact. Better Stack Errors returned **13 patterns / 21 exceptions**; Info returned **85 error-level rows**. These are overlapping sinks with different coverage and filters, not additive incident counts.
 
-Public `version.json` was **0.35.0 / 0cc0d3f82a1117c1164528673bcacfa6b5905c71**, built **2026-10-21T19:07:59.086Z**. No deployment boundary occurred inside the review window. PostHog's backend (`posthog-node`) issues have **0 browser sessions**; do not present their user counts as browser-session counts. Five sampled error sessions had no matching recordings, so rendered recovery remains unverified.
+Public `version.json` was **0.35.0 / 0cc0d3f82a1117c1164528673bcacfa6b5905c71**, built **2026-10-21T19:07:59.086Z**, before the review window; no in-window build boundary is visible. PostHog's backend (`posthog-node`) issues have **0 browser sessions**; do not present their user counts as browser-session counts. Five sampled error sessions had no matching recordings, so rendered recovery remains unverified.
 
 ### Look First
 

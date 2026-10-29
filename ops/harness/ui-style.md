@@ -160,7 +160,7 @@ That preset selects **base-luma**, **Base UI**, **neutral** base, **Inter** (bod
 
 **Team practice — single preset:** Treat **`b1aIaoaxs`** as the only canonical shadcn preset for this app. Do not switch to another preset URL/code, fork a parallel theme in feature code, or merge primitives from a different preset without an explicit product decision and harness updates. **`components.json`** in the repo root is the checked-in contract (`style`, `baseColor`, `iconLibrary`, registry paths); keep it aligned with this preset when adding or refreshing components. When a control needs different chrome app-wide, **change the primitive variant or CSS variables**—not a one-off override in a page file.
 
-**Local Base UI compatibility:** After any `pnpm dlx shadcn@latest apply …` reinstall, re-verify **`asChild`** / `getRenderAsChildProps` on Button, TooltipTrigger, PopoverTrigger, DropdownMenuTrigger, Sheet, Dialog, Sidebar, etc., plus **`showOverlay`** on Sheet. Upstream Luma sources omit those shims.
+**Local Base UI compatibility:** After any `pnpm dlx shadcn@latest apply …` reinstall, re-verify **`asChild`** / `getRenderAsChildProps` on Button, TooltipTrigger, PopoverTrigger, DropdownMenuTrigger, Sheet, Dialog, Sidebar, etc., plus **`showOverlay`** on Sheet and the sliding **`Tabs.Indicator`** in `tabs.tsx` ([Tabs](#tabs)). Upstream Luma sources omit those shims.
 
 To (re)apply the preset via CLI:
 
@@ -191,8 +191,9 @@ Helpers: **`projectMomentum`**, **`rubberband`**. Prefer Motion springs for anyt
 
 | Export | Value | Consumers |
 | --- | --- | --- |
-| **`cssSpringEase.ui`** | `cubic-bezier(0.32, 0.72, 0, 1)` (no overshoot) | `Dialog`, `Sheet` |
+| **`cssSpringEase.ui`** | `cubic-bezier(0.32, 0.72, 0, 1)` (no overshoot) | `Dialog`, `Sheet`, `Tabs` indicator |
 | **`cssSpringEase.popover`** | `cubic-bezier(0.2, 0.8, 0.2, 1)` (no overshoot) | `Tooltip`, `Popover`, `DropdownMenu`, `HoverCard`, `Select` |
+| **`cssSpringDurationMs.ui`** | `350` (matches `springs.ui.duration`) | `Tabs` indicator, coach-mark tours |
 | **`cssSpringDurationMs.sheet`** | `300` (matches `springs.sheet.duration`) | `Sheet` |
 | **`cssSpringDurationMs.popover`** | `250` (matches `springs.popover.duration`) | `Popover`, `DropdownMenu`, `HoverCard`, `Select` |
 | **`cssSpringDurationMs.tooltip`** | `150` (same ease, shorter response) | `Tooltip` |
@@ -207,6 +208,12 @@ The five popup primitives must **not** set `transitionDuration` / `transitionTim
 - **Grouped hops swap, they do not re-enter.** Because the whole app is one delay group, moving between adjacent triggers within 400 ms opens the next tooltip instantly and Base UI marks both the closing and the opening popup with `data-instant`. The primitive carries `data-instant:transition-none`, so the popup relocates without replaying the scale-in. Keyboard-focus opens (`data-instant="focus"`) and Escape dismissals (`"dismiss"`) are instant for the same reason. Keep that rule when restyling the popup.
 - **Motion:** fade + `scale-95` + 2 px travel away from the trigger (via `data-side`), `cssSpringEase.popover` over `cssSpringDurationMs.tooltip`, no bounce. Reduced motion is covered by the global short-circuit in `src/index.css`.
 - **Tooltip vs Popover vs visible label.** Base UI tooltips open on mouse hover and keyboard focus only; touch users never see them. Use a tooltip only for supplementary wording on a control that already has an accessible name (icon buttons, truncated values, keyboard hints). Anything a user must read to act (a disabled-reason, a definition the table depends on, a confirmation) goes in a `Popover` (tap/click to open, focusable content) or in visible label / helper text. Never make a tooltip the only copy of an action's label or an error.
+
+### Tabs
+
+- **One sliding indicator per list.** `TabsList` renders Base UI's `Tabs.Indicator` as its first child. It follows the active tab's border box through the `--active-tab-*` variables, animating `translate` and `width`/`height` with `cssSpringEase.ui` over `cssSpringDurationMs.ui`, with no bounce. `default` paints the pill and `line` paints the underline through the indicator's `::after`, so both variants slide.
+- **Triggers own the active chrome only until it measures.** While Base UI keeps the indicator `hidden` (SSR before hydration, before the first measure), the active trigger paints its own fill or underline. A `group-has` rule hands that chrome to the indicator once it is visible. Do not add active backgrounds or underlines to triggers in feature code, because they would double up under the indicator.
+- URL-driven tab strips built from links (Option Trades `optionTradesRouteTabLinkClass`) are not Base UI tabs and stay static.
 
 ### Materials & press
 

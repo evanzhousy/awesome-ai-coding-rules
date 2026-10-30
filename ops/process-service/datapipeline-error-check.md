@@ -325,9 +325,13 @@ pnpm dev
 Use `http://127.0.0.1:8000/app/rank/symbols` unless the dev server reports a
 different port. Before interpreting product behavior, read:
 
-- `knowledge/basic_concepts.md`, `doc/domain-knowledge/rank/domain-invariants.md` and
-  `doc/domain-knowledge/rank/functionality.md`, if present; state explicitly when one is absent.
-  The two Rank documents were retired from the webapp on 2026-09-12 (`1b34b42b3`).
+- `/Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/knowledge/basic_concepts.md`,
+  the glossary.
+- `doc/product/functionality.md`, section "6. Rank" (Contracts and Symbols).
+- `doc/product/ontology/concepts.md` and `doc/product/ontology/data-flow.md`.
+
+These replaced `doc/domain-knowledge/rank/` when the webapp retired it on 2026-09-12. The webapp's
+`AGENTS.md` routing table is the current source; follow it if these paths move again.
 
 Prefer an existing authenticated browser session. If authentication is needed,
 use only the repo's documented local paid test account; do not create an
@@ -1230,6 +1234,11 @@ cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
 git diff --check
 test -f wiki/ops/agent-runbook/datapipeline-error-check.md
 test ! -e ops/check-data-quality.md
+test -f /Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/knowledge/basic_concepts.md
+# The webapp checkout is shared and may sit on any branch, so check main's tree, not the files.
+git -C /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack cat-file -e main:doc/product/functionality.md
+git -C /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack cat-file -e main:doc/product/ontology/concepts.md
+git -C /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack cat-file -e main:doc/product/ontology/data-flow.md
 diff -u \
   /Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md \
   wiki/ops/agent-runbook/datapipeline-error-check.md

@@ -54,20 +54,32 @@ the user separately asks for implementation or remediation.
 
 ## Agent Handoff
 
-Last updated: 2026-09-04
+Last updated: 2026-10-30
 
-The latest greenfield read-only Pipeline audit froze 2026-09-03 06:41:49 UTC through 2026-09-04 06:41:49 UTC (02:41:49 ET to 02:41:49 ET), using September 3 as the latest fully closed target. September 1 is the healthy comparison session because September 2 has complete trades/metadata/chain rows but zero embedded IV30 coverage (0/5,653). The September 2 archive proves the 17:00 ET `FinalMetadataVolStructure` run started `SyncSymbolMetaService`, hit the 1-billion-row ClickHouse read cap at 21:00:04 UTC, and ended `status=failed` with `ticker_count=0`; this explains the IV gap without implicating the provider.
+Production customers have read Theta since 2026-10-25: `available-dates` reports source
+`theta_read_AggregatedOptionTrades`. UW keeps writing on `tradingflow-uw-production` only as the
+rollback. The VM role swap moves the Theta roles to that production VM from 2026-10-31 and UW to
+the test VM on 2026-11-07/08 (`wiki/ops/vm-role-swap-plan.md`), so resolve the Theta host before
+any SSH check.
 
-September 3 source and derived data are healthy: 7,042,926 aggregate rows and 12,060,537 aggregate fills; all RTH hours present; open p50/p95/p99 lag 0/4/6 seconds; zero rows over five or ten minutes; premium-under-25k share 0.9768; zero-market-cap share 0.000113; actionable zero-DEI-with-DEX share 0.000303; aggregate row ratio 1.132 versus September 1; and strict integrity passed. `OptionChainTable` has 1,870,862 rows / 1,870,316 contracts / 5,604 symbols, `SymbolMetaData` has 5,648 rows with 5,393 IV30 values, and zero chain symbols lack a valid same-date metadata spot. `mv_contract_rank_flow` has 2,676,967 state rows / 1,879,217 contracts, exact fill-count parity with aggregates, and strict Phase B Greeks parity has 42 comparisons with zero breaches. The non-strict Massive Phase A diagnostic had one expected historical-versus-live NVDA IV timing/model breach.
+The 2026-10-30 in-session check (15:07 ET) was healthy. Theta slices 09:30-14:30 ET were all at
+least 0.99 capture/UW and raw/capture, aggregate parity was 1, nothing was pending or quarantined,
+and `unpublishedShare` was 0.0031. UW's latest trade was 15:06 ET with no rows over 5 minutes
+late. The Worker rank was seconds behind, and every scheduled job since the previous close ran once.
 
-Public serving and liveness are healthy: Worker canary 200, retired `/uw-ingestion/status` 404, `available-dates` and latest symbol metadata at September 3, protected snapshot/Market Structure routes return 401 authentication-required, `ProcessServiceCanary` was checked five minutes ago, and the process-service heartbeat arrived 35 seconds ago. The production host has one API Forever process, `NODE_ENV=production`, UW enabled, Theta disabled, and canary 200. Its clean deployed revision is `5968d26`, while current `origin/master` is `e741e5e`; the deployed bundle already resolves the 30-day lookback, report-only root mode, and runtime ClickHouse role, but the revision skew remains an unreleased change boundary.
+Known noise at that check, none of it data loss:
 
-Better Stack remains the material evidence gap. `Process Service[Production]` (source `533318`, three-day retention) returned no remote or archive rows for the frozen window despite host credentials being present. The `cf-service` archive returned 12,609 rows only from 06:41:49 to 08:48:17 UTC, all auth/cache/connection operations; it had zero runtime summaries, websocket-health, buffer/drop, insert, snapshot, or Market Structure event predicates. Current liveness is separate and healthy: the Uptime heartbeat arrived 35 seconds ago, the pull monitor was checked five minutes ago, and the Worker canary is 200. Therefore the audit proves ClickHouse/serving health but cannot prove “zero process-service errors” or current Worker producer health from telemetry.
+- cf-service `live_chain_unavailable` with reason `TimeoutError`, about 30 per session, from the
+  option-chain read-timeout stopgap. It drives the "Live Contracts failure (production)" incidents
+  until the quieting change (cf-service `1afb7b9`, scheduled 2026-10-30 17:07 ET) is live. Other
+  reasons (`NO_CHAIN_GENERATION`, HTTP status) remain real failures.
+- process-service `Failed to initialize Longport SDK ... 401003 token expired`, with the Alpaca
+  fallback working, until the Longport removal is deployed to production.
+- ThetaData `theta_reference_unavailable` / `reference_refresh_degraded`, 50-330 per day; the Theta
+  error alert leaves it out by design.
 
-- [ ] Recheck Better Stack after the next scheduled market run; require full-window min/max coverage and `runtime_summary`/writer events before using an error count as zero.
-- [ ] Obtain approved query-log/insert-history evidence or an independent rebuild to explain the September 1 mart overcount; current attribution is 82 existing contracts with +395 fills and no mart-only contracts.
-- [ ] Keep the production release boundary explicit: host `5968d26` is clean and config-correct but behind `origin/master` `e741e5e`; no deployment was authorized by this audit.
-- [ ] Revisit Worker snapshot/DO incidents only if fresh failure events or an authorized protected payload read shows they persist; current public canary, dates, and metadata are healthy.
+- [ ] UW-era item from 2026-09-04, not rechecked since: explain the September 1 mart overcount
+  (82 existing contracts with +395 fills and no mart-only contracts).
 
 ## Operating Invariants
 
@@ -75,6 +87,7 @@ Re-resolve dated state during every run. Keep these rules stable:
 
 | Rule | Interpretation |
 | --- | --- |
+| Read source first | Customers read one trade generation: Theta (`theta_*` tables) or UW (`RawOptionTrades` / `AggregatedOptionTrades`). Both can be current while only one is served, so resolve it in Phase 1 before choosing which verifier proves source health. |
 | Writer first | Resolve the active writer before interpreting logs; retired Worker UW routes returning `404` are expected after the removal deploy. |
 | Access is not health | `401 AUTHENTICATION_REQUIRED` on protected reads proves access control, not an outage. Read the same state through the Phase 4 operator routes, and corroborate with permitted telemetry and ClickHouse. |
 | Source vs serving | Stale ClickHouse points to ingest/source; fresh ClickHouse with stale Worker metadata points to snapshot/DO/R2/KV/cache; both fresh with stale UI points to webapp. |
@@ -159,6 +172,9 @@ Resolve sources at runtime. Do not rely on old IDs or table names.
 3. Match by source name:
    - `Process Service[Production]` for EC2 process-service logs and legacy writer evidence.
    - `cf-service` for Worker producer, Durable Object, snapshot refresh, and serving-layer logs.
+   - The source whose name starts with `ThetaData` for the Theta host: health pulses, health FAIL
+     lines, and capture/projector errors. Its name carries the host label, so it changes when the
+     Theta host moves.
 4. `mcp__betterstack__query_help` for the resolved `source_id` and `source_type: logs`.
 5. Use the returned table names in `mcp__betterstack__query`.
 
@@ -172,6 +188,10 @@ For process-service uptime, resolve by name rather than trusting old IDs:
 
 - Push heartbeat: `Process Service SyncUw Ingestion Heartbeats` via Better Stack **heartbeats** (not the status-monitors list).
 - Pull monitor: `ProcessServiceCanary` via Better Stack **monitors**.
+
+The Theta host has no heartbeat or monitor. Three log alerts on its `ThetaData` source cover it
+(health FAIL, errors, host silent); `wiki/ops/theta-host-supervision.md`, "Alerts", has their
+filters.
 
 ### Cloudflare Worker
 
@@ -259,7 +279,6 @@ appears. Never block raw ingestion or the trade hot path on remote probes.
 | --- | --- | --- |
 | Unusual Whales | `optionable-tickers` for equities, date-aware `stock/{ticker}/option-chains`, `stock/{ticker}/info`, and `stock/{ticker}/quote` | `has_options=false`, info `404`, or an empty current chain does not reject index aliases or an expired/residual chain. Check the relevant trading date. |
 | Massive | Reference ticker plus daily stock aggregates; canonical `I:{symbol}` index snapshot/aggregates; option snapshot | A stock reference `404` is expected for index roots. A chain without a positive index value is `chain_only`, not fully supported. Accept `DELAYED` when usable bars/values are present. |
-| Longport | Equity/ETF/OTC quote, history, static info, and option expirations/contracts; verified canonical index quote | Error `301600 invalid symbol` is provider-specific lack of support, not proof the product is invalid. |
 | Alpaca | Stock snapshots/history and option snapshots | Data credentials and trading-account credentials are separate. A trading `/assets` `401` does not invalidate successful market-data probes. Index option chains may exist without an Alpaca underlying quote. |
 
 Classify evidence as follows:
@@ -306,9 +325,9 @@ pnpm dev
 Use `http://127.0.0.1:8000/app/rank/symbols` unless the dev server reports a
 different port. Before interpreting product behavior, read:
 
-- `knowledge/basic_concepts.md` if present; state explicitly when it is absent.
-- `doc/domain-knowledge/rank/domain-invariants.md`
-- `doc/domain-knowledge/rank/functionality.md`
+- `knowledge/basic_concepts.md`, `doc/domain-knowledge/rank/domain-invariants.md` and
+  `doc/domain-knowledge/rank/functionality.md`, if present; state explicitly when one is absent.
+  The two Rank documents were retired from the webapp on 2026-09-12 (`1b34b42b3`).
 
 Prefer an existing authenticated browser session. If authentication is needed,
 use only the repo's documented local paid test account; do not create an
@@ -343,6 +362,20 @@ TZ=America/New_York date
 ```
 
 ### Phase 1 - Active Writer and Producer Liveness
+
+First resolve which trade generation customers read:
+
+```bash
+curl -sS "$WORKER_ORIGIN/api/v1/available-dates" | jq '{source, latestDate, count}'
+```
+
+| `source` | Customers read | Prove source health with |
+| --- | --- | --- |
+| `theta_read_AggregatedOptionTrades` | Theta | "Theta writer" below. UW freshness then only proves the rollback stays clean. |
+| `AggregatedOptionTrades` | UW | The UW writer checks below. |
+
+The web app follows PostHog flag `trade-read-generation` (project 300646, flag 969732); the switch
+and its rollback are in `wiki/ops/theta-cutover-checklist.md`, sections 3 and 4.
 
 Check Worker ingest status:
 
@@ -382,6 +415,47 @@ bun scripts/verify-producer-freshness.ts YYYY-MM-DD
 
 Healthy evidence includes current max trade times, expected RTH hourly coverage, stable raw/aggregate ratios, and no large lag tail unexplained by market state.
 
+#### Theta writer
+
+Theta runs as two roles on the Theta host. Capture holds the ThetaData stream and saves every trade
+to local disk; the projector adds prices and Greeks and writes `theta_RawOptionTrades` and
+`theta_AggregatedOptionTrades`. Resolve the host from `wiki/ops/human/current.md` (during the VM
+role swap, `wiki/ops/vm-role-swap-plan.md`). The trades not yet written live only on that host, so
+these checks run there over read-only SSH, never as a restart:
+
+```bash
+cat ~/.theta-health/last-status    # newest health check: roles, lag, stall, rss, avail, fresh roots
+ps -eo pid,etime,rss,args | grep '[t]heta-app.js'
+systemctl is-active thetadata-terminal
+```
+
+Then the per-slice verifier, from the Theta checkout on that host. It reads the local spool and
+makes bounded ClickHouse reads; `nice` keeps it off the projector's CPU. The window is one ET
+date, minute-aligned, at most 13 hours; in session, end it at the last finished 15-minute slice:
+
+```bash
+NODE_ENV=test nice -n 15 npm run --silent verify:theta-live -- \
+  --start=YYYY-MM-DDT13:30:00Z --end=YYYY-MM-DDTHH:MM:00Z > /tmp/verify-theta-YYYY-MM-DD.json
+```
+
+Read `acceptance` (`cleanSession`, `unpublishedShare`, `failures`), `streamGaps.unresolved`, and
+each slice's `ratios` and `localSpool`:
+
+| Field | Healthy | Investigate |
+| --- | --- | --- |
+| `ratios.spoolVsUw` | `>= 0.99`; Theta often captures slightly more than UW | Below: capture or feed loss; check `streamGaps.unresolved` |
+| `ratios.rawVsSpool` | `>= 0.99` once the slice settles | Below: publication backlog or a deferral pile |
+| `ratios.aggregateVsEligibleRaw` | Within 1% of 1 | Outside: aggregation gap |
+| `pendingTrades`, `writingTrades`, `quarantinedTrades` | `0` once the slice settles | Nonzero: stuck publication |
+| `nonIntrinsicZeroIvRows` | `0` | Nonzero: Greeks defect |
+| `acceptance.unpublishedShare` | `<= 0.005` | Above: not a clean session |
+
+`cutoverReady` and `ready` stay `false` until every slice's `deferredTrades` is `0`, which history
+repair reaches only after the close, so mid-session they are not a failure. The full-session
+verdict runs the next morning over `T13:30:00Z` to `T20:15:00Z` (`wiki/ops/theta-cutover-checklist.md`,
+section 1). The verifier counts UW as its reference, so run `verify-producer-freshness.ts` as well:
+a UW gap weakens both the comparison and the rollback.
+
 ### Phase 2 - Process-Service Errors and Heartbeats
 
 Use this phase when the active writer is process-service, when process-service jobs may explain data gaps, or when the user asks about backend production errors.
@@ -393,6 +467,14 @@ Required checks:
 - Query `level="error"` rows for the requested window.
 - Group by `jobName`, severity tag (`[P0 Error]`, `[P1 Error]`), `_pattern`, and last seen.
 - Check Uptime push heartbeat and pull canary by name.
+- Scheduled jobs: every `[Scheduler] begin job=<name>` needs a matching `finished job=<name>`,
+  once per day each (06:30 `PreopenMetadataVolStructure`, 17:00 `FinalMetadataVolStructure`,
+  17:30 `ContractRankEodFinalize`, 20:00 `deleteOldData` ET; `cleanupLogs` runs 24 hours after the
+  process starts). A 17:00 run still going at 17:30 can leave symbols on pre-open IV.
+- Theta writer: on the `ThetaData` source, group `level='error'` by `event` and compare with
+  the previous sessions, and confirm a `theta_health_pulse` at least every 10 minutes. Any
+  `theta_health_fail` line is real. `reference_refresh_degraded` and `canceled` are routine: the
+  Theta error alert leaves them out, and they matter only if the verifier's slices drop.
 
 If production logs contradict the current process-service repo, verify deployment freshness before debugging current source behavior. A green canary proves liveness, not revision freshness. Keep this check read-only unless the user separately authorizes a deploy:
 
@@ -1017,13 +1099,17 @@ three to six decision-focused bullets and move supporting metrics into
 - uptime: connected|blocked|skipped; monitor=<name/id>; blocker=<none or error>
 - cloudflare: connected|blocked|skipped; path=<http|operator|wrangler>; blocker=<none or error>
 - clickhouse: connected|blocked|skipped; script_or_query=<name>; blocker=<none or error>
-- massive/alpaca/longport: connected|blocked|skipped; path=<script/sdk>; blocker=<none or error>
+- theta-host: connected|blocked|skipped; host=<name>; path=<ssh>; blocker=<none or error>
+- massive/alpaca: connected|blocked|skipped; path=<script/sdk>; blocker=<none or error>
 - browser/vendors: connected|blocked|skipped; urls=<TradingFlow/vendor>; blocker=<none or error>
 
 ### Active writer
 
+- Read generation (`available-dates` source):
 - Owner:
 - Evidence:
+- Theta host health (`last-status`) and verifier (`cleanSession`, worst slice, `unpublishedShare`):
+- UW freshness (serving or rollback):
 - `/uw-ingestion/status`:
 
 ### Process-service health
@@ -1126,7 +1212,8 @@ Where to go for each need:
 
 | Need | Section |
 | --- | --- |
-| Process-service error patterns, heartbeat checks, known noise | Phase 2 |
+| Which trade generation customers read; Theta host health and per-slice verifier | Phase 1 |
+| Process-service error patterns, heartbeat checks, scheduled jobs, Theta alerts, known noise | Phase 2 |
 | Active producer logs, write-buffer/drop/queue predicates, queue diagnosis | Phases 1 and 3 |
 | Worker public endpoints, Durable Object/KV size checks, snapshot interpretation | Phase 4 |
 | ClickHouse integrity, latency, contract-rank checks, Greeks parity thresholds | Phases 5, 6, and 7 |
@@ -1141,13 +1228,11 @@ evidence. Re-read the changed sections, then validate:
 ```bash
 cd /Users/evansmacbookpro/Desktop/Projects/tradingflow-process-service-ec2
 git diff --check
-test -f ops/datapipeline-error-check.md
+test -f wiki/ops/agent-runbook/datapipeline-error-check.md
 test ! -e ops/check-data-quality.md
-test -f /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/doc/domain-knowledge/rank/domain-invariants.md
-test -f /Users/evansmacbookpro/Desktop/Projects/tradingflow-webapp-fullstack/doc/domain-knowledge/rank/functionality.md
 diff -u \
   /Users/evansmacbookpro/Desktop/Projects/awesome-ai-coding-rules/ops/process-service/datapipeline-error-check.md \
-  ops/datapipeline-error-check.md
+  wiki/ops/agent-runbook/datapipeline-error-check.md
 ```
 
 Expect no output from `diff -u`.

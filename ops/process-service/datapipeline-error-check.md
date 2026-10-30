@@ -74,12 +74,30 @@ Known noise at that check, none of it data loss:
   until the quieting change (cf-service `1afb7b9`, scheduled 2026-10-30 17:07 ET) is live. Other
   reasons (`NO_CHAIN_GENERATION`, HTTP status) remain real failures.
 - process-service `Failed to initialize Longport SDK ... 401003 token expired`, with the Alpaca
-  fallback working, until the Longport removal is deployed to production.
+  fallback working. Fix built, not deployed: branch `ops/uw-host-roles-longport-off` (`9f423dc`,
+  cut from `f6c3b48`) switches Longport off on the frozen UW line without changing any fallback.
 - ThetaData `theta_reference_unavailable` / `reference_refresh_degraded`, 50-330 per day; the Theta
-  error alert leaves it out by design.
+  error alert leaves it out by design. Cause: 10-20 roots the Terminal refuses with HTTP 500 every
+  retry; a batch holding only those flipped the flag. Fix on `master` (`fix(theta): a run of
+  retries alone ...`), not deployed until the Theta host move has held. The 500 is
+  `getOptionSnapshotGreeksAll: Expected exactly one quote; got 0` (open interest answers 200): no
+  underlying quote, e.g. HEIA (stock HEI.A) or DJXW (DJX index). The existing `stock_price`
+  override retry would cover it, but `classifyThetaFailure` does not match that text; extending it
+  changes how those roots are priced, so it is the owner's call.
 
-- [ ] UW-era item from 2026-09-04, not rechecked since: explain the September 1 mart overcount
-  (82 existing contracts with +395 fills and no mart-only contracts).
+- [ ] UW mart overcount on 2026-09-01, explained 2026-10-30, repair awaiting the owner's go.
+  `mv_contract_rank_flow` holds 10,845,469 fills against 10,845,074 in `AggregatedOptionTrades`
+  (+395 on 82 contracts; sum states only, `argMax`/`max` states correct). Every other date from
+  2026-07-02 to 2026-10-30 is 0, and the Theta mart is 0 on every date. The extra copies are
+  aggregate rows of at least $25k premium finalized 10:54:20-10:54:42 ET in two high-priority
+  insert batches, which reached the mart two and three times while `AggregatedOptionTrades` and
+  `RawOptionTrades` stored them once. Likely cause: client insert retries with one deduplication
+  token, deduplicated in the source table but not in the dependent view; neither writer sets
+  `deduplicate_blocks_in_dependent_materialized_views`, and the write identities' settings
+  profiles are not readable. Repair: rebuild the 2026-09-01 partition through a staging table
+  (other contracts copied as is; the 82 with zeroed sum states plus the view's SELECT over their
+  aggregate rows), then `REPLACE PARTITION`. The date is below the Theta read floor, so it
+  reaches customers only after a rollback to UW, and retention drops it around 2026-12-30.
 
 ## Operating Invariants
 

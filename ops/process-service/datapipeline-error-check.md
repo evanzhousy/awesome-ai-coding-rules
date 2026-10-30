@@ -96,7 +96,8 @@ Known noise at that check, none of it data loss:
   `deduplicate_blocks_in_dependent_materialized_views`, and the write identities' settings
   profiles are not readable. Repair: rebuild the 2026-09-01 partition through a staging table
   (other contracts copied as is; the 82 with zeroed sum states plus the view's SELECT over their
-  aggregate rows), then `REPLACE PARTITION`. The date is below the Theta read floor, so it
+  aggregate rows), then `REPLACE PARTITION`; dry-run plan and script in
+  `wiki/ops/uw-mart-repair-2026-09-01.md`. The date is below the Theta read floor, so it
   reaches customers only after a rollback to UW, and retention drops it around 2026-12-30.
 
 ## Operating Invariants

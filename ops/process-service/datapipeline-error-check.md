@@ -85,20 +85,16 @@ Known noise at that check, none of it data loss:
   override retry would cover it, but `classifyThetaFailure` does not match that text; extending it
   changes how those roots are priced, so it is the owner's call.
 
-- [ ] UW mart overcount on 2026-09-01, explained 2026-10-30, repair awaiting the owner's go.
+- UW mart overcount on 2026-09-01: **won't fix unless production rolls back to UW** (owner,
+  2026-10-31). Known and explained; do not re-investigate or re-report it.
   `mv_contract_rank_flow` holds 10,845,469 fills against 10,845,074 in `AggregatedOptionTrades`
   (+395 on 82 contracts; sum states only, `argMax`/`max` states correct). Every other date from
-  2026-07-02 to 2026-10-30 is 0, and the Theta mart is 0 on every date. The extra copies are
-  aggregate rows of at least $25k premium finalized 10:54:20-10:54:42 ET in two high-priority
-  insert batches, which reached the mart two and three times while `AggregatedOptionTrades` and
-  `RawOptionTrades` stored them once. Likely cause: client insert retries with one deduplication
-  token, deduplicated in the source table but not in the dependent view; neither writer sets
-  `deduplicate_blocks_in_dependent_materialized_views`, and the write identities' settings
-  profiles are not readable. Repair: rebuild the 2026-09-01 partition through a staging table
-  (other contracts copied as is; the 82 with zeroed sum states plus the view's SELECT over their
-  aggregate rows), then `REPLACE PARTITION`; dry-run plan and script in
-  `wiki/ops/uw-mart-repair-2026-09-01.md`. The date is below the Theta read floor, so it
-  reaches customers only after a rollback to UW, and retention drops it around 2026-12-30.
+  2026-07-02 to 2026-10-30 is 0, and the Theta mart is 0 on every date. Likely cause: client
+  insert retries with one deduplication token, deduplicated in the source table but not in the
+  dependent view. The date is below the Theta read floor, so customers see it only after a
+  rollback to UW, and retention drops it around 2026-12-30. If production rolls back to UW before
+  then, run the dry-run repair in `wiki/ops/uw-mart-repair-2026-09-01.md` and add 2026-09-01 to
+  the archive rebuild.
 
 ## Operating Invariants
 

@@ -74,8 +74,9 @@ Known noise at that check, none of it data loss:
   until the quieting change (cf-service `1afb7b9`, scheduled 2026-10-30 17:07 ET) is live. Other
   reasons (`NO_CHAIN_GENERATION`, HTTP status) remain real failures.
 - process-service `Failed to initialize Longport SDK ... 401003 token expired`, with the Alpaca
-  fallback working. Fix built, not deployed: branch `ops/uw-host-roles-longport-off` (`9f423dc`,
-  cut from `f6c3b48`) switches Longport off on the frozen UW line without changing any fallback.
+  fallback working. Fix built, not deployed: branch `ops/uw-host-roles-longport-off` (`9bbd698`,
+  on `6a8cbe1`, the build production runs) switches Longport off on the frozen UW line without
+  changing any fallback.
 - ThetaData `theta_reference_unavailable` / `reference_refresh_degraded`, 50-330 per day; the Theta
   error alert leaves it out by design. Cause: 10-20 roots the Terminal refuses with HTTP 500 every
   retry; a batch holding only those flipped the flag. Fix on `master` (`fix(theta): a run of
